@@ -1,0 +1,109 @@
+package blockberry;
+
+message HelloRequest {
+  required string node_id = 1;
+  required int32 version = 2;
+  string inbound_url = 3;
+  int32 inbound_port = 4;
+  required string chain_id = 5;
+  required int64 timestamp = 6;
+  required int64 latest_height = 7;
+}
+
+message HelloResponse {
+  required bool accepted = 1;
+  bytes public_key = 2;
+}
+
+message HelloFinalize {
+  required bool success = 1;
+}
+
+interface HandshakeMessage {
+  128 = HelloRequest;
+  129 = HelloResponse;
+  130 = HelloFinalize;
+}
+
+message AddressRequest {
+  required int64 last_seen = 1;
+}
+
+message AddressInfo {
+  required string multiaddr = 1;
+  required int64 last_seen = 2;
+  required int32 latency = 3;
+  required string node_id = 4;
+}
+
+message AddressResponse {
+  repeated AddressInfo peers = 1;
+}
+
+interface PexMessage {
+  131 = AddressRequest;
+  132 = AddressResponse;
+}
+
+message TransactionsRequest {
+  required int32 batch_size = 1;
+}
+message TransactionHash {
+  required bytes hash = 1;
+}
+message TransactionsResponse {
+  repeated TransactionHash transactions = 1;
+}
+message TransactionDataRequest {
+  repeated TransactionHash transactions = 1;
+}
+message TransactionData {
+  required bytes hash = 1;
+  required bytes data = 2;
+}
+message TransactionDataResponse {
+  repeated TransactionData transactions = 1;
+}
+interface TransactionsMessage {
+  133 = TransactionsRequest;
+  134 = TransactionsResponse;
+  135 = TransactionDataRequest;
+  136 = TransactionDataResponse;
+}
+message BlocksRequest {
+  required int32 batch_size = 1;
+  required int64 since = 2;
+}
+message BlockData {
+  required int64 height = 1;
+  required bytes hash = 2;
+  required bytes data = 3;
+}
+message BlocksResponse {
+  repeated BlockData blocks = 1;
+}
+interface BlockSyncMessage {
+  137 = BlocksRequest;
+  138 = BlocksResponse;
+}
+interface BlockMessage {
+  139 = BlockData;
+}
+message LatencyRequest {
+  required int64 timestamp = 1;
+}
+message LatencyResponse {
+  required int64 latency = 1;
+}
+message FirewallRequest {
+  required string endpoint = 1;
+}
+message FirewallResponse {
+  required string endpoint = 1;
+}
+interface HousekeepingMessages {
+  140 = LatencyRequest;
+  141 = LatencyResponse;
+  142 = FirewallRequest;
+  143 = FirewallResponse;
+}

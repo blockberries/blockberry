@@ -92,3 +92,63 @@ This file tracks implementation progress. Each completed task should have a summ
 
 ---
 
+## [Phase 3] Types & Errors
+
+**Status:** Completed
+
+**Files Created:**
+- `types/types.go` - Common type definitions (Height, Hash, Tx, Block, PeerID)
+- `types/errors.go` - Sentinel error definitions for all components
+- `types/hash.go` - Hash functions using SHA-256
+- `types/types_test.go` - Tests for type methods
+- `types/hash_test.go` - Tests for hash functions
+- `types/errors_test.go` - Tests for error handling
+
+**Files Modified:**
+- `types/doc.go` - Removed (replaced by types.go)
+
+**Functionality Implemented:**
+
+Common Types:
+- `Height` - Block height with String() and Int64() methods
+- `Hash` - Cryptographic hash with String(), Bytes(), IsEmpty(), Equal() methods
+- `Tx` - Opaque transaction bytes with String(), Bytes(), Size() methods
+- `Block` - Opaque block bytes with String(), Bytes(), Size() methods
+- `PeerID` - Peer identifier with String() and IsEmpty() methods
+- `HashFromHex()` - Parse hash from hexadecimal string
+
+Hash Functions:
+- `HashTx(tx)` - SHA-256 hash of transaction
+- `HashBlock(block)` - SHA-256 hash of block
+- `HashBytes(data)` - SHA-256 hash of arbitrary bytes
+- `HashConcat(left, right)` - Hash concatenation for merkle trees
+- `EmptyHash()` - Hash of empty byte slice
+- `HashSize` constant (32 bytes)
+
+Sentinel Errors (32 total):
+- Peer errors: ErrPeerNotFound, ErrPeerBlacklisted, ErrPeerAlreadyConnected, ErrMaxPeersReached
+- Block errors: ErrBlockNotFound, ErrBlockAlreadyExists, ErrInvalidBlockHeight, ErrInvalidBlockHash
+- Transaction errors: ErrTxNotFound, ErrTxAlreadyExists, ErrInvalidTx, ErrTxTooLarge
+- Mempool errors: ErrMempoolFull, ErrMempoolClosed
+- Connection errors: ErrChainIDMismatch, ErrVersionMismatch, ErrHandshakeFailed, ErrHandshakeTimeout, ErrConnectionClosed, ErrNotConnected
+- Message errors: ErrInvalidMessage, ErrUnknownMessageType, ErrMessageTooLarge
+- State errors: ErrKeyNotFound, ErrStoreClosed, ErrInvalidProof
+- Sync errors: ErrAlreadySyncing, ErrNotSyncing, ErrSyncFailed
+- Node errors: ErrNodeNotStarted, ErrNodeAlreadyStarted, ErrNodeStopped
+
+**Test Coverage:**
+- 14 test functions with 60+ test cases
+- Tests for all type methods and edge cases
+- Hash function tests verify determinism and SHA-256 correctness
+- Error tests verify errors.Is() compatibility and distinctness
+- Benchmarks for hash operations
+- All tests pass with race detection
+
+**Design Decisions:**
+- Hash functions return nil for nil input (not empty hash)
+- String() methods truncate long values for readability
+- All errors are distinct and work with errors.Is() and fmt.Errorf wrapping
+- Using SHA-256 for all hashing (standard, 32-byte output)
+
+---
+

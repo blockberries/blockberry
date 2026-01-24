@@ -51,6 +51,10 @@ type TestNode struct {
 	PexReactor          *pex.Reactor
 	SyncReactor         *bsync.SyncReactor
 
+	// Event notification for testing
+	establishedNotify   map[peer.ID]chan struct{}
+	establishedNotifyMu sync.Mutex
+
 	// Lifecycle
 	started bool
 	stopCh  chan struct{}
@@ -156,16 +160,17 @@ func NewTestNode(tc *TestNodeConfig) (*TestNode, error) {
 	// Create node
 	nodeID := fmt.Sprintf("%x", pub)
 	tn := &TestNode{
-		cfg:        cfg,
-		privateKey: priv,
-		publicKey:  pub,
-		nodeID:     nodeID,
-		dataDir:    dataDir,
-		GlueNode:   glueNode,
-		Network:    network,
-		BlockStore: bs,
-		Mempool:    mp,
-		stopCh:     make(chan struct{}),
+		cfg:               cfg,
+		privateKey:        priv,
+		publicKey:         pub,
+		nodeID:            nodeID,
+		dataDir:           dataDir,
+		GlueNode:          glueNode,
+		Network:           network,
+		BlockStore:        bs,
+		Mempool:           mp,
+		establishedNotify: make(map[peer.ID]chan struct{}),
+		stopCh:            make(chan struct{}),
 	}
 
 	// Create address book for PEX
@@ -367,17 +372,67 @@ func (tn *TestNode) ConnectTo(other *TestNode) error {
 	return tn.Network.ConnectMultiaddr(addr)
 }
 
-// WaitForConnection waits for a connection to the specified peer to be established.
-func (tn *TestNode) WaitForConnection(peerID peer.ID, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		state := tn.Network.ConnectionState(peerID)
-		if state == glueberry.StateEstablished {
-			return nil
-		}
-		time.Sleep(50 * time.Millisecond)
+// RegisterForEstablished registers to be notified when StateEstablished is received for a peer.
+// This should be called BEFORE initiating the connection to avoid missing the event.
+// Returns a channel that will be closed when the connection reaches StateEstablished.
+func (tn *TestNode) RegisterForEstablished(peerID peer.ID) <-chan struct{} {
+	tn.establishedNotifyMu.Lock()
+	defer tn.establishedNotifyMu.Unlock()
+
+	// If already established, return a closed channel
+	if tn.Network.ConnectionState(peerID) == glueberry.StateEstablished {
+		ch := make(chan struct{})
+		close(ch)
+		return ch
 	}
-	return fmt.Errorf("timeout waiting for connection to %s", peerID.String()[:8])
+
+	ch := make(chan struct{})
+	tn.establishedNotify[peerID] = ch
+	return ch
+}
+
+// WaitForEstablished waits for a pre-registered channel to signal connection establishment.
+// Use RegisterForEstablished to get the channel before connecting.
+func (tn *TestNode) WaitForEstablished(ch <-chan struct{}, timeout time.Duration) error {
+	select {
+	case <-ch:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for connection")
+	}
+}
+
+// UnregisterForEstablished removes the notification channel for a peer.
+func (tn *TestNode) UnregisterForEstablished(peerID peer.ID) {
+	tn.establishedNotifyMu.Lock()
+	defer tn.establishedNotifyMu.Unlock()
+	delete(tn.establishedNotify, peerID)
+}
+
+// ConnectAndWait connects to a peer and waits for the connection to be established.
+// This properly registers for the established notification before connecting to avoid races.
+func (tn *TestNode) ConnectAndWait(other *TestNode, timeout time.Duration) error {
+	// Register for notification BEFORE connecting
+	ch := tn.RegisterForEstablished(other.PeerID())
+
+	// Connect
+	if err := tn.ConnectTo(other); err != nil {
+		return err
+	}
+
+	// Wait for established
+	return tn.WaitForEstablished(ch, timeout)
+}
+
+// notifyEstablished notifies any waiters that a peer has reached StateEstablished.
+func (tn *TestNode) notifyEstablished(peerID peer.ID) {
+	tn.establishedNotifyMu.Lock()
+	defer tn.establishedNotifyMu.Unlock()
+
+	if ch, ok := tn.establishedNotify[peerID]; ok {
+		close(ch)
+		delete(tn.establishedNotify, peerID)
+	}
 }
 
 // WaitForPeerCount waits for the node to have at least the specified number of peers.
@@ -429,6 +484,9 @@ func (tn *TestNode) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		_ = tn.HandshakeHandler.OnPeerConnected(peerID, true)
 
 	case glueberry.StateEstablished:
+		// Notify any waiters that the connection is established
+		tn.notifyEstablished(peerID)
+
 		info := tn.HandshakeHandler.GetPeerInfo(peerID)
 		if info != nil {
 			tn.SyncReactor.OnPeerConnected(peerID, info.PeerHeight)

@@ -196,7 +196,7 @@ func TestHandleHelloRequestValidation(t *testing.T) {
 
 	// Initialize state for peer
 	h.mu.Lock()
-	h.states[peerID] = &PeerHandshakeState{State: StateHelloSent}
+	h.states[peerID] = &PeerHandshakeState{SentRequest: true}
 	h.mu.Unlock()
 
 	t.Run("chain ID mismatch", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestHandleHelloResponseValidation(t *testing.T) {
 
 	peerID := peer.ID("test-peer")
 
-	t.Run("no handshake state", func(t *testing.T) {
+	t.Run("creates state if needed", func(t *testing.T) {
 		accepted := true
 		resp := &schema.HelloResponse{
 			Accepted:  &accepted,
@@ -286,15 +286,22 @@ func TestHandleHelloResponseValidation(t *testing.T) {
 		data, err := resp.MarshalCramberry()
 		require.NoError(t, err)
 
+		// With nil network, PrepareStreams is skipped but state is created
 		err = h.handleHelloResponse(peerID, data)
-		require.Error(t, err)
-		require.ErrorIs(t, err, types.ErrInvalidMessage)
+		require.NoError(t, err)
+
+		h.mu.RLock()
+		state := h.states[peerID]
+		h.mu.RUnlock()
+		require.NotNil(t, state)
+		require.True(t, state.ReceivedResponse)
 	})
 
 	t.Run("rejection response", func(t *testing.T) {
+		anotherPeerID := peer.ID("another-peer")
 		// Set up state
 		h.mu.Lock()
-		h.states[peerID] = &PeerHandshakeState{State: StateHelloSent}
+		h.states[anotherPeerID] = &PeerHandshakeState{SentRequest: true}
 		h.mu.Unlock()
 
 		accepted := false
@@ -306,7 +313,7 @@ func TestHandleHelloResponseValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should fail because peer rejected (will also fail to disconnect due to nil network)
-		err = h.handleHelloResponse(peerID, data)
+		err = h.handleHelloResponse(anotherPeerID, data)
 		require.Error(t, err)
 		require.ErrorIs(t, err, types.ErrHandshakeFailed)
 	})
@@ -326,7 +333,7 @@ func TestHandleHelloFinalizeValidation(t *testing.T) {
 
 	peerID := peer.ID("test-peer")
 
-	t.Run("no handshake state", func(t *testing.T) {
+	t.Run("creates state if needed and marks received", func(t *testing.T) {
 		success := true
 		fin := &schema.HelloFinalize{
 			Success: &success,
@@ -336,13 +343,19 @@ func TestHandleHelloFinalizeValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		err = h.handleHelloFinalize(peerID, data)
-		require.Error(t, err)
-		require.ErrorIs(t, err, types.ErrInvalidMessage)
+		require.NoError(t, err)
+
+		h.mu.RLock()
+		state := h.states[peerID]
+		h.mu.RUnlock()
+		require.NotNil(t, state)
+		require.True(t, state.ReceivedFinalize)
 	})
 
 	t.Run("failure response", func(t *testing.T) {
+		anotherPeerID := peer.ID("another-peer")
 		h.mu.Lock()
-		h.states[peerID] = &PeerHandshakeState{State: StateFinalizeSent}
+		h.states[anotherPeerID] = &PeerHandshakeState{SentFinalize: true}
 		h.mu.Unlock()
 
 		success := false
@@ -354,14 +367,15 @@ func TestHandleHelloFinalizeValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should fail because peer indicated failure (will also fail to disconnect due to nil network)
-		err = h.handleHelloFinalize(peerID, data)
+		err = h.handleHelloFinalize(anotherPeerID, data)
 		require.Error(t, err)
 		require.ErrorIs(t, err, types.ErrHandshakeFailed)
 	})
 
-	t.Run("early finalize - state not ready", func(t *testing.T) {
+	t.Run("early finalize - marks flag for later completion", func(t *testing.T) {
+		earlyPeerID := peer.ID("early-peer")
 		h.mu.Lock()
-		h.states[peerID] = &PeerHandshakeState{State: StateHelloReceived}
+		h.states[earlyPeerID] = &PeerHandshakeState{ReceivedRequest: true}
 		h.mu.Unlock()
 
 		success := true
@@ -373,8 +387,13 @@ func TestHandleHelloFinalizeValidation(t *testing.T) {
 		require.NoError(t, err)
 
 		// Should not error - just mark that we received their finalize
-		err = h.handleHelloFinalize(peerID, data)
+		err = h.handleHelloFinalize(earlyPeerID, data)
 		require.NoError(t, err)
+
+		h.mu.RLock()
+		state := h.states[earlyPeerID]
+		h.mu.RUnlock()
+		require.True(t, state.ReceivedFinalize)
 	})
 }
 
@@ -413,7 +432,7 @@ func TestHandleMessageDispatch(t *testing.T) {
 	t.Run("valid HelloRequest dispatch", func(t *testing.T) {
 		// Set up the handler state
 		h.mu.Lock()
-		h.states[peerID] = &PeerHandshakeState{State: StateHelloSent}
+		h.states[peerID] = &PeerHandshakeState{SentRequest: true}
 		h.mu.Unlock()
 
 		nodeID := "peer-node"
@@ -441,7 +460,8 @@ func TestHandleMessageDispatch(t *testing.T) {
 		h.mu.RLock()
 		state := h.states[peerID]
 		h.mu.RUnlock()
-		require.Equal(t, StateResponseSent, state.State)
+		require.True(t, state.ReceivedRequest)
+		require.True(t, state.SentResponse)
 		require.Equal(t, nodeID, state.PeerNodeID)
 		require.Equal(t, height, state.PeerHeight)
 	})

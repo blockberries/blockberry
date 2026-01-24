@@ -1030,3 +1030,54 @@ Performance Benchmarks:
 - Makefile updated: `test` uses `-short`, `test-integration` runs full suite
 
 ---
+
+## Integration Test Fixes - Flag-Based Handshake
+
+**Status:** Completed
+
+**Problem:** Integration tests were failing ~60% of the time due to race conditions in the handshake protocol. The handshake handler used a linear state machine that couldn't handle simultaneous initiation from both peers.
+
+**Root Cause Analysis:**
+- The glueberry integration test (`../glueberry/integration_working_test.go`) passes 100% of the time
+- The difference: glueberry uses a **flag-based approach** with order-independent completion
+- Pattern: `if streamsPrepared && gotComplete { FinalizeHandshake() }` - works regardless of message arrival order
+- Blockberry's original handshake used states like `StateHelloSent`, `StateHelloReceived`, etc. in a linear progression
+
+**Files Modified:**
+
+`handlers/handshake.go` - Complete rewrite from linear state machine to flag-based approach:
+- `PeerHandshakeState` now uses independent flags:
+  - `SentRequest`, `ReceivedRequest`, `SentResponse`, `ReceivedResponse`
+  - `StreamsPrepared`, `SentFinalize`, `ReceivedFinalize`
+- New `tryComplete()` method checks completion conditions:
+  - `canComplete := StreamsPrepared && ReceivedFinalize && State != StateComplete`
+  - Called from both `handleHelloResponse` and `handleHelloFinalize`
+- Order-independent: works regardless of which peer initiates or which messages arrive first
+
+`handlers/handshake_test.go` - Updated tests for new flag-based approach:
+- Tests now use flag fields instead of old state constants
+- Added tests for early finalize handling
+
+`handlers/transactions.go` - Two fixes:
+1. Removed debug logging (EVENT, MSG prints)
+2. Fixed `handleTransactionsRequest` to send multiple batched responses when transactions exceed batchSize
+
+`testing/helpers.go` - Event-based connection waiting:
+- Added `RegisterForEstablished(peerID)` - returns channel for notification
+- Added `WaitForEstablished(ch, timeout)` - waits on the notification channel
+- Added `ConnectAndWait(other, timeout)` - register BEFORE connecting to avoid race
+- Removed debug logging
+
+`testing/integration_test.go` - Updated all tests to use `ConnectAndWait` pattern
+
+**Test Results:**
+- Before fix: ~40% pass rate, flaky with race detector
+- After fix: 100% pass rate (50/50 runs), 100% with race detector (10/10 runs)
+
+**Design Decisions:**
+- Flag-based state tracking handles simultaneous initiation correctly
+- Register for established event BEFORE connecting eliminates race window
+- `tryComplete()` called from both response handlers ensures completion regardless of message order
+- Removed linear state constants (`StateHelloSent`, etc.) in favor of boolean flags
+
+---

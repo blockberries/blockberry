@@ -26,29 +26,30 @@ type HandshakeState int
 const (
 	// StateInit is the initial state before any messages are exchanged.
 	StateInit HandshakeState = iota
-	// StateHelloSent indicates we've sent our HelloRequest.
-	StateHelloSent
-	// StateHelloReceived indicates we've received and validated the peer's HelloRequest.
-	StateHelloReceived
-	// StateResponseSent indicates we've sent our HelloResponse.
-	StateResponseSent
-	// StateResponseReceived indicates we've received the peer's HelloResponse.
-	StateResponseReceived
-	// StateFinalizeSent indicates we've sent HelloFinalize.
-	StateFinalizeSent
 	// StateComplete indicates the handshake is complete.
 	StateComplete
 )
 
 // PeerHandshakeState tracks the handshake state for a single peer.
+// Uses independent flags rather than a linear state machine to handle
+// simultaneous initiation and out-of-order message delivery.
 type PeerHandshakeState struct {
 	State       HandshakeState
+	StartedAt   time.Time
 	PeerPubKey  []byte
 	PeerNodeID  string
 	PeerHeight  int64
 	PeerVersion int32
 	PeerChainID string
-	StartedAt   time.Time
+
+	// Flags for handshake progress (order-independent)
+	SentRequest      bool // We sent HelloRequest
+	ReceivedRequest  bool // We received and validated their HelloRequest
+	SentResponse     bool // We sent HelloResponse (with our public key)
+	ReceivedResponse bool // We received their HelloResponse (with their public key)
+	StreamsPrepared  bool // We called PrepareStreams with their public key
+	SentFinalize     bool // We sent HelloFinalize
+	ReceivedFinalize bool // We received their HelloFinalize
 }
 
 // HandshakeHandler manages the handshake protocol for peer connections.
@@ -95,10 +96,13 @@ func NewHandshakeHandler(
 // It initiates the handshake by sending a HelloRequest.
 func (h *HandshakeHandler) OnPeerConnected(peerID peer.ID, isOutbound bool) error {
 	h.mu.Lock()
-	// Initialize handshake state for this peer
-	h.states[peerID] = &PeerHandshakeState{
-		State:     StateInit,
-		StartedAt: time.Now(),
+	// Initialize handshake state for this peer only if it doesn't exist
+	// (message handlers may have already created state if messages arrived before this event)
+	if _, ok := h.states[peerID]; !ok {
+		h.states[peerID] = &PeerHandshakeState{
+			State:     StateInit,
+			StartedAt: time.Now(),
+		}
 	}
 	h.mu.Unlock()
 
@@ -141,8 +145,35 @@ func (h *HandshakeHandler) HandleMessage(peerID peer.ID, data []byte) error {
 	}
 }
 
+// getOrCreateState gets the state for a peer, creating it if needed.
+func (h *HandshakeHandler) getOrCreateState(peerID peer.ID) *PeerHandshakeState {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	state, ok := h.states[peerID]
+	if !ok {
+		state = &PeerHandshakeState{
+			State:     StateInit,
+			StartedAt: time.Now(),
+		}
+		h.states[peerID] = state
+	}
+	return state
+}
+
 // sendHelloRequest sends a HelloRequest to the peer.
 func (h *HandshakeHandler) sendHelloRequest(peerID peer.ID) error {
+	h.mu.Lock()
+	state := h.states[peerID]
+	if state != nil && state.SentRequest {
+		h.mu.Unlock()
+		return nil // Already sent
+	}
+	if state != nil {
+		state.SentRequest = true
+	}
+	h.mu.Unlock()
+
 	height := h.getHeight()
 	timestamp := time.Now().UnixNano()
 
@@ -165,16 +196,11 @@ func (h *HandshakeHandler) sendHelloRequest(peerID peer.ID) error {
 		}
 	}
 
-	h.mu.Lock()
-	if state, ok := h.states[peerID]; ok {
-		state.State = StateHelloSent
-	}
-	h.mu.Unlock()
-
 	return nil
 }
 
 // handleHelloRequest processes an incoming HelloRequest.
+// On receiving HelloRequest -> send HelloResponse (with our public key)
 func (h *HandshakeHandler) handleHelloRequest(peerID peer.ID, data []byte) error {
 	var req schema.HelloRequest
 	if err := req.UnmarshalCramberry(data); err != nil {
@@ -187,7 +213,6 @@ func (h *HandshakeHandler) handleHelloRequest(peerID peer.ID, data []byte) error
 
 	// Validate chain ID
 	if *req.ChainId != h.chainID {
-		// Blacklist peer for chain ID mismatch
 		if h.network != nil {
 			_ = h.network.BlacklistPeer(peerID)
 		}
@@ -196,33 +221,47 @@ func (h *HandshakeHandler) handleHelloRequest(peerID peer.ID, data []byte) error
 
 	// Validate protocol version
 	if *req.Version != h.protocolVersion {
-		// Blacklist peer for version mismatch
 		if h.network != nil {
 			_ = h.network.BlacklistPeer(peerID)
 		}
 		return fmt.Errorf("%w: expected %d, got %d", types.ErrVersionMismatch, h.protocolVersion, *req.Version)
 	}
 
-	// Update state with peer info
+	// Get or create state, update with peer info
+	state := h.getOrCreateState(peerID)
+
 	h.mu.Lock()
-	state, ok := h.states[peerID]
-	if !ok {
-		state = &PeerHandshakeState{StartedAt: time.Now()}
-		h.states[peerID] = state
+	alreadyReceived := state.ReceivedRequest
+	if !alreadyReceived {
+		state.ReceivedRequest = true
+		state.PeerNodeID = *req.NodeId
+		state.PeerVersion = *req.Version
+		state.PeerChainID = *req.ChainId
+		state.PeerHeight = *req.LatestHeight
 	}
-	state.PeerNodeID = *req.NodeId
-	state.PeerVersion = *req.Version
-	state.PeerChainID = *req.ChainId
-	state.PeerHeight = *req.LatestHeight
-	state.State = StateHelloReceived
 	h.mu.Unlock()
 
-	// Send HelloResponse with our public key
-	return h.sendHelloResponse(peerID, true)
+	// Send HelloResponse if we haven't already
+	if !alreadyReceived {
+		return h.sendHelloResponse(peerID)
+	}
+	return nil
 }
 
 // sendHelloResponse sends a HelloResponse to the peer.
-func (h *HandshakeHandler) sendHelloResponse(peerID peer.ID, accepted bool) error {
+func (h *HandshakeHandler) sendHelloResponse(peerID peer.ID) error {
+	h.mu.Lock()
+	state := h.states[peerID]
+	if state != nil && state.SentResponse {
+		h.mu.Unlock()
+		return nil // Already sent
+	}
+	if state != nil {
+		state.SentResponse = true
+	}
+	h.mu.Unlock()
+
+	accepted := true
 	resp := &schema.HelloResponse{
 		Accepted:  &accepted,
 		PublicKey: h.publicKey,
@@ -239,16 +278,11 @@ func (h *HandshakeHandler) sendHelloResponse(peerID peer.ID, accepted bool) erro
 		}
 	}
 
-	h.mu.Lock()
-	if state, ok := h.states[peerID]; ok {
-		state.State = StateResponseSent
-	}
-	h.mu.Unlock()
-
 	return nil
 }
 
 // handleHelloResponse processes an incoming HelloResponse.
+// On receiving HelloResponse -> PrepareStreams + send HelloFinalize
 func (h *HandshakeHandler) handleHelloResponse(peerID peer.ID, data []byte) error {
 	var resp schema.HelloResponse
 	if err := resp.UnmarshalCramberry(data); err != nil {
@@ -267,16 +301,20 @@ func (h *HandshakeHandler) handleHelloResponse(peerID peer.ID, data []byte) erro
 		return fmt.Errorf("%w: peer rejected handshake", types.ErrHandshakeFailed)
 	}
 
-	// Store peer's public key
+	// Get state
+	state := h.getOrCreateState(peerID)
+
 	h.mu.Lock()
-	state, ok := h.states[peerID]
-	if !ok {
-		h.mu.Unlock()
-		return fmt.Errorf("%w: no handshake state for peer", types.ErrInvalidMessage)
+	alreadyReceived := state.ReceivedResponse
+	if !alreadyReceived {
+		state.ReceivedResponse = true
+		state.PeerPubKey = resp.PublicKey
 	}
-	state.PeerPubKey = resp.PublicKey
-	state.State = StateResponseReceived
 	h.mu.Unlock()
+
+	if alreadyReceived {
+		return nil // Already processed
+	}
 
 	// Prepare encrypted streams using peer's public key
 	if h.network != nil {
@@ -285,12 +323,33 @@ func (h *HandshakeHandler) handleHelloResponse(peerID peer.ID, data []byte) erro
 		}
 	}
 
+	h.mu.Lock()
+	state.StreamsPrepared = true
+	h.mu.Unlock()
+
 	// Send HelloFinalize
-	return h.sendHelloFinalize(peerID, true)
+	if err := h.sendHelloFinalize(peerID); err != nil {
+		return err
+	}
+
+	// Check if we can complete the handshake
+	return h.tryComplete(peerID)
 }
 
 // sendHelloFinalize sends a HelloFinalize to the peer.
-func (h *HandshakeHandler) sendHelloFinalize(peerID peer.ID, success bool) error {
+func (h *HandshakeHandler) sendHelloFinalize(peerID peer.ID) error {
+	h.mu.Lock()
+	state := h.states[peerID]
+	if state != nil && state.SentFinalize {
+		h.mu.Unlock()
+		return nil // Already sent
+	}
+	if state != nil {
+		state.SentFinalize = true
+	}
+	h.mu.Unlock()
+
+	success := true
 	fin := &schema.HelloFinalize{
 		Success: &success,
 	}
@@ -305,12 +364,6 @@ func (h *HandshakeHandler) sendHelloFinalize(peerID peer.ID, success bool) error
 			return fmt.Errorf("sending HelloFinalize: %w", err)
 		}
 	}
-
-	h.mu.Lock()
-	if state, ok := h.states[peerID]; ok {
-		state.State = StateFinalizeSent
-	}
-	h.mu.Unlock()
 
 	return nil
 }
@@ -334,17 +387,30 @@ func (h *HandshakeHandler) handleHelloFinalize(peerID peer.ID, data []byte) erro
 		return fmt.Errorf("%w: peer indicated failure", types.ErrHandshakeFailed)
 	}
 
+	// Mark that we received their finalize
+	state := h.getOrCreateState(peerID)
+
+	h.mu.Lock()
+	state.ReceivedFinalize = true
+	h.mu.Unlock()
+
+	// Check if we can complete the handshake
+	return h.tryComplete(peerID)
+}
+
+// tryComplete checks if all conditions are met to finalize the handshake.
+// Conditions: StreamsPrepared AND ReceivedFinalize
+func (h *HandshakeHandler) tryComplete(peerID peer.ID) error {
 	h.mu.Lock()
 	state, ok := h.states[peerID]
 	if !ok {
 		h.mu.Unlock()
-		return fmt.Errorf("%w: no handshake state for peer", types.ErrInvalidMessage)
+		return nil
 	}
 
-	// Check if we're ready to finalize
-	// We need to have sent our finalize (meaning we received their response and prepared streams)
-	if state.State < StateFinalizeSent {
-		// We haven't sent finalize yet, just mark that we received theirs
+	// Check completion conditions (order-independent)
+	canComplete := state.StreamsPrepared && state.ReceivedFinalize && state.State != StateComplete
+	if !canComplete {
 		h.mu.Unlock()
 		return nil
 	}

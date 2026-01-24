@@ -183,6 +183,7 @@ func (r *TransactionsReactor) HandleMessage(peerID peer.ID, data []byte) error {
 }
 
 // handleTransactionsRequest responds with transaction hashes from the mempool.
+// If there are more transactions than batchSize, multiple responses are sent.
 func (r *TransactionsReactor) handleTransactionsRequest(peerID peer.ID, data []byte) error {
 	var req schema.TransactionsRequest
 	if err := req.UnmarshalCramberry(data); err != nil {
@@ -198,27 +199,40 @@ func (r *TransactionsReactor) handleTransactionsRequest(peerID peer.ID, data []b
 		batchSize = 100
 	}
 
-	// Get transaction hashes from mempool
-	var txHashes []schema.TransactionHash
-	if r.mempool != nil {
-		hashes := r.mempool.TxHashes()
-		count := min(len(hashes), batchSize)
-		txHashes = make([]schema.TransactionHash, 0, count)
+	if r.mempool == nil {
+		return nil
+	}
 
-		for i := 0; i < count; i++ {
-			// Skip transactions we know the peer already has
-			if r.peerManager != nil && !r.peerManager.ShouldSendTx(peerID, hashes[i]) {
-				continue
-			}
-			txHashes = append(txHashes, schema.TransactionHash{Hash: hashes[i]})
+	// Get all transaction hashes from mempool, filtering out ones peer already has
+	allHashes := r.mempool.TxHashes()
+	var txHashes []schema.TransactionHash
+	for _, hash := range allHashes {
+		if r.peerManager != nil && !r.peerManager.ShouldSendTx(peerID, hash) {
+			continue
+		}
+		txHashes = append(txHashes, schema.TransactionHash{Hash: hash})
+	}
+
+	if len(txHashes) == 0 {
+		return nil
+	}
+
+	// Send responses in batches
+	for i := 0; i < len(txHashes); i += batchSize {
+		end := i + batchSize
+		if end > len(txHashes) {
+			end = len(txHashes)
+		}
+
+		resp := &schema.TransactionsResponse{
+			Transactions: txHashes[i:end],
+		}
+		if err := r.sendTransactionsResponse(peerID, resp); err != nil {
+			return err
 		}
 	}
 
-	resp := &schema.TransactionsResponse{
-		Transactions: txHashes,
-	}
-
-	return r.sendTransactionsResponse(peerID, resp)
+	return nil
 }
 
 // sendTransactionsResponse sends a TransactionsResponse to a peer.
@@ -262,7 +276,6 @@ func (r *TransactionsReactor) handleTransactionsResponse(peerID peer.ID, data []
 		if r.hasPendingRequest(peerID, txHash.Hash) {
 			continue
 		}
-
 		missing = append(missing, txHash)
 	}
 

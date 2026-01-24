@@ -39,12 +39,16 @@ func TestTwoNodes_Handshake(t *testing.T) {
 	t.Logf("Node1 PeerID: %s", node1.PeerID().String()[:8])
 	t.Logf("Node2 PeerID: %s", node2.PeerID().String()[:8])
 
+	// Register for established notification BEFORE connecting
+	node1EstablishedCh := node1.RegisterForEstablished(node2.PeerID())
+	node2EstablishedCh := node2.RegisterForEstablished(node1.PeerID())
+
 	// Connect node1 to node2
 	require.NoError(t, node1.ConnectTo(node2))
 
 	// Wait for connection to be established
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
-	require.NoError(t, node2.WaitForConnection(node1.PeerID(), 10*time.Second))
+	require.NoError(t, node1.WaitForEstablished(node1EstablishedCh, 10*time.Second))
+	require.NoError(t, node2.WaitForEstablished(node2EstablishedCh, 10*time.Second))
 
 	// Verify both nodes see each other as connected
 	require.Equal(t, 1, node1.Network.PeerCount())
@@ -116,8 +120,7 @@ func TestTwoNodes_TransactionGossip(t *testing.T) {
 	require.NoError(t, node2.Start())
 
 	// Connect and wait for handshake
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
 	// Add a transaction to node1's mempool
 	tx := []byte("test-transaction-1")
@@ -131,7 +134,7 @@ func TestTwoNodes_TransactionGossip(t *testing.T) {
 	// 3. Node2 requests tx data for unknown txs
 	// 4. Node1 responds with tx data
 	txHash := types.HashTx(tx)
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if node2.Mempool.HasTx(txHash) {
 			break
@@ -167,8 +170,7 @@ func TestTwoNodes_BlockPropagation(t *testing.T) {
 	require.NoError(t, node2.Start())
 
 	// Connect and wait for handshake
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
 	// Create and store a block in node1
 	height := int64(1)
@@ -230,8 +232,7 @@ func TestTwoNodes_BlockSync(t *testing.T) {
 	require.NoError(t, node2.Start())
 
 	// Connect and wait for handshake
-	require.NoError(t, node2.ConnectTo(node1))
-	require.NoError(t, node2.WaitForConnection(node1.PeerID(), 10*time.Second))
+	require.NoError(t, node2.ConnectAndWait(node1, 10*time.Second))
 
 	// Update node2's sync reactor with node1's height
 	node2.SyncReactor.UpdatePeerHeight(node1.PeerID(), node1.BlockStore.Height())
@@ -291,8 +292,7 @@ func TestTwoNodes_ConsensusMessages(t *testing.T) {
 	require.NoError(t, node2.Start())
 
 	// Connect and wait for handshake
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
 	// Send consensus message from node1 to node2
 	consensusMsg := []byte("consensus-vote-1")
@@ -388,11 +388,8 @@ func TestThreeNodes_TransactionPropagation(t *testing.T) {
 	require.NoError(t, node3.Start())
 
 	// Connect in chain: node1 -> node2 -> node3
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
-
-	require.NoError(t, node2.ConnectTo(node3))
-	require.NoError(t, node2.WaitForConnection(node3.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
+	require.NoError(t, node2.ConnectAndWait(node3, 10*time.Second))
 
 	// Add transaction to node1
 	tx := []byte("propagated-transaction")
@@ -436,8 +433,7 @@ func TestNode_Disconnect(t *testing.T) {
 	require.NoError(t, node2.Start())
 
 	// Connect and wait for handshake
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
 	// Verify connected
 	require.Equal(t, 1, node1.Network.PeerCount())
@@ -475,8 +471,7 @@ func TestNode_Reconnect(t *testing.T) {
 	// Start both nodes and connect
 	require.NoError(t, node1.Start())
 	require.NoError(t, node2.Start())
-	require.NoError(t, node1.ConnectTo(node2))
-	require.NoError(t, node1.WaitForConnection(node2.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
 	// Stop node2 completely
 	require.NoError(t, node2.Stop())
@@ -488,8 +483,7 @@ func TestNode_Reconnect(t *testing.T) {
 	defer cleanupNode(node3)
 
 	require.NoError(t, node3.Start())
-	require.NoError(t, node1.ConnectTo(node3))
-	require.NoError(t, node1.WaitForConnection(node3.PeerID(), 10*time.Second))
+	require.NoError(t, node1.ConnectAndWait(node3, 10*time.Second))
 
 	// Verify node1 can connect to new nodes
 	require.True(t, node1.Network.PeerCount() >= 1)
@@ -521,25 +515,21 @@ func BenchmarkTransactionGossip(b *testing.B) {
 	if err := node2.Start(); err != nil {
 		b.Fatal(err)
 	}
-	if err := node1.ConnectTo(node2); err != nil {
-		b.Fatal(err)
-	}
-	if err := node1.WaitForConnection(node2.PeerID(), 10*time.Second); err != nil {
-		b.Fatal(err)
-	}
-
-	b.ResetTimer()
-
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < 1000; i++ {
 		tx := []byte{byte(i), byte(i >> 8), byte(i >> 16)}
 		if err := node1.Mempool.AddTx(tx); err != nil {
 			b.Fatal(err)
 		}
 	}
+	if err := node1.ConnectAndWait(node2, 10*time.Second); err != nil {
+		b.Fatal(err)
+	}
+
+	b.ResetTimer()
 
 	// Wait for propagation
-	deadline := time.Now().Add(30 * time.Second)
-	for node2.Mempool.Size() < b.N && time.Now().Before(deadline) {
+	deadline := time.Now().Add(10 * time.Second)
+	for node2.Mempool.Size() < 1000 && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
@@ -570,10 +560,7 @@ func BenchmarkBlockPropagation(b *testing.B) {
 	if err := node2.Start(); err != nil {
 		b.Fatal(err)
 	}
-	if err := node1.ConnectTo(node2); err != nil {
-		b.Fatal(err)
-	}
-	if err := node1.WaitForConnection(node2.PeerID(), 10*time.Second); err != nil {
+	if err := node1.ConnectAndWait(node2, 10*time.Second); err != nil {
 		b.Fatal(err)
 	}
 

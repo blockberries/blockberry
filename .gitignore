@@ -15,6 +15,7 @@ examples/*/basic
 examples/*/simple-chat
 examples/*/*.key
 examples/*/addressbook.json
+examples/*/addrbook.json
 
 # Address books (but not example configs)
 addressbook.json

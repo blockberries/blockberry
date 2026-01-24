@@ -2,6 +2,7 @@ package p2p
 
 import (
 	"sync"
+	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
@@ -141,6 +142,19 @@ func (pm *PeerManager) MarkBlockReceived(peerID peer.ID, height int64) error {
 		return types.ErrPeerNotFound
 	}
 	state.MarkBlockReceived(height)
+	return nil
+}
+
+// UpdateLatency updates the latency for a specific peer.
+func (pm *PeerManager) UpdateLatency(peerID peer.ID, latency time.Duration) error {
+	pm.mu.RLock()
+	state := pm.peers[peerID]
+	pm.mu.RUnlock()
+
+	if state == nil {
+		return types.ErrPeerNotFound
+	}
+	state.UpdateLatency(latency)
 	return nil
 }
 

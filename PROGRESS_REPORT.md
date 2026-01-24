@@ -789,3 +789,63 @@ ConsensusReactor (`handlers/consensus.go`):
 - Stateless reactor (no per-peer state)
 
 ---
+
+## [Phase 14] Housekeeping
+
+**Status:** Completed
+
+**Files Created:**
+- `handlers/housekeeping.go` - HousekeepingReactor for latency probes and firewall detection
+- `handlers/housekeeping_test.go` - Housekeeping reactor test suite
+
+**Files Modified:**
+- `p2p/peer_manager.go` - Added UpdateLatency method
+
+**Functionality Implemented:**
+
+HousekeepingReactor (`handlers/housekeeping.go`):
+- `NewHousekeepingReactor(network, peerManager, probeInterval)` - Create reactor
+- `Start()` / `Stop()` - Lifecycle management with background probe loop
+- `HandleMessage(peerID, data)` - Process incoming housekeeping messages
+- `SendLatencyRequest(peerID, timestamp)` - Send latency probe to peer
+- `OnPeerDisconnected(peerID)` - Cleanup pending probes
+- `GetPendingProbes()` - Get count of pending latency probes
+- `IsRunning()` - Check if reactor is running
+
+Message Handlers:
+- `LatencyRequest` (type 140) - Calculates processing latency, sends response
+- `LatencyResponse` (type 141) - Calculates RTT, updates peer latency in PeerManager
+- `FirewallRequest` (type 142) - Stub for firewall detection
+- `FirewallResponse` (type 143) - Stub for firewall detection
+
+Latency Probing:
+- Background goroutine sends periodic probes to all connected peers
+- Pending probe tracking (peerID → request timestamp)
+- RTT calculation from request/response timestamps
+- Updates PeerManager.UpdateLatency with measured RTT
+
+PeerManager Addition:
+- `UpdateLatency(peerID, latency)` - Update peer's latency measurement
+
+**Test Coverage:**
+- 14 test functions covering:
+  - Reactor creation
+  - Start/stop lifecycle
+  - Empty message rejection
+  - Unknown type rejection
+  - Message encoding/decoding for all 4 message types
+  - Latency request/response handlers
+  - Latency response with no pending probe
+  - Firewall request/response handlers
+  - Peer disconnect cleanup
+  - Type ID constant verification
+  - Nil network handling
+
+**Design Decisions:**
+- Background probe loop with configurable interval
+- Pending probe map tracks request timestamps for RTT calculation
+- Firewall detection is stubbed (logs only, not implemented)
+- Graceful handling of nil dependencies for testing
+- RTT calculated as time.Duration for consistent time handling
+
+---

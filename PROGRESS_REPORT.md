@@ -201,3 +201,60 @@ LevelDB Implementation (`leveldb.go`):
 - Using `//nolint:gosec` for safe int64↔uint64 conversions (heights are always non-negative)
 
 ---
+
+## [Phase 5] State Store
+
+**Status:** Completed
+
+**Files Created:**
+- `statestore/store.go` - StateStore interface and Proof type definitions
+- `statestore/iavl.go` - IAVL-backed implementation using cosmos/iavl
+- `statestore/iavl_test.go` - Comprehensive test suite
+
+**Files Modified:**
+- `statestore/doc.go` - Removed (replaced by store.go)
+
+**Functionality Implemented:**
+
+StateStore Interface (`store.go`):
+- `Get(key)` - Retrieve value for key
+- `Has(key)` - Check if key exists
+- `Set(key, value)` - Store key-value pair in working tree
+- `Delete(key)` - Remove key from working tree
+- `Commit()` - Save working tree as new version (returns hash, version)
+- `RootHash()` - Get current tree root hash
+- `Version()` - Get latest committed version
+- `LoadVersion(version)` - Load specific historical version
+- `GetProof(key)` - Generate merkle proof for key
+- `Close()` - Release resources
+
+Proof Type (`store.go`):
+- `Key`, `Value`, `Exists` - Key and value info
+- `RootHash`, `Version` - Tree state
+- `ProofBytes` - Serialized ICS23 commitment proof
+- `Verify()` - Placeholder for proof verification
+
+IAVL Implementation (`iavl.go`):
+- `NewIAVLStore(path, cacheSize)` - Create persistent store with LevelDB backend
+- `NewMemoryIAVLStore(cacheSize)` - Create in-memory store for testing
+- Uses `github.com/cosmos/iavl` v1.3.5 merkle tree
+- Uses `github.com/cosmos/iavl/db` for database abstraction
+- Thread-safe with `sync.RWMutex`
+- Additional methods: `VersionExists()`, `GetVersioned()`
+- Automatic loading of latest version on startup
+
+**Test Coverage:**
+- 15 test functions with 40+ test cases
+- Tests for: creation, reopening, get/set, has/delete, commit, root hash, versioning (load, exists, get versioned), proofs (existing, non-existing), concurrent access (10 goroutines), persistence, large values (1MB), many keys (1000)
+- All tests pass with race detection
+
+**Design Decisions:**
+- Uses cosmos/iavl v1.3.5 for merkle tree implementation
+- Uses iavl/db.NewGoLevelDB for persistent storage
+- Uses iavl/db.NewMemDB for in-memory testing
+- Proof includes serialized ICS23 commitment proof bytes
+- Working tree changes visible immediately via RootHash()
+- Changes only persisted via Commit()
+- LoadVersion allows time-travel to historical states
+
+---

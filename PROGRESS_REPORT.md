@@ -849,3 +849,72 @@ PeerManager Addition:
 - RTT calculated as time.Duration for consistent time handling
 
 ---
+
+## [Phase 15] Node Coordinator
+
+**Status:** Completed
+
+**Files Created:**
+- `node/node.go` - Main Node struct with lifecycle and event loop
+- `node/node_test.go` - Node test suite
+
+**Files Modified:**
+- `handlers/handshake.go` - Added GetPeerInfo method to access full peer handshake state
+- `node/doc.go` - Removed (replaced by node.go)
+
+**Functionality Implemented:**
+
+Node (`node/node.go`):
+- `NewNode(cfg, opts...)` - Create node with all components wired together
+- `Start()` - Start network, reactors, event loop, connect to seeds
+- `Stop()` - Graceful shutdown of all components
+- `IsRunning()` - Check if node is running
+- `PeerID()` / `NodeID()` - Node identity accessors
+- `Network()` / `BlockStore()` / `Mempool()` - Component accessors
+- `PeerCount()` - Number of connected peers
+
+Component Wiring:
+- Loads or generates Ed25519 private key
+- Creates glueberry node with blockberry config
+- Wraps with p2p.Network layer
+- Creates BlockStore (LevelDB) and Mempool
+- Creates all reactors: Handshake, PEX, Transactions, Blocks, BlockSync, Consensus, Housekeeping
+- Wires dependencies between components
+
+Event Loop:
+- Handles glueberry ConnectionEvents (StateConnected, StateEstablished, StateDisconnected)
+- Routes incoming messages to appropriate reactors by stream name
+- Adds penalties for message handling errors
+
+Functional Options:
+- `WithMempool(mp)` - Use custom mempool
+- `WithBlockStore(bs)` - Use custom block store
+- `WithConsensusHandler(ch)` - Set consensus handler
+
+Key Loading:
+- `loadOrGenerateKey(path)` - Loads binary or hex-encoded key, or generates new
+- Keys saved with 0600 permissions
+
+Seed Connection:
+- `connectToSeeds()` - Connects to configured seed nodes on startup
+
+HandshakeHandler Addition:
+- `GetPeerInfo(peerID)` - Returns full PeerHandshakeState including PeerHeight
+
+**Test Coverage:**
+- 8 test functions covering:
+  - Key generation and loading (binary and hex formats)
+  - Invalid key file handling
+  - Multiaddr parsing (valid and invalid)
+  - Functional options (WithMempool, WithBlockStore)
+
+**Design Decisions:**
+- Single node.go file for simplicity (lifecycle and options inline)
+- Event loop in background goroutine with select on stop channel
+- All reactors started/stopped in order with rollback on failure
+- Private key stored as raw bytes (not hex) for efficiency
+- Hex-encoded keys supported for backwards compatibility
+- Seed connection failures logged but not fatal
+- Penalties added for any message handling errors
+
+---

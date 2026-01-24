@@ -416,3 +416,17 @@ func (h *HandshakeHandler) PeerCount() int {
 	defer h.mu.RUnlock()
 	return len(h.states)
 }
+
+// GetPeerInfo returns the full handshake info for a peer.
+func (h *HandshakeHandler) GetPeerInfo(peerID peer.ID) *PeerHandshakeState {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	state, ok := h.states[peerID]
+	if !ok {
+		return nil
+	}
+	// Return a copy
+	copy := *state
+	return &copy
+}

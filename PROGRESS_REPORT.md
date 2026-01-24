@@ -323,3 +323,97 @@ MerkleMempool (`merkle_mempool.go`):
 - Uses types.HashTx for transaction hashing (SHA-256)
 
 ---
+
+## [Phase 7] P2P Layer
+
+**Status:** Completed
+
+**Files Created:**
+- `p2p/peer_state.go` - PeerState for tracking individual peer information
+- `p2p/peer_manager.go` - PeerManager for managing all connected peers
+- `p2p/scoring.go` - PeerScorer for penalty-based peer reputation
+- `p2p/network.go` - Network wrapper for glueberry node
+- `p2p/peer_state_test.go` - PeerState test suite
+- `p2p/peer_manager_test.go` - PeerManager test suite
+- `p2p/scoring_test.go` - PeerScorer test suite
+- `p2p/network_test.go` - Network test suite
+
+**Files Modified:**
+- `p2p/doc.go` - Removed (replaced by implementation files)
+
+**Functionality Implemented:**
+
+PeerState (`peer_state.go`):
+- Tracks peer identity (PeerID, PublicKey, IsOutbound, IsSeed)
+- Tracks connection timing (ConnectedAt, LastSeen, Latency)
+- Tracks exchanged transactions (TxsSent, TxsReceived maps)
+- Tracks exchanged blocks (BlocksSent, BlocksReceived maps)
+- Penalty point management (AddPenalty, DecayPenalty, GetPenaltyPoints)
+- `ShouldSendTx(hash)` / `ShouldSendBlock(height)` - Avoid duplicate sends
+- `HasTx(hash)` / `HasBlock(height)` - Check if peer has item
+- Count methods (TxsSentCount, TxsReceivedCount, BlocksSentCount, BlocksReceivedCount)
+- Thread-safe with `sync.RWMutex`
+
+PeerManager (`peer_manager.go`):
+- `AddPeer(peerID, isOutbound)` - Add peer and create state
+- `RemovePeer(peerID)` - Remove peer
+- `GetPeer(peerID)` / `HasPeer(peerID)` - Lookup peer
+- `AllPeers()` / `AllPeerIDs()` - List all peers
+- `PeerCount()` - Number of connected peers
+- `MarkTxSent/Received(peerID, txHash)` - Track tx exchanges
+- `MarkBlockSent/Received(peerID, height)` - Track block exchanges
+- `ShouldSendTx/Block(peerID, item)` - Check before sending
+- `PeersToSendTx(hash)` / `PeersToSendBlock(height)` - Get peers needing item
+- `SetPublicKey(peerID, pubKey)` - Set peer's public key after handshake
+- Thread-safe with `sync.RWMutex`
+
+PeerScorer (`scoring.go`):
+- Penalty point thresholds: Warn (10), Ban (100)
+- Penalty values: InvalidMessage (5), InvalidBlock (20), InvalidTx (5), Timeout (2), DuplicateMessage (1), ProtocolViolation (50), ChainMismatch (100), VersionMismatch (100)
+- `AddPenalty(peerID, points, reason, message)` - Add penalty points
+- `GetPenaltyPoints(peerID)` - Get current points
+- `ShouldBan(peerID)` - Check if threshold exceeded
+- `GetBanDuration(peerID)` - Exponential backoff (1h, 2h, 4h... up to 24h max)
+- `RecordBan(peerID)` / `ResetBanCount(peerID)` - Track ban history
+- `DecayPenalties(points)` - Apply decay to all peers
+- `StartDecayLoop(stop)` - Background goroutine for hourly decay
+- Event logging with `RecentEvents(count)` and `PeerEventsCount(peerID)`
+- Capped at 1000 events in memory
+
+Network (`network.go`):
+- Stream name constants: handshake, pex, transactions, blocksync, blocks, consensus, housekeeping
+- `AllStreams()` - Returns all encrypted stream names
+- `NewNetwork(node)` - Wraps glueberry.Node
+- `Start()` / `Stop()` - Lifecycle management
+- `PeerID()` / `PublicKey()` - Local identity
+- `Connect(peerID)` / `Disconnect(peerID)` - Connection management
+- `Send(peerID, streamName, data)` - Send to specific peer
+- `Broadcast(streamName, data)` - Send to all peers
+- `BroadcastTx(txHash, data)` - Broadcast tx with dedup tracking
+- `BroadcastBlock(height, data)` - Broadcast block with dedup tracking
+- `PrepareStreams()` / `FinalizeHandshake()` / `CompleteHandshake()` - Two-phase handshake
+- `BlacklistPeer(peerID)` - Ban and disconnect peer
+- `AddPenalty(peerID, points, reason, message)` - Add penalty, auto-ban if threshold
+- `OnPeerConnected/Disconnected()` - Event handlers
+- `OnTxReceived(peerID, txHash)` / `OnBlockReceived(peerID, height)` - Track incoming
+- `Messages()` / `Events()` - Access incoming channels
+- `ConnectionState(peerID)` / `PeerCount()` - Status methods
+
+**Test Coverage:**
+- 24 test functions with 70+ test cases
+- PeerState tests: creation, tx tracking, block tracking, penalties, timing, public key, seed flag
+- PeerManager tests: add/remove, lookup, AllPeers, tx tracking, block tracking, PeersToSend, concurrent access (10 goroutines × 50 ops), SetPublicKey
+- PeerScorer tests: AddPenalty, accumulation, ShouldBan, ban duration escalation, decay, event logging, decay loop
+- Network tests: AllStreams, stream constants
+- All tests pass with race detection
+
+**Design Decisions:**
+- Tx/block tracking uses string keys from hash bytes for map efficiency
+- Penalty decay is 1 point per hour via background goroutine
+- Ban duration doubles each time (exponential backoff) up to 24h max
+- Network wraps glueberry.Node rather than embedding for better encapsulation
+- Stream names are constants to prevent typos
+- PeerScorer logs events for debugging/monitoring (capped at 1000)
+- Shift amount capped at 5 in GetBanDuration to prevent integer overflow
+
+---

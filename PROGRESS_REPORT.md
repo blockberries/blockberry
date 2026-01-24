@@ -575,3 +575,55 @@ Network Additions:
 - All tests pass with race detection
 
 ---
+
+## [Phase 10] Transactions
+
+**Status:** Completed
+
+**Files Created:**
+- `handlers/transactions.go` - TransactionsReactor for transaction gossiping
+- `handlers/transactions_test.go` - Transaction reactor test suite
+
+**Files Modified:**
+- `mempool/mempool.go` - Added TxHashes() to Mempool interface
+
+**Functionality Implemented:**
+
+TransactionsReactor (`handlers/transactions.go`):
+- `NewTransactionsReactor(mempool, network, peerManager, requestInterval, batchSize)` - Create reactor
+- `Start()` / `Stop()` - Lifecycle management with background gossip loop
+- `HandleMessage(peerID, data)` - Process incoming transaction messages
+- `SendTransactionsRequest(peerID)` - Request tx hashes from peer
+- `BroadcastTx(tx)` - Broadcast new transaction to all peers
+- `OnPeerDisconnected(peerID)` - Cleanup pending requests
+
+Message Handlers:
+- `TransactionsRequest` (type 133) - Responds with tx hashes from mempool
+- `TransactionsResponse` (type 134) - Checks for missing txs, requests data
+- `TransactionDataRequest` (type 135) - Responds with full tx data
+- `TransactionDataResponse` (type 136) - Validates hash, adds to mempool
+
+Per-Peer Tracking:
+- Tracks pending data requests per peer
+- Uses PeerManager.MarkTxSent/MarkTxReceived to avoid duplicates
+- Uses PeerManager.ShouldSendTx to filter txs peer already has
+- Hash verification with penalty on mismatch
+
+**Test Coverage:**
+- 17 test functions covering:
+  - Reactor creation and lifecycle (start/stop)
+  - Message encoding/decoding for all 4 message types
+  - Request/response handlers
+  - Hash mismatch detection
+  - Pending request tracking
+  - Peer disconnect cleanup
+  - Duplicate transaction handling
+
+**Design Decisions:**
+- Background gossip loop with configurable interval
+- Pending request map prevents duplicate data requests
+- Hash verification catches malicious/corrupted data
+- Graceful handling of nil dependencies for testing
+- Reactor handles nil network/peerManager gracefully
+
+---

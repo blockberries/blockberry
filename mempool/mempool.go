@@ -36,6 +36,9 @@ type Mempool interface {
 
 	// Flush removes all transactions from the mempool.
 	Flush()
+
+	// TxHashes returns all transaction hashes in the mempool.
+	TxHashes() [][]byte
 }
 
 // TxInfo contains metadata about a transaction in the mempool.

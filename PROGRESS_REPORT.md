@@ -1130,3 +1130,115 @@ Configuration Example (`examples/config.example.toml`):
 - Mock consensus demonstrates integration pattern without implementing real consensus
 
 ---
+
+## Phase 18 Completion - Comprehensive Documentation
+
+**Status:** Completed
+
+**Files Created:**
+- `README.md` - Main project README with overview, quick start, and reference
+- `docs/GETTING_STARTED.md` - Getting started guide for new users
+- `docs/CONFIGURATION.md` - Complete configuration reference
+- `docs/INTEGRATION.md` - Integration guide for application developers
+- `docs/API.md` - Detailed API reference for all public interfaces
+
+**PEX Integration Test Added:**
+- `TestTenNodes_PeerExchange` - Tests that 10 nodes discover each other through PEX
+  - 1 seed node, 9 nodes that only know the seed
+  - All nodes discover each other within ~12 seconds
+  - Verified with 100% pass rate with race detector
+
+**Glueberry Enhancement:**
+- Added `PeerAddrs(peerID peer.ID) []multiaddr.Multiaddr` method to glueberry `Node`
+- Allows accessing peer addresses from libp2p's peerstore
+- Critical for PEX to work with incoming connections (which aren't in the address book)
+
+**Files Modified:**
+- `glueberry/node.go` - Added PeerAddrs method
+- `blockberry/node/node.go` - Updated to use PeerAddrs for PEX address handling
+- `blockberry/testing/helpers.go` - Updated to use PeerAddrs for PEX address handling
+- `blockberry/testing/integration_test.go` - Added TestTenNodes_PeerExchange
+
+**Documentation Summary:**
+
+README.md:
+- Project overview and features
+- Architecture diagram
+- Installation and quick start
+- Configuration overview
+- Core components documentation
+- Package structure
+
+docs/GETTING_STARTED.md:
+- Step-by-step setup guide
+- Basic node creation
+- Connecting to peers
+- Transaction submission
+- Block access
+- Consensus implementation intro
+
+docs/CONFIGURATION.md:
+- All configuration sections documented
+- Field types, defaults, and descriptions
+- Duration format reference
+- Complete example configuration
+- Programmatic configuration guide
+- Multiaddr format reference
+
+docs/INTEGRATION.md:
+- Application interface implementation
+- CheckTx, block execution, consensus handler
+- Building complete applications
+- Custom mempool implementation
+- Sending consensus messages
+- Error handling reference
+- Testing utilities
+
+docs/API.md:
+- Node package API
+- Mempool interface
+- BlockStore interface
+- StateStore interface
+- Network API
+- ConsensusHandler interface
+- Types and errors reference
+- Config package API
+
+---
+
+## Project Completion Summary
+
+All 18 phases of the implementation plan have been completed:
+
+1. **Project Setup** - Build system, dependencies, directory structure
+2. **Configuration** - TOML config loading, validation, defaults
+3. **Types & Errors** - Common types, hash functions, sentinel errors
+4. **Block Store** - LevelDB-backed persistent block storage
+5. **State Store** - IAVL-based merkleized key-value store
+6. **Mempool** - Hash-based transaction pool with limits
+7. **P2P Layer** - Peer state, manager, scoring, network wrapper
+8. **Handshake** - Flag-based connection establishment protocol
+9. **PEX** - Peer exchange with address book and auto-connect
+10. **Transactions** - Transaction gossiping between peers
+11. **Block Sync** - Historical block synchronization
+12. **Block Propagation** - Real-time block broadcasting
+13. **Consensus Integration** - Pass-through consensus stream
+14. **Housekeeping** - Latency probes and peer health
+15. **Node Coordinator** - Main node orchestration
+16. **Application Interface** - ABCI-like application integration
+17. **Integration Testing** - Full node-to-node tests
+18. **Documentation** - README, guides, API reference
+
+**Test Statistics:**
+- 150+ test functions across all packages
+- 500+ test cases covering edge cases
+- All tests pass with race detection
+- Integration tests verify full P2P communication
+
+**Key Features:**
+- Consensus-agnostic design
+- Modular, pluggable components
+- Encrypted P2P communication
+- Efficient peer discovery via PEX
+- Merkleized state with proofs
+- Robust handshake protocol

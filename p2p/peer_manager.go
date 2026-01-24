@@ -219,3 +219,43 @@ func (pm *PeerManager) SetPublicKey(peerID peer.ID, pubKey []byte) error {
 	state.SetPublicKey(pubKey)
 	return nil
 }
+
+// GetConnectedPeers returns all connected peer IDs.
+func (pm *PeerManager) GetConnectedPeers() []peer.ID {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	ids := make([]peer.ID, 0, len(pm.peers))
+	for id := range pm.peers {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+// OutboundPeerCount returns the number of outbound peers.
+func (pm *PeerManager) OutboundPeerCount() int {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	count := 0
+	for _, state := range pm.peers {
+		if state.IsOutbound {
+			count++
+		}
+	}
+	return count
+}
+
+// InboundPeerCount returns the number of inbound peers.
+func (pm *PeerManager) InboundPeerCount() int {
+	pm.mu.RLock()
+	defer pm.mu.RUnlock()
+
+	count := 0
+	for _, state := range pm.peers {
+		if !state.IsOutbound {
+			count++
+		}
+	}
+	return count
+}

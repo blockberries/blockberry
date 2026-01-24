@@ -483,3 +483,81 @@ Utility Methods:
 - Early HelloFinalize receipt (before we've sent ours) is gracefully handled
 
 ---
+
+## [Phase 9] PEX (Peer Exchange)
+
+**Status:** Completed
+
+**Files Created:**
+- `pex/address_book.go` - AddressBook with JSON persistence
+- `pex/reactor.go` - PEX reactor for peer exchange protocol
+- `pex/address_book_test.go` - AddressBook test suite
+- `pex/reactor_test.go` - Reactor test suite
+
+**Files Modified:**
+- `p2p/peer_manager.go` - Added GetConnectedPeers, OutboundPeerCount, InboundPeerCount
+- `p2p/network.go` - Added ConnectMultiaddr for connecting via multiaddr string
+
+**Functionality Implemented:**
+
+AddressBook (`address_book.go`):
+- `NewAddressBook(path)` - Create address book with optional persistence
+- `Load()` / `Save()` - JSON persistence with atomic writes
+- `AddPeer(peerID, multiaddr, nodeID, latency)` - Add or update peer
+- `RemovePeer(peerID)` - Remove peer
+- `GetPeer(peerID)` / `HasPeer(peerID)` - Lookup peer
+- `GetPeers()` / `Size()` - List all peers
+- `MarkSeed(peerID)` - Mark peer as seed node
+- `UpdateLastSeen(peerID)` / `UpdateLatency(peerID, latency)` - Update peer info
+- `RecordAttempt(peerID)` / `ResetAttempts(peerID)` - Connection attempt tracking
+- `GetPeersForExchange(lastSeenAfter, max)` - Get peers for PEX response
+- `GetPeersToConnect(exclude, max)` - Get connection candidates with backoff
+- `AddSeeds(addrs)` / `GetSeeds()` - Seed node management
+- `Prune(maxAge)` - Remove stale peers (preserves seeds)
+
+AddressEntry struct:
+- Multiaddr, NodeID, LastSeen, Latency
+- IsSeed, LastAttempt, AttemptCount
+
+Reactor (`reactor.go`):
+- `NewReactor(enabled, requestInterval, maxAddresses, addressBook, network, peerManager, maxInbound, maxOutbound)` - Create reactor
+- `Start()` / `Stop()` - Lifecycle management
+- `HandleMessage(peerID, data)` - Process incoming PEX messages
+- `handleAddressRequest(peerID, data)` - Respond with peer addresses
+- `handleAddressResponse(peerID, data)` - Add received peers to address book
+- `sendAddressRequest(peerID)` - Send address request
+- `sendAddressResponse(peerID, resp)` - Send address response
+- `encodeMessage(typeID, msg)` - Encode message with type ID prefix
+- `requestLoop()` - Periodic address requests to connected peers
+- `connectionLoop()` - Periodic connection management
+- `ensureOutboundConnections()` - Maintain outbound peer count
+- `OnPeerConnected(peerID, multiaddr, isOutbound)` - Handle new connection
+- `OnPeerDisconnected(peerID)` - Handle disconnection
+- `GetAddressBook()` / `IsRunning()` - Accessor methods
+- `RequestAddresses(peerID)` - Manual address request
+
+PeerManager Additions:
+- `GetConnectedPeers()` - Returns all connected peer IDs
+- `OutboundPeerCount()` - Count of outbound peers
+- `InboundPeerCount()` - Count of inbound peers
+
+Network Additions:
+- `ConnectMultiaddr(addrStr)` - Connect using multiaddr string
+
+**Test Coverage:**
+- 27 test functions with 50+ test cases
+- AddressBook tests: creation, add/get/update/remove peer, has peer, size, get peers, mark seed, update last seen, update latency, record/reset attempts, peers for exchange (filtering, limiting, sorting), peers to connect (backoff, exclusion, sorting), seeds, prune, save/load persistence, empty path handling, concurrency (4 goroutines)
+- Reactor tests: creation, start/stop, disabled start, empty message, invalid type ID, address request handling, address response handling, invalid node ID handling, peer connected/disconnected, encode message, type ID constants, requester exclusion, missing fields handling
+- All tests pass with race detection
+
+**Design Decisions:**
+- AddressBook stores peers by peer.ID with full entry metadata
+- JSON persistence with atomic writes (write to .tmp, then rename)
+- Connection attempts tracked with exponential backoff (1s, 2s, 4s... up to 1h)
+- Peers sorted by latency then last seen for connection selection
+- PEX responses exclude the requesting peer
+- Address response peers with invalid node IDs are silently skipped
+- Reactor handles nil network/peerManager gracefully for testing
+- File permissions set to 0600 for security
+
+---

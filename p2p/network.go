@@ -8,6 +8,7 @@ import (
 	"github.com/blockberries/glueberry"
 	"github.com/blockberries/glueberry/pkg/streams"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/multiformats/go-multiaddr"
 
 	"github.com/blockberries/blockberry/types"
 )
@@ -142,6 +143,25 @@ func (n *Network) Events() <-chan glueberry.ConnectionEvent {
 // Connect initiates a connection to a peer.
 func (n *Network) Connect(peerID peer.ID) error {
 	return n.node.Connect(peerID)
+}
+
+// ConnectMultiaddr initiates a connection to a peer using a multiaddr string.
+func (n *Network) ConnectMultiaddr(addrStr string) error {
+	maddr, err := multiaddr.NewMultiaddr(addrStr)
+	if err != nil {
+		return fmt.Errorf("parsing multiaddr: %w", err)
+	}
+
+	addrInfo, err := peer.AddrInfoFromP2pAddr(maddr)
+	if err != nil {
+		return fmt.Errorf("extracting peer info from multiaddr: %w", err)
+	}
+
+	if err := n.node.AddPeer(addrInfo.ID, addrInfo.Addrs, nil); err != nil {
+		return fmt.Errorf("adding peer: %w", err)
+	}
+
+	return nil
 }
 
 // Disconnect closes the connection to a peer.

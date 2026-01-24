@@ -918,3 +918,56 @@ HandshakeHandler Addition:
 - Penalties added for any message handling errors
 
 ---
+
+## [Phase 16] Application Interface
+
+**Status:** Completed
+
+**Files Created:**
+- `types/application.go` - Application interface definition
+- `types/null_app.go` - NullApplication no-op implementation
+- `types/application_test.go` - Application test suite
+
+**Functionality Implemented:**
+
+Application Interface (`types/application.go`):
+```go
+type Application interface {
+    CheckTx(tx []byte) error
+    BeginBlock(height int64, hash []byte) error
+    DeliverTx(tx []byte) error
+    EndBlock() error
+    Commit() (appHash []byte, err error)
+    Query(path string, data []byte) ([]byte, error)
+    HandleConsensusMessage(peerID peer.ID, data []byte) error
+}
+```
+
+Helper Types:
+- `TxValidator` - Function type for transaction validation
+- `BlockValidator` - Function type for block validation
+
+NullApplication (`types/null_app.go`):
+- `NewNullApplication()` - Create new null application
+- All methods return nil (accept everything)
+- Tracks `LastBlockHeight`, `LastBlockHash`, `AppHash`
+- Implements `Application` interface (compile-time check)
+
+**Test Coverage:**
+- 7 test functions covering:
+  - NullApplication creation
+  - CheckTx accepts all transactions
+  - Block flow (BeginBlock, DeliverTx, EndBlock, Commit)
+  - Query returns nil
+  - HandleConsensusMessage accepts all
+  - Interface implementation verification
+  - Multiple block processing
+
+**Design Decisions:**
+- Application includes ConsensusHandler for unified consensus handling
+- NullApplication useful for testing and as template for real apps
+- TxValidator and BlockValidator types for callback-based validation
+- AppHash initialized to 32 zero bytes (standard hash size)
+- All NullApplication methods are no-ops for maximum flexibility
+
+---

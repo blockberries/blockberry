@@ -23,8 +23,8 @@ func TestNewMempool(t *testing.T) {
 	require.Equal(t, int64(0), mp.SizeBytes())
 }
 
-func TestMerkleMempool_AddTx(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_AddTx(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	t.Run("adds transaction", func(t *testing.T) {
 		tx := []byte("transaction 1")
@@ -56,8 +56,8 @@ func TestMerkleMempool_AddTx(t *testing.T) {
 	})
 }
 
-func TestMerkleMempool_MaxTxs(t *testing.T) {
-	mp := NewMerkleMempool(5, 0) // Max 5 txs, no byte limit
+func TestSimpleMempool_MaxTxs(t *testing.T) {
+	mp := NewSimpleMempool(5, 0) // Max 5 txs, no byte limit
 
 	for i := 0; i < 5; i++ {
 		err := mp.AddTx([]byte{byte(i)})
@@ -69,8 +69,8 @@ func TestMerkleMempool_MaxTxs(t *testing.T) {
 	require.Equal(t, 5, mp.Size())
 }
 
-func TestMerkleMempool_MaxBytes(t *testing.T) {
-	mp := NewMerkleMempool(0, 100) // No tx limit, max 100 bytes
+func TestSimpleMempool_MaxBytes(t *testing.T) {
+	mp := NewSimpleMempool(0, 100) // No tx limit, max 100 bytes
 
 	// Add 90 bytes
 	err := mp.AddTx(make([]byte, 90))
@@ -86,8 +86,8 @@ func TestMerkleMempool_MaxBytes(t *testing.T) {
 	require.Equal(t, int64(100), mp.SizeBytes())
 }
 
-func TestMerkleMempool_HasTx(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_HasTx(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	tx := []byte("test transaction")
 	hash := types.HashTx(tx)
@@ -101,8 +101,8 @@ func TestMerkleMempool_HasTx(t *testing.T) {
 	require.False(t, mp.HasTx(unknownHash))
 }
 
-func TestMerkleMempool_GetTx(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_GetTx(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	tx := []byte("test transaction")
 	hash := types.HashTx(tx)
@@ -121,8 +121,8 @@ func TestMerkleMempool_GetTx(t *testing.T) {
 	})
 }
 
-func TestMerkleMempool_RemoveTxs(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_RemoveTxs(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	// Add some transactions
 	txs := make([][]byte, 5)
@@ -158,8 +158,8 @@ func TestMerkleMempool_RemoveTxs(t *testing.T) {
 	})
 }
 
-func TestMerkleMempool_ReapTxs(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_ReapTxs(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	// Add transactions in order
 	for i := 0; i < 5; i++ {
@@ -187,37 +187,8 @@ func TestMerkleMempool_ReapTxs(t *testing.T) {
 	})
 }
 
-func TestMerkleMempool_RootHash(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
-
-	t.Run("empty mempool has nil root", func(t *testing.T) {
-		require.Nil(t, mp.RootHash())
-	})
-
-	t.Run("root changes with additions", func(t *testing.T) {
-		require.NoError(t, mp.AddTx([]byte("tx1")))
-		root1 := mp.RootHash()
-		require.NotNil(t, root1)
-
-		require.NoError(t, mp.AddTx([]byte("tx2")))
-		root2 := mp.RootHash()
-		require.NotEqual(t, root1, root2)
-	})
-
-	t.Run("root changes with removals", func(t *testing.T) {
-		tx := []byte("tx3")
-		hash := types.HashTx(tx)
-		require.NoError(t, mp.AddTx(tx))
-		root1 := mp.RootHash()
-
-		mp.RemoveTxs([][]byte{hash})
-		root2 := mp.RootHash()
-		require.NotEqual(t, root1, root2)
-	})
-}
-
-func TestMerkleMempool_Flush(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_Flush(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	for i := 0; i < 10; i++ {
 		require.NoError(t, mp.AddTx([]byte{byte(i)}))
@@ -230,11 +201,10 @@ func TestMerkleMempool_Flush(t *testing.T) {
 
 	require.Equal(t, 0, mp.Size())
 	require.Equal(t, int64(0), mp.SizeBytes())
-	require.Nil(t, mp.RootHash())
 }
 
-func TestMerkleMempool_TxHashes(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_TxHashes(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	// Add transactions
 	expectedHashes := make([][]byte, 5)
@@ -252,8 +222,8 @@ func TestMerkleMempool_TxHashes(t *testing.T) {
 	}
 }
 
-func TestMerkleMempool_Concurrent(t *testing.T) {
-	mp := NewMerkleMempool(1000, 10*1024*1024)
+func TestSimpleMempool_Concurrent(t *testing.T) {
+	mp := NewSimpleMempool(1000, 10*1024*1024)
 
 	const numGoroutines = 10
 	const txsPerGoroutine = 50
@@ -301,15 +271,10 @@ func TestMerkleMempool_Concurrent(t *testing.T) {
 	}
 
 	wg.Wait()
-
-	// Verify root hash is consistent
-	root1 := mp.RootHash()
-	root2 := mp.RootHash()
-	require.Equal(t, root1, root2)
 }
 
-func TestMerkleMempool_InsertionOrder(t *testing.T) {
-	mp := NewMerkleMempool(100, 1024*1024)
+func TestSimpleMempool_InsertionOrder(t *testing.T) {
+	mp := NewSimpleMempool(100, 1024*1024)
 
 	// Add in specific order
 	order := []string{"first", "second", "third", "fourth", "fifth"}
@@ -329,8 +294,8 @@ func TestMerkleMempool_InsertionOrder(t *testing.T) {
 	require.Equal(t, []byte("fifth"), txs[3])
 }
 
-func BenchmarkMerkleMempool_AddTx(b *testing.B) {
-	mp := NewMerkleMempool(b.N+1, int64(b.N*100))
+func BenchmarkSimpleMempool_AddTx(b *testing.B) {
+	mp := NewSimpleMempool(b.N+1, int64(b.N*100))
 
 	txs := make([][]byte, b.N)
 	for i := 0; i < b.N; i++ {
@@ -340,19 +305,5 @@ func BenchmarkMerkleMempool_AddTx(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = mp.AddTx(txs[i])
-	}
-}
-
-func BenchmarkMerkleMempool_RootHash(b *testing.B) {
-	mp := NewMerkleMempool(1000, 10*1024*1024)
-
-	// Pre-populate
-	for i := 0; i < 1000; i++ {
-		_ = mp.AddTx([]byte(fmt.Sprintf("tx_%d", i)))
-	}
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		mp.RootHash()
 	}
 }

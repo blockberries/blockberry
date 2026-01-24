@@ -6,13 +6,10 @@ import (
 	"github.com/blockberries/blockberry/types"
 )
 
-// MerkleMempool implements Mempool with a merkle tree for efficient root hash computation.
-type MerkleMempool struct {
+// SimpleMempool implements Mempool with a simple hash-based storage.
+type SimpleMempool struct {
 	// txs maps transaction hash (as string) to transaction data
 	txs map[string][]byte
-
-	// merkleTree maintains the merkle root of all tx hashes
-	merkleTree *MerkleTree
 
 	// order maintains insertion order for ReapTxs
 	order [][]byte
@@ -27,19 +24,18 @@ type MerkleMempool struct {
 	mu sync.RWMutex
 }
 
-// NewMerkleMempool creates a new merkleized mempool.
-func NewMerkleMempool(maxTxs int, maxBytes int64) *MerkleMempool {
-	return &MerkleMempool{
-		txs:        make(map[string][]byte),
-		merkleTree: NewMerkleTree(),
-		order:      make([][]byte, 0),
-		maxTxs:     maxTxs,
-		maxBytes:   maxBytes,
+// NewSimpleMempool creates a new simple mempool.
+func NewSimpleMempool(maxTxs int, maxBytes int64) *SimpleMempool {
+	return &SimpleMempool{
+		txs:      make(map[string][]byte),
+		order:    make([][]byte, 0),
+		maxTxs:   maxTxs,
+		maxBytes: maxBytes,
 	}
 }
 
 // AddTx adds a transaction to the mempool.
-func (m *MerkleMempool) AddTx(tx []byte) error {
+func (m *SimpleMempool) AddTx(tx []byte) error {
 	if tx == nil {
 		return types.ErrInvalidTx
 	}
@@ -66,7 +62,6 @@ func (m *MerkleMempool) AddTx(tx []byte) error {
 
 	// Add transaction
 	m.txs[hashKey] = tx
-	m.merkleTree.Add(hash)
 	m.order = append(m.order, hash)
 	m.sizeBytes += txSize
 
@@ -74,7 +69,7 @@ func (m *MerkleMempool) AddTx(tx []byte) error {
 }
 
 // RemoveTxs removes transactions by their hashes.
-func (m *MerkleMempool) RemoveTxs(hashes [][]byte) {
+func (m *SimpleMempool) RemoveTxs(hashes [][]byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -83,7 +78,6 @@ func (m *MerkleMempool) RemoveTxs(hashes [][]byte) {
 		if tx, exists := m.txs[hashKey]; exists {
 			m.sizeBytes -= int64(len(tx))
 			delete(m.txs, hashKey)
-			m.merkleTree.Remove(hash)
 		}
 	}
 
@@ -98,7 +92,7 @@ func (m *MerkleMempool) RemoveTxs(hashes [][]byte) {
 }
 
 // ReapTxs returns up to maxBytes worth of transactions in insertion order.
-func (m *MerkleMempool) ReapTxs(maxBytes int64) [][]byte {
+func (m *SimpleMempool) ReapTxs(maxBytes int64) [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -125,7 +119,7 @@ func (m *MerkleMempool) ReapTxs(maxBytes int64) [][]byte {
 }
 
 // HasTx checks if a transaction with the given hash exists.
-func (m *MerkleMempool) HasTx(hash []byte) bool {
+func (m *SimpleMempool) HasTx(hash []byte) bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -134,7 +128,7 @@ func (m *MerkleMempool) HasTx(hash []byte) bool {
 }
 
 // GetTx retrieves a transaction by its hash.
-func (m *MerkleMempool) GetTx(hash []byte) ([]byte, error) {
+func (m *SimpleMempool) GetTx(hash []byte) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -146,7 +140,7 @@ func (m *MerkleMempool) GetTx(hash []byte) ([]byte, error) {
 }
 
 // Size returns the number of transactions in the mempool.
-func (m *MerkleMempool) Size() int {
+func (m *SimpleMempool) Size() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -154,34 +148,25 @@ func (m *MerkleMempool) Size() int {
 }
 
 // SizeBytes returns the total size in bytes of all transactions.
-func (m *MerkleMempool) SizeBytes() int64 {
+func (m *SimpleMempool) SizeBytes() int64 {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	return m.sizeBytes
 }
 
-// RootHash returns the merkle root hash of all transaction hashes.
-func (m *MerkleMempool) RootHash() []byte {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	return m.merkleTree.RootHash()
-}
-
 // Flush removes all transactions from the mempool.
-func (m *MerkleMempool) Flush() {
+func (m *SimpleMempool) Flush() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.txs = make(map[string][]byte)
-	m.merkleTree.Clear()
 	m.order = m.order[:0]
 	m.sizeBytes = 0
 }
 
 // TxHashes returns all transaction hashes in the mempool.
-func (m *MerkleMempool) TxHashes() [][]byte {
+func (m *SimpleMempool) TxHashes() [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

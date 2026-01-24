@@ -34,10 +34,6 @@ type Mempool interface {
 	// SizeBytes returns the total size in bytes of all transactions.
 	SizeBytes() int64
 
-	// RootHash returns the merkle root hash of all transaction hashes.
-	// This provides a compact commitment to the mempool contents.
-	RootHash() []byte
-
 	// Flush removes all transactions from the mempool.
 	Flush()
 }
@@ -51,5 +47,5 @@ type TxInfo struct {
 
 // NewMempool creates a new mempool with the given configuration.
 func NewMempool(cfg config.MempoolConfig) Mempool {
-	return NewMerkleMempool(cfg.MaxTxs, cfg.MaxBytes)
+	return NewSimpleMempool(cfg.MaxTxs, cfg.MaxBytes)
 }

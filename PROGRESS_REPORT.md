@@ -261,14 +261,12 @@ IAVL Implementation (`iavl.go`):
 
 ## [Phase 6] Mempool
 
-**Status:** Completed
+**Status:** Completed (Later refactored - see Mempool Refactor below)
 
 **Files Created:**
 - `mempool/mempool.go` - Mempool interface and factory function
-- `mempool/merkle.go` - In-memory merkle tree for root hash computation
-- `mempool/merkle_mempool.go` - MerkleMempool implementation
-- `mempool/mempool_test.go` - MerkleMempool test suite
-- `mempool/merkle_test.go` - Merkle tree test suite
+- `mempool/simple_mempool.go` - SimpleMempool implementation (hash-based storage)
+- `mempool/mempool_test.go` - SimpleMempool test suite
 
 **Files Modified:**
 - `mempool/doc.go` - Removed (replaced by mempool.go)
@@ -283,23 +281,11 @@ Mempool Interface (`mempool.go`):
 - `GetTx(hash)` - Retrieve transaction by hash
 - `Size()` - Number of transactions
 - `SizeBytes()` - Total bytes of all transactions
-- `RootHash()` - Merkle root of all tx hashes
 - `Flush()` - Remove all transactions
 - `NewMempool(cfg)` - Factory function using config
 
-MerkleTree (`merkle.go`):
-- `NewMerkleTree()` - Create empty merkle tree
-- `Add(hash)` - Insert hash (returns false if duplicate)
-- `Remove(hash)` - Delete hash (returns false if not found)
-- `Has(hash)` - Check existence
-- `Size()` - Number of leaves
-- `RootHash()` - Compute merkle root (bottom-up construction)
-- `Clear()` - Remove all leaves
-- `Leaves()` - Get copy of all leaf hashes
-- O(1) add/remove using map + slice swap
-
-MerkleMempool (`merkle_mempool.go`):
-- `NewMerkleMempool(maxTxs, maxBytes)` - Create with limits
+SimpleMempool (`simple_mempool.go`):
+- `NewSimpleMempool(maxTxs, maxBytes)` - Create with limits
 - Stores tx hash → tx data mapping
 - Maintains insertion order for ReapTxs
 - Enforces maxTxs and maxBytes limits
@@ -307,17 +293,13 @@ MerkleMempool (`merkle_mempool.go`):
 - `TxHashes()` - Get all transaction hashes
 
 **Test Coverage:**
-- 22 test functions + 2 benchmarks
-- MerkleTree tests: add, remove, root hash (empty, single, 2, 3, 4 elements), clear, leaves, determinism
-- MerkleMempool tests: add/get, duplicates, nil tx, max limits, has/get, remove, reap ordering, root hash changes, flush, tx hashes, concurrent access (10 goroutines × 50 txs), insertion order preservation
+- 12 test functions + 1 benchmark
+- SimpleMempool tests: add/get, duplicates, nil tx, max limits, has/get, remove, reap ordering, flush, tx hashes, concurrent access (10 goroutines × 50 txs), insertion order preservation
 - All tests pass with race detection
-- Benchmarks for AddTx and RootHash operations
+- Benchmark for AddTx operation
 
 **Design Decisions:**
-- Merkle tree uses bottom-up construction, promoting odd nodes
-- O(1) removal via map lookup + swap with last element
-- RootHash computed on demand (not cached) for simplicity
-- Empty mempool returns nil root hash
+- Simple hash-based storage (no merkle tree - peers don't need membership proofs)
 - ReapTxs returns copies, originals stay in mempool
 - Insertion order preserved even after removals
 - Uses types.HashTx for transaction hashing (SHA-256)
@@ -559,5 +541,37 @@ Network Additions:
 - Address response peers with invalid node IDs are silently skipped
 - Reactor handles nil network/peerManager gracefully for testing
 - File permissions set to 0600 for security
+
+---
+
+## Mempool Refactor
+
+**Status:** Completed
+
+**Reason:** The merkle tree implementation was unnecessary since the mempool does not need to prove to other peers that it has or doesn't have a specific transaction. Simplified to a basic hash-based storage.
+
+**Files Deleted:**
+- `mempool/merkle.go` - Merkle tree implementation
+- `mempool/merkle_mempool.go` - MerkleMempool implementation
+- `mempool/merkle_test.go` - Merkle tree tests
+
+**Files Created:**
+- `mempool/simple_mempool.go` - SimpleMempool with hash-based storage
+
+**Files Modified:**
+- `mempool/mempool.go` - Removed RootHash() from interface, updated factory function
+- `mempool/mempool_test.go` - Updated tests to use SimpleMempool, removed RootHash tests
+- `CLAUDE.md` - Updated mempool description to reflect hash-based storage
+
+**Changes:**
+- Removed `RootHash()` method from Mempool interface
+- Replaced MerkleMempool with SimpleMempool
+- Removed in-memory merkle tree implementation
+- Simplified storage to plain hash map with insertion order tracking
+- All existing functionality preserved (AddTx, RemoveTxs, ReapTxs, etc.)
+
+**Test Coverage:**
+- 12 test functions + 1 benchmark
+- All tests pass with race detection
 
 ---

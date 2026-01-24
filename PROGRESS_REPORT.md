@@ -258,3 +258,68 @@ IAVL Implementation (`iavl.go`):
 - LoadVersion allows time-travel to historical states
 
 ---
+
+## [Phase 6] Mempool
+
+**Status:** Completed
+
+**Files Created:**
+- `mempool/mempool.go` - Mempool interface and factory function
+- `mempool/merkle.go` - In-memory merkle tree for root hash computation
+- `mempool/merkle_mempool.go` - MerkleMempool implementation
+- `mempool/mempool_test.go` - MerkleMempool test suite
+- `mempool/merkle_test.go` - Merkle tree test suite
+
+**Files Modified:**
+- `mempool/doc.go` - Removed (replaced by mempool.go)
+
+**Functionality Implemented:**
+
+Mempool Interface (`mempool.go`):
+- `AddTx(tx)` - Add transaction to mempool
+- `RemoveTxs(hashes)` - Remove transactions by hash
+- `ReapTxs(maxBytes)` - Get transactions in insertion order up to size limit
+- `HasTx(hash)` - Check if transaction exists
+- `GetTx(hash)` - Retrieve transaction by hash
+- `Size()` - Number of transactions
+- `SizeBytes()` - Total bytes of all transactions
+- `RootHash()` - Merkle root of all tx hashes
+- `Flush()` - Remove all transactions
+- `NewMempool(cfg)` - Factory function using config
+
+MerkleTree (`merkle.go`):
+- `NewMerkleTree()` - Create empty merkle tree
+- `Add(hash)` - Insert hash (returns false if duplicate)
+- `Remove(hash)` - Delete hash (returns false if not found)
+- `Has(hash)` - Check existence
+- `Size()` - Number of leaves
+- `RootHash()` - Compute merkle root (bottom-up construction)
+- `Clear()` - Remove all leaves
+- `Leaves()` - Get copy of all leaf hashes
+- O(1) add/remove using map + slice swap
+
+MerkleMempool (`merkle_mempool.go`):
+- `NewMerkleMempool(maxTxs, maxBytes)` - Create with limits
+- Stores tx hash → tx data mapping
+- Maintains insertion order for ReapTxs
+- Enforces maxTxs and maxBytes limits
+- Thread-safe with `sync.RWMutex`
+- `TxHashes()` - Get all transaction hashes
+
+**Test Coverage:**
+- 22 test functions + 2 benchmarks
+- MerkleTree tests: add, remove, root hash (empty, single, 2, 3, 4 elements), clear, leaves, determinism
+- MerkleMempool tests: add/get, duplicates, nil tx, max limits, has/get, remove, reap ordering, root hash changes, flush, tx hashes, concurrent access (10 goroutines × 50 txs), insertion order preservation
+- All tests pass with race detection
+- Benchmarks for AddTx and RootHash operations
+
+**Design Decisions:**
+- Merkle tree uses bottom-up construction, promoting odd nodes
+- O(1) removal via map lookup + swap with last element
+- RootHash computed on demand (not cached) for simplicity
+- Empty mempool returns nil root hash
+- ReapTxs returns copies, originals stay in mempool
+- Insertion order preserved even after removals
+- Uses types.HashTx for transaction hashing (SHA-256)
+
+---

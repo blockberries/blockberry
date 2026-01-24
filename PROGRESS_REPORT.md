@@ -417,3 +417,69 @@ Network (`network.go`):
 - Shift amount capped at 5 in GetBanDuration to prevent integer overflow
 
 ---
+
+## [Phase 8] Handshake
+
+**Status:** Completed
+
+**Files Created:**
+- `handlers/handshake.go` - HandshakeHandler for connection establishment protocol
+- `handlers/handshake_test.go` - Comprehensive test suite
+
+**Files Modified:**
+- `handlers/doc.go` - Retained as package documentation
+
+**Functionality Implemented:**
+
+HandshakeHandler (`handshake.go`):
+- Manages handshake protocol for peer connections
+- State machine: StateInit → StateHelloSent → StateHelloReceived → StateResponseSent → StateResponseReceived → StateFinalizeSent → StateComplete
+- Per-peer handshake state tracking with PeerHandshakeState struct
+- Message type ID constants matching schema (128, 129, 130)
+
+HelloRequest Handling:
+- `OnPeerConnected(peerID, isOutbound)` - Initiates handshake by sending HelloRequest
+- `sendHelloRequest(peerID)` - Sends HelloRequest with node_id, version, chain_id, timestamp, latest_height
+- `handleHelloRequest(peerID, data)` - Validates chain_id and version, blacklists on mismatch, sends HelloResponse
+
+HelloResponse Handling:
+- `sendHelloResponse(peerID, accepted)` - Sends HelloResponse with acceptance and public key
+- `handleHelloResponse(peerID, data)` - Checks acceptance, calls PrepareStreams with peer's public key, sends HelloFinalize
+
+HelloFinalize Handling:
+- `sendHelloFinalize(peerID, success)` - Sends HelloFinalize with success flag
+- `handleHelloFinalize(peerID, data)` - Calls FinalizeHandshake, stores peer's public key in PeerManager, transitions to StateComplete
+
+Message Encoding:
+- `HandleMessage(peerID, data)` - Dispatches incoming messages by type ID
+- `encodeHandshakeMessage(typeID, msg)` - Encodes message with type ID prefix
+- Uses cramberry for serialization
+
+Utility Methods:
+- `OnPeerDisconnected(peerID)` - Cleans up handshake state
+- `GetPeerState(peerID)` - Returns handshake state for peer
+- `IsHandshakeComplete(peerID)` - Checks if handshake is complete
+- `PeerCount()` - Returns number of peers with active handshakes
+
+**Test Coverage:**
+- 10 test functions with 20+ test cases
+- TestHandshakeState: initial state, state after init, is handshake complete, peer count, cleanup on disconnect
+- TestEncodeDecodeHelloRequest: encode/decode round-trip
+- TestEncodeDecodeHelloResponse: encode/decode round-trip
+- TestEncodeDecodeHelloFinalize: encode/decode round-trip
+- TestHandleHelloRequestValidation: chain ID mismatch, version mismatch, missing required field
+- TestHandleHelloResponseValidation: no handshake state, rejection response
+- TestHandleHelloFinalizeValidation: no handshake state, failure response, early finalize
+- TestHandleMessageDispatch: empty message, unknown type ID, valid HelloRequest dispatch
+- TestHandshakeConstants: verifies type ID constants match schema
+- All tests pass with race detection
+
+**Design Decisions:**
+- State machine tracks both local and remote handshake progress
+- Nil network/peerManager checks for testability without full P2P stack
+- Type ID prefix written before message data for polymorphic decoding
+- Chain ID and version mismatches result in peer blacklisting (permanent ban)
+- Handshake rejection (accepted=false) and failure (success=false) both disconnect peer
+- Early HelloFinalize receipt (before we've sent ours) is gracefully handled
+
+---

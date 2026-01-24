@@ -971,3 +971,62 @@ NullApplication (`types/null_app.go`):
 - All NullApplication methods are no-ops for maximum flexibility
 
 ---
+
+## [Phase 17] Integration Testing
+
+**Status:** Completed
+
+**Files Created:**
+- `testing/helpers.go` - Test utilities for integration tests
+- `testing/integration_test.go` - Integration test suite
+
+**Functionality Implemented:**
+
+Test Utilities (`testing/helpers.go`):
+- `TestNode` - Wrapper for blockberry node with test utilities
+- `TestNodeConfig` - Configuration options for test nodes
+- `NewTestNode(cfg)` - Creates test node with random keys and ephemeral ports
+- `Start()` / `Stop()` / `Cleanup()` - Lifecycle management
+- `ConnectTo(other)` - Connect to another test node
+- `WaitForConnection(peerID, timeout)` - Wait for connection establishment
+- `WaitForPeerCount(count, timeout)` - Wait for peer count
+- `MockApplication` - Test application tracking received events
+
+Integration Tests (`testing/integration_test.go`):
+
+Two-Node Tests:
+- `TestTwoNodes_Handshake` - Two nodes connect and complete handshake
+- `TestTwoNodes_ChainIDMismatch` - Chain ID mismatch prevents connection
+- `TestTwoNodes_TransactionGossip` - Transaction propagation between nodes
+- `TestTwoNodes_BlockPropagation` - Block propagation between nodes
+- `TestTwoNodes_BlockSync` - Block synchronization from peer
+- `TestTwoNodes_ConsensusMessages` - Consensus message exchange
+
+Multi-Node Tests:
+- `TestThreeNodes_MeshNetwork` - Three nodes form mesh network
+- `TestThreeNodes_TransactionPropagation` - Transaction propagates through network
+
+Failure Scenario Tests:
+- `TestNode_Disconnect` - Node disconnection handling
+- `TestNode_Reconnect` - Connecting to new node after disconnect
+
+Performance Benchmarks:
+- `BenchmarkTransactionGossip` - Transaction gossiping throughput
+- `BenchmarkBlockPropagation` - Block propagation latency
+
+**Test Coverage:**
+- 10 integration tests covering full node-to-node communication
+- 2 benchmarks for performance testing
+- Tests use race detection and appropriate timeouts
+- All tests skip in short mode for CI efficiency
+
+**Design Decisions:**
+- TestNode wraps full blockberry node stack for realistic testing
+- Ephemeral ports (`/ip4/127.0.0.1/tcp/0`) for test isolation
+- Temporary directories for data storage, cleaned up after tests
+- 1-second gossip intervals for faster test execution
+- MockApplication tracks all received events for verification
+- `cleanupNode()` helper for deferred cleanup without error checking
+- Makefile updated: `test` uses `-short`, `test-integration` runs full suite
+
+---

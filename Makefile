@@ -7,13 +7,17 @@ all: build
 build:
 	go build ./...
 
-# Run tests
+# Run unit tests (skips integration tests)
 test:
-	go test ./...
+	go test -short ./...
 
-# Run tests with race detection
+# Run tests with race detection (skips integration tests)
 test-race:
-	go test -race -v ./...
+	go test -race -short -v ./...
+
+# Run integration tests
+test-integration:
+	go test -race -v -timeout 300s ./testing/
 
 # Run linter
 lint:

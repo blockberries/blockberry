@@ -25,6 +25,12 @@ var (
 	// ErrBlockAlreadyExists is returned when attempting to store a block that already exists.
 	ErrBlockAlreadyExists = errors.New("block already exists")
 
+	// ErrBlockExists is an alias for ErrBlockAlreadyExists.
+	ErrBlockExists = ErrBlockAlreadyExists
+
+	// ErrInvalidBlock is returned when a block fails validation.
+	ErrInvalidBlock = errors.New("invalid block")
+
 	// ErrInvalidBlockHeight is returned when a block height is invalid.
 	ErrInvalidBlockHeight = errors.New("invalid block height")
 

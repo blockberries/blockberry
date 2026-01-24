@@ -627,3 +627,68 @@ Per-Peer Tracking:
 - Reactor handles nil network/peerManager gracefully
 
 ---
+
+## [Phase 11] Block Sync
+
+**Status:** Completed
+
+**Files Created:**
+- `sync/reactor.go` - SyncReactor for block synchronization
+- `sync/reactor_test.go` - Sync reactor test suite
+- `blockstore/memory.go` - In-memory block store for testing
+
+**Files Modified:**
+- `types/errors.go` - Added ErrBlockExists alias and ErrInvalidBlock
+
+**Functionality Implemented:**
+
+SyncReactor (`sync/reactor.go`):
+- `NewSyncReactor(blockStore, network, peerManager, syncInterval, batchSize)` - Create reactor
+- `Start()` / `Stop()` - Lifecycle management with background sync loop
+- `HandleMessage(peerID, data)` - Process incoming block sync messages
+- `SendBlocksRequest(peerID, since)` - Request blocks from peer
+- `UpdatePeerHeight(peerID, height)` - Track peer block heights
+- `SetValidator(fn)` - Set block validation callback
+- `SetOnSyncComplete(fn)` - Set sync completion callback
+- `OnPeerConnected(peerID, height)` / `OnPeerDisconnected(peerID)` - Peer lifecycle
+
+Sync State Machine:
+- `StateSynced` - Node is caught up with peers
+- `StateSyncing` - Node is catching up
+- Automatic state transitions based on peer heights
+
+Message Handlers:
+- `BlocksRequest` (type 137) - Responds with blocks from BlockStore
+- `BlocksResponse` (type 138) - Validates, stores blocks, continues syncing
+
+Block Validation:
+- Hash verification before storage
+- Optional validator callback for application-level validation
+- Penalty on hash mismatch via PeerManager
+
+MemoryBlockStore (`blockstore/memory.go`):
+- In-memory implementation for testing
+- Implements full BlockStore interface
+- Thread-safe with RWMutex
+
+**Test Coverage:**
+- 18 test functions covering:
+  - Reactor creation and lifecycle
+  - Message encoding/decoding
+  - Block request/response handlers
+  - Hash mismatch detection
+  - Custom validator rejection
+  - Peer height tracking
+  - State transitions
+  - Sync complete callback
+  - Duplicate block handling
+
+**Design Decisions:**
+- Background sync loop with configurable interval
+- Tracks peer heights to select sync targets
+- Pending request tracking prevents duplicate requests
+- Hash verification catches malicious/corrupted blocks
+- Optional validator callback for application-level validation
+- Memory block store for testing without disk I/O
+
+---

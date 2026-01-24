@@ -692,3 +692,56 @@ MemoryBlockStore (`blockstore/memory.go`):
 - Memory block store for testing without disk I/O
 
 ---
+
+## [Phase 12] Block Propagation
+
+**Status:** Completed
+
+**Files Created:**
+- `handlers/blocks.go` - BlockReactor for real-time block propagation
+- `handlers/blocks_test.go` - Block reactor test suite
+
+**Functionality Implemented:**
+
+BlockReactor (`handlers/blocks.go`):
+- `NewBlockReactor(blockStore, network, peerManager)` - Create reactor
+- `HandleMessage(peerID, data)` - Process incoming block messages
+- `BroadcastBlock(height, hash, data)` - Broadcast new block to all peers
+- `SetValidator(fn)` - Set block validation callback
+- `SetOnBlockReceived(fn)` - Set new block callback
+- `OnPeerDisconnected(peerID)` - Peer lifecycle (no-op)
+
+Message Handler:
+- `BlockData` (type 139) - Receives, validates, stores, and relays blocks
+
+Block Processing:
+- Hash verification before storage
+- Optional validator callback for application-level validation
+- Penalty on hash mismatch via PeerManager
+- Automatic relay to peers who don't have the block
+- onBlockReceived callback for application notification
+
+Block Broadcasting:
+- Uses PeerManager.PeersToSendBlock to find peers
+- Tracks sent blocks via PeerManager.MarkBlockSent
+- Excludes peer who sent the block during relay
+
+**Test Coverage:**
+- 12 test functions covering:
+  - Reactor creation
+  - Message encoding/decoding
+  - Block data handling
+  - Hash mismatch detection
+  - Custom validator rejection
+  - Duplicate block handling
+  - Block received callback
+  - Missing field rejection
+  - Nil dependency handling
+
+**Design Decisions:**
+- Stateless reactor (no per-peer state)
+- Hash verification before storage
+- Relay to all peers who don't have the block
+- Separate from sync reactor for real-time propagation
+
+---

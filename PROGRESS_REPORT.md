@@ -745,3 +745,47 @@ Block Broadcasting:
 - Separate from sync reactor for real-time propagation
 
 ---
+
+## [Phase 13] Consensus Integration
+
+**Status:** Completed
+
+**Files Created:**
+- `handlers/consensus.go` - ConsensusReactor for consensus message pass-through
+- `handlers/consensus_test.go` - Consensus reactor test suite
+
+**Functionality Implemented:**
+
+ConsensusHandler Interface:
+```go
+type ConsensusHandler interface {
+    HandleConsensusMessage(peerID peer.ID, data []byte) error
+}
+```
+
+ConsensusReactor (`handlers/consensus.go`):
+- `NewConsensusReactor(network, peerManager)` - Create reactor
+- `SetHandler(handler)` / `GetHandler()` - Register application handler
+- `HandleMessage(peerID, data)` - Route messages to handler
+- `SendConsensusMessage(peerID, data)` - Send to specific peer
+- `BroadcastConsensusMessage(data)` - Send to all peers
+- `OnPeerDisconnected(peerID)` - Peer lifecycle (no-op)
+
+**Test Coverage:**
+- 10 test functions covering:
+  - Reactor creation
+  - Handler registration
+  - Empty message rejection
+  - Message routing to handler
+  - Multiple message handling
+  - Handler error propagation
+  - Nil dependency handling
+
+**Design Decisions:**
+- Pass-through design - blockberry doesn't interpret consensus messages
+- Application registers handler to receive messages
+- SendConsensusMessage for unicast, BroadcastConsensusMessage for multicast
+- Silent ignore when no handler registered
+- Stateless reactor (no per-peer state)
+
+---

@@ -152,3 +152,52 @@ Sentinel Errors (32 total):
 
 ---
 
+## [Phase 4] Block Store
+
+**Status:** Completed
+
+**Files Created:**
+- `blockstore/store.go` - BlockStore interface definition
+- `blockstore/leveldb.go` - LevelDB-backed implementation
+- `blockstore/leveldb_test.go` - Comprehensive test suite with benchmarks
+
+**Files Modified:**
+- `blockstore/doc.go` - Removed (replaced by store.go)
+
+**Functionality Implemented:**
+
+BlockStore Interface (`store.go`):
+- `SaveBlock(height, hash, data)` - Persist block at height
+- `LoadBlock(height)` - Retrieve block by height (returns hash, data)
+- `LoadBlockByHash(hash)` - Retrieve block by hash (returns height, data)
+- `HasBlock(height)` - Check if block exists
+- `Height()` - Get latest block height
+- `Base()` - Get earliest available block height
+- `Close()` - Release resources
+- `BlockInfo` struct for block metadata
+
+LevelDB Implementation (`leveldb.go`):
+- Key prefixes: `H:` for height→hash, `B:` for hash→data, `M:` for metadata
+- Atomic batch writes with `leveldb.Batch`
+- Sync writes for durability (`Sync: true`)
+- Metadata persistence (height, base) across restarts
+- Thread-safe with `sync.RWMutex`
+- Helper functions: `makeHeightKey`, `makeBlockKey`, `makeBlockValue`, `parseBlockValue`
+- Int64 encoding using big-endian for proper key ordering
+
+**Test Coverage:**
+- 12 test functions + 2 benchmarks
+- Tests for: creation, reopening, save/load, sequential blocks, duplicate rejection, out-of-order blocks, load by hash, HasBlock, Height/Base tracking, BlockCount, Close behavior, concurrent access (10 goroutines × 20 blocks), large blocks (1MB), persistence across restarts
+- All tests pass with race detection
+- Benchmarks for SaveBlock and LoadBlock operations
+
+**Design Decisions:**
+- Height stored as big-endian uint64 for proper lexicographic ordering in LevelDB
+- Block value includes height prefix for reverse lookup by hash
+- Base tracks earliest block (for pruned stores)
+- Height tracks latest block
+- Empty store returns 0 for both Height() and Base()
+- Operations after Close() return errors
+- Using `//nolint:gosec` for safe int64↔uint64 conversions (heights are always non-negative)
+
+---

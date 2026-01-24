@@ -48,3 +48,47 @@ This file tracks implementation progress. Each completed task should have a summ
 
 ---
 
+## [Phase 2] Configuration
+
+**Status:** Completed
+
+**Files Created:**
+- `config/config.go` - Complete configuration system
+
+**Files Modified:**
+- `config/doc.go` - Removed (replaced by config.go)
+- `schema/blockberry.go` - Formatted by gofmt
+
+**Functionality Implemented:**
+- Configuration structures for all components:
+  - `Config` - Main configuration aggregating all sub-configs
+  - `NodeConfig` - chain_id, protocol_version, private_key_path
+  - `NetworkConfig` - listen_addrs, max_peers, timeouts, seeds
+  - `PEXConfig` - enabled, request_interval, max_addresses
+  - `MempoolConfig` - max_txs, max_bytes, cache_size
+  - `BlockStoreConfig` - backend (leveldb/badgerdb), path
+  - `StateStoreConfig` - path, cache_size
+  - `HousekeepingConfig` - latency_probe_interval
+- TOML configuration loading with `LoadConfig(path)`
+- Default configuration with `DefaultConfig()`
+- Configuration writing with `WriteConfigFile(path, cfg)`
+- Comprehensive validation for all config sections
+- Custom `Duration` type for TOML-compatible time.Duration parsing
+- `EnsureDataDirs()` to create required directories
+
+**Test Coverage:**
+- 18 test functions with 40+ test cases
+- Tests for: default config, loading, partial loading, file not found, invalid TOML,
+  validation errors, all config section validations, write/read round-trip,
+  Duration marshaling/unmarshaling, directory creation
+- All tests pass with race detection
+
+**Design Decisions:**
+- Duration type wraps time.Duration for proper TOML serialization (e.g., "30s")
+- Validation only applies to enabled features (e.g., PEX fields only validated if enabled)
+- Zero cache sizes are valid (disables caching)
+- Zero max peers is valid (node can be isolated)
+- Sentinel errors allow callers to check specific validation failures with errors.Is()
+
+---
+

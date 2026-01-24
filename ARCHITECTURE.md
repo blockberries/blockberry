@@ -206,7 +206,6 @@ type Mempool interface {
     ReapTxs(maxBytes int64) [][]byte
 
     // HasTx checks if a transaction exists in the mempool.
-    // Uses merkle proof for O(log n) lookup.
     HasTx(hash []byte) bool
 
     // GetTx retrieves a transaction by hash.
@@ -218,47 +217,39 @@ type Mempool interface {
     // SizeBytes returns total size in bytes.
     SizeBytes() int64
 
-    // RootHash returns the current merkle root of all transactions.
-    RootHash() []byte
-
     // Flush removes all transactions.
     Flush()
 }
 ```
 
-#### Merkleized In-Memory Implementation
+#### Hash-Based In-Memory Implementation
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         MEMPOOL STRUCTURE                                │
 ├─────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
-│                         ┌──────────────┐                                │
-│                         │  Merkle Root │ ◀── Updated on every AddTx     │
-│                         └──────┬───────┘                                │
-│                                │                                         │
-│                    ┌───────────┴───────────┐                            │
-│                    │                       │                             │
-│               ┌────┴────┐             ┌────┴────┐                       │
-│               │  Hash   │             │  Hash   │                       │
-│               └────┬────┘             └────┬────┘                       │
-│                    │                       │                             │
-│            ┌───────┴───────┐       ┌───────┴───────┐                    │
-│            │               │       │               │                     │
-│       ┌────┴────┐    ┌────┴────┐  ┌────┴────┐    ┌────┴────┐           │
-│       │  TxHash │    │  TxHash │  │  TxHash │    │  TxHash │           │
-│       └─────────┘    └─────────┘  └─────────┘    └─────────┘           │
+│   Primary Storage: map[txHash][]byte                                    │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  hash1 → tx1 data                                               │   │
+│   │  hash2 → tx2 data                                               │   │
+│   │  hash3 → tx3 data                                               │   │
+│   │  ...                                                            │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
-│   Secondary Index: map[txHash][]byte for O(1) data retrieval            │
+│   Insertion Order: []txHash (for ReapTxs)                               │
+│   ┌─────────────────────────────────────────────────────────────────┐   │
+│   │  [hash1, hash2, hash3, ...]                                     │   │
+│   └─────────────────────────────────────────────────────────────────┘   │
 │                                                                          │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Key Features:**
-- Merkle tree for fast existence proofs (O(log n) verification)
-- Root hash computed on every modification
-- Used for efficient transaction sync (compare roots, request missing)
+- O(1) hash map lookups for HasTx and GetTx
+- Maintains insertion order for fair transaction ordering
 - Configurable size limits (count and bytes)
+- Thread-safe with RWMutex
 
 ### 5. Block Store
 
@@ -398,7 +389,7 @@ type PeerState struct {
 
 When gossiping transactions:
 1. Node A sends `TransactionsResponse` with tx hashes it has
-2. Node B checks which it already has (merkle proof from mempool)
+2. Node B checks which it already has (hash lookup in mempool)
 3. Node B requests full data only for missing txs via `TransactionDataRequest`
 4. Both nodes track what was exchanged to avoid re-sending
 
@@ -772,7 +763,7 @@ github.com/blockberries/blockberry/
 │   └── options.go
 ├── mempool/              # Mempool interface and implementations
 │   ├── mempool.go        # Interface
-│   ├── merkle_mempool.go # Merkleized implementation
+│   ├── simple_mempool.go # Hash-based implementation
 │   └── mempool_test.go
 ├── blockstore/           # Block storage
 │   ├── store.go          # Interface

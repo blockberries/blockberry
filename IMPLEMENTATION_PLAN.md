@@ -11,7 +11,7 @@ This document outlines the comprehensive implementation plan for blockberry. Tas
 | 3 | Types & Errors | Common types, error definitions | Phase 1 |
 | 4 | Block Store | Block persistence layer | Phase 2, 3 |
 | 5 | State Store | IAVL-based merkleized KV store | Phase 2, 3 |
-| 6 | Mempool | Merkleized transaction pool | Phase 3 |
+| 6 | Mempool | Hash-based transaction pool | Phase 3 |
 | 7 | P2P Layer | Glueberry integration, peer management | Phase 2, 3 |
 | 8 | Handshake | Connection establishment protocol | Phase 7 |
 | 9 | PEX | Peer exchange and discovery | Phase 7, 8 |
@@ -231,8 +231,8 @@ This document outlines the comprehensive implementation plan for blockberry. Tas
 ## Phase 6: Mempool
 
 ### 6.1 Define Interface
-- [ ] Create `mempool/mempool.go`
-- [ ] Define `Mempool` interface:
+- [x] Create `mempool/mempool.go`
+- [x] Define `Mempool` interface:
   ```go
   type Mempool interface {
       AddTx(tx []byte) error
@@ -242,48 +242,40 @@ This document outlines the comprehensive implementation plan for blockberry. Tas
       GetTx(hash []byte) ([]byte, error)
       Size() int
       SizeBytes() int64
-      RootHash() []byte
       Flush()
   }
   ```
 
-### 6.2 Merkle Tree for Mempool
-- [ ] Create `mempool/merkle.go`
-- [ ] Implement in-memory merkle tree for tx hashes
-- [ ] Support efficient insert/delete
-- [ ] Maintain root hash updated on every operation
-
-### 6.3 Merkleized Mempool Implementation
-- [ ] Create `mempool/merkle_mempool.go`
-- [ ] Implement `MerkleMempool` struct:
+### 6.2 Simple Mempool Implementation
+- [x] Create `mempool/simple_mempool.go`
+- [x] Implement `SimpleMempool` struct:
   ```go
-  type MerkleMempool struct {
-      txs        map[string][]byte    // hash → tx data
-      merkleTree *MerkleTree          // for root hash
-      order      []string             // insertion order for ReapTxs
-      maxTxs     int
-      maxBytes   int64
-      mu         sync.RWMutex
+  type SimpleMempool struct {
+      txs       map[string][]byte    // hash → tx data
+      order     [][]byte             // insertion order (tx hashes)
+      maxTxs    int
+      maxBytes  int64
+      sizeBytes int64
+      mu        sync.RWMutex
   }
   ```
-- [ ] Implement all interface methods
-- [ ] Enforce size limits in AddTx
-- [ ] Maintain merkle tree on add/remove
+- [x] Implement all interface methods
+- [x] Enforce size limits in AddTx
+- [x] Maintain insertion order for ReapTxs
 
-### 6.4 Mempool Configuration
-- [ ] Support configuration from `MempoolConfig`
-- [ ] Factory function: `NewMempool(cfg MempoolConfig) Mempool`
+### 6.3 Mempool Configuration
+- [x] Support configuration from `MempoolConfig`
+- [x] Factory function: `NewMempool(cfg MempoolConfig) Mempool`
 
-### 6.5 Mempool Tests
-- [ ] Test AddTx and GetTx
-- [ ] Test RemoveTxs
-- [ ] Test ReapTxs ordering and size limits
-- [ ] Test HasTx with merkle proof efficiency
-- [ ] Test RootHash updates
-- [ ] Test size limits enforcement
-- [ ] Test Flush
-- [ ] Test concurrent access
-- [ ] Benchmark AddTx, HasTx operations
+### 6.4 Mempool Tests
+- [x] Test AddTx and GetTx
+- [x] Test RemoveTxs
+- [x] Test ReapTxs ordering and size limits
+- [x] Test HasTx
+- [x] Test size limits enforcement
+- [x] Test Flush
+- [x] Test concurrent access
+- [x] Benchmark AddTx operation
 
 ---
 
@@ -816,7 +808,7 @@ All Phases ──▶ Phase 15 (Node) ──▶ Phase 16 (App Interface) ──�
 | 3. Types | Low | Simple definitions |
 | 4. BlockStore | Medium | Storage layer |
 | 5. StateStore | Medium | IAVL integration |
-| 6. Mempool | Medium-High | Merkle tree complexity |
+| 6. Mempool | Medium | Hash-based storage |
 | 7. P2P | Medium | Glueberry integration |
 | 8. Handshake | Medium | Protocol state machine |
 | 9. PEX | Medium | Discovery logic |

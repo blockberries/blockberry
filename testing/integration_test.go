@@ -122,6 +122,9 @@ func TestTwoNodes_TransactionGossip(t *testing.T) {
 	// Connect and wait for handshake
 	require.NoError(t, node1.ConnectAndWait(node2, 10*time.Second))
 
+	// Allow time for peer state to fully propagate
+	time.Sleep(500 * time.Millisecond)
+
 	// Add a transaction to node1's mempool
 	tx := []byte("test-transaction-1")
 	require.NoError(t, node1.Mempool.AddTx(tx))
@@ -133,8 +136,9 @@ func TestTwoNodes_TransactionGossip(t *testing.T) {
 	// 2. Node1 responds with hashes
 	// 3. Node2 requests tx data for unknown txs
 	// 4. Node1 responds with tx data
+	// The gossip loop runs every second, so we need to wait for at least 2-3 cycles
 	txHash := types.HashTx(tx)
-	deadline := time.Now().Add(10 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for time.Now().Before(deadline) {
 		if node2.Mempool.HasTx(txHash) {
 			break

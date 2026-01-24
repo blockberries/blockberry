@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/blockberries/glueberry"
 	"github.com/blockberries/glueberry/pkg/streams"
@@ -167,8 +168,8 @@ func NewNode(cfg *config.Config, opts ...Option) (*Node, error) {
 		n.mempool,
 		network,
 		peerManager,
-		5000, // request interval ms - could be configurable
-		100,  // batch size
+		5*time.Second, // request interval
+		100,           // batch size
 	)
 
 	n.blocksReactor = handlers.NewBlockReactor(
@@ -203,8 +204,8 @@ func NewNode(cfg *config.Config, opts ...Option) (*Node, error) {
 		n.blockStore,
 		network,
 		peerManager,
-		5000, // sync interval ms - could be configurable
-		100,  // batch size
+		5*time.Second, // sync interval
+		100,           // batch size
 	)
 
 	// Re-apply options to set consensus handler after reactor is created

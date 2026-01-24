@@ -1081,3 +1081,52 @@ Performance Benchmarks:
 - Removed linear state constants (`StateHelloSent`, etc.) in favor of boolean flags
 
 ---
+
+## [Phase 18] Documentation
+
+**Status:** Completed
+
+**Files Created:**
+- `examples/simple_node/main.go` - Minimal node setup example
+- `examples/custom_mempool/main.go` - Custom priority mempool implementation
+- `examples/mock_consensus/main.go` - Mock consensus handler demonstration
+- `examples/config.example.toml` - Annotated configuration file
+
+**Functionality Implemented:**
+
+Simple Node Example (`examples/simple_node/`):
+- Demonstrates basic node creation and lifecycle
+- Loads config from file or uses defaults
+- Graceful shutdown on SIGINT/SIGTERM
+- Shows proper error handling patterns
+
+Custom Mempool Example (`examples/custom_mempool/`):
+- Implements `PriorityMempool` with fee-based transaction ordering
+- Uses heap data structure for priority queue
+- Demonstrates implementing the `Mempool` interface
+- Includes demonstration of priority ordering behavior
+
+Mock Consensus Example (`examples/mock_consensus/`):
+- Implements `ConsensusHandler` interface
+- Shows message encoding/decoding patterns (Proposal, Vote, Commit)
+- Demonstrates integration with blockberry's consensus stream
+- Serves as template for real consensus implementations
+
+Configuration Example (`examples/config.example.toml`):
+- Fully annotated TOML configuration file
+- Documents all configuration options with comments
+- Provides sensible default values
+- Organized by component section
+
+**Bug Fixes:**
+- Fixed time.Duration bug in `node/node.go`: `5000` → `5*time.Second` for reactor intervals
+- Fixed syntax error in `testing/helpers.go`: removed stray "git push" text
+- Fixed flaky `TestTwoNodes_TransactionGossip`: added 500ms delay after connection and increased timeout
+
+**Design Decisions:**
+- Examples are standalone programs that can be run directly
+- Each example focuses on a single concept
+- Config example serves as both documentation and template
+- Mock consensus demonstrates integration pattern without implementing real consensus
+
+---

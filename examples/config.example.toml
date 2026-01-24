@@ -1,0 +1,116 @@
+# Blockberry Node Configuration
+#
+# This is an example configuration file. Copy and modify as needed.
+# All duration values use Go duration format (e.g., "30s", "5m", "1h").
+
+#------------------------------------------------------------------------------
+# Node Configuration
+#------------------------------------------------------------------------------
+
+[node]
+# Unique identifier for the blockchain network.
+# All nodes in the same network must use the same chain_id.
+chain_id = "my-chain-1"
+
+# Protocol version. Nodes with different versions will reject handshakes.
+protocol_version = 1
+
+# Path to the Ed25519 private key file.
+# If the file doesn't exist, a new key will be generated.
+private_key_path = "data/node_key.bin"
+
+#------------------------------------------------------------------------------
+# Network Configuration
+#------------------------------------------------------------------------------
+
+[network]
+# Multiaddrs to listen on for incoming connections.
+# Common formats:
+#   - TCP: /ip4/0.0.0.0/tcp/26656
+#   - With DNS: /dns4/node.example.com/tcp/26656
+listen_addrs = ["/ip4/0.0.0.0/tcp/26656"]
+
+# Maximum number of inbound peer connections.
+max_inbound_peers = 40
+
+# Maximum number of outbound peer connections.
+max_outbound_peers = 10
+
+# Timeout for completing the handshake with a new peer.
+handshake_timeout = "30s"
+
+# Timeout for dialing a new peer.
+dial_timeout = "10s"
+
+# Path to persist the address book (known peers).
+address_book_path = "data/addrbook.json"
+
+#------------------------------------------------------------------------------
+# Seed Nodes
+#------------------------------------------------------------------------------
+
+[network.seeds]
+# Multiaddrs of seed nodes for initial peer discovery.
+# Format: /ip4/<IP>/tcp/<PORT>/p2p/<PEER_ID>
+# Example: "/ip4/192.168.1.100/tcp/26656/p2p/12D3KooWExample..."
+addrs = []
+
+#------------------------------------------------------------------------------
+# Peer Exchange (PEX) Configuration
+#------------------------------------------------------------------------------
+
+[pex]
+# Enable or disable peer exchange protocol.
+enabled = true
+
+# Interval between PEX requests to connected peers.
+request_interval = "30s"
+
+# Maximum number of addresses to include in a PEX response.
+max_addresses_per_response = 100
+
+#------------------------------------------------------------------------------
+# Mempool Configuration
+#------------------------------------------------------------------------------
+
+[mempool]
+# Maximum number of transactions in the mempool.
+max_txs = 5000
+
+# Maximum total size in bytes of all transactions in the mempool.
+max_bytes = 104857600  # 100MB
+
+# Size of the transaction hash cache (for quick duplicate detection).
+cache_size = 10000
+
+#------------------------------------------------------------------------------
+# Block Store Configuration
+#------------------------------------------------------------------------------
+
+[blockstore]
+# Storage backend. Currently only "leveldb" is supported.
+backend = "leveldb"
+
+# Path to the block store data directory.
+path = "data/blockstore"
+
+#------------------------------------------------------------------------------
+# State Store Configuration
+#------------------------------------------------------------------------------
+
+[statestore]
+# Path to the state store data directory.
+path = "data/statestore"
+
+# Number of recent tree nodes to cache in memory.
+# Higher values improve read performance but use more memory.
+cache_size = 10000
+
+#------------------------------------------------------------------------------
+# Housekeeping Configuration
+#------------------------------------------------------------------------------
+
+[housekeeping]
+# Interval between latency probe requests to connected peers.
+# Used to measure and track peer response times.
+latency_probe_interval = "60s"

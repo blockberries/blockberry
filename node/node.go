@@ -381,7 +381,14 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		info := n.handshakeHandler.GetPeerInfo(peerID)
 		if info != nil {
 			n.syncReactor.OnPeerConnected(peerID, info.PeerHeight)
-			n.pexReactor.OnPeerConnected(peerID, "", true) // TODO: get multiaddr
+
+			// Get peer's multiaddr from libp2p peerstore for PEX
+			// This works for both outbound (in address book) and inbound connections
+			peerMultiaddr := ""
+			if addrs := n.glueNode.PeerAddrs(peerID); len(addrs) > 0 {
+				peerMultiaddr = fmt.Sprintf("%s/p2p/%s", addrs[0].String(), peerID.String())
+			}
+			n.pexReactor.OnPeerConnected(peerID, peerMultiaddr, true)
 		}
 
 	case glueberry.StateDisconnected:

@@ -495,6 +495,95 @@ func TestNode_Reconnect(t *testing.T) {
 	t.Log("Connecting to new node after disconnect works")
 }
 
+// TestTenNodes_PeerExchange tests that 10 nodes discover each other through PEX.
+// One node is the seed, the other 9 only know about the seed initially.
+// After PEX runs, all nodes should be aware of all other nodes.
+func TestTenNodes_PeerExchange(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	const numNodes = 10
+
+	cfg := DefaultTestNodeConfig()
+
+	// Create the seed node first
+	seedNode, err := NewTestNode(cfg)
+	require.NoError(t, err)
+	defer cleanupNode(seedNode)
+
+	// Start seed node to get its address
+	require.NoError(t, seedNode.Start())
+	seedAddr, err := seedNode.Multiaddr()
+	require.NoError(t, err)
+	t.Logf("Seed node: %s addr: %s", seedNode.PeerID().String()[:8], seedAddr)
+
+	// Create and start the other 9 nodes with seed configured
+	nodes := make([]*TestNode, numNodes)
+	nodes[0] = seedNode
+
+	for i := 1; i < numNodes; i++ {
+		nodeCfg := &TestNodeConfig{
+			ChainID:         cfg.ChainID,
+			ProtocolVersion: cfg.ProtocolVersion,
+			Seeds:           []string{seedAddr},
+		}
+		node, nodeErr := NewTestNode(nodeCfg)
+		require.NoError(t, nodeErr)
+		defer cleanupNode(node)
+		nodes[i] = node
+	}
+
+	// Start all non-seed nodes
+	for i := 1; i < numNodes; i++ {
+		require.NoError(t, nodes[i].Start())
+		t.Logf("Node %d: %s", i, nodes[i].PeerID().String()[:8])
+	}
+
+	// Connect each non-seed node to the seed
+	for i := 1; i < numNodes; i++ {
+		require.NoError(t, nodes[i].ConnectAndWait(seedNode, 10*time.Second))
+	}
+
+	// Wait for PEX to propagate addresses
+	// PEX request interval is 5 seconds, so we need to wait for several cycles
+	// for addresses to fully propagate through the network
+	t.Log("Waiting for PEX to propagate addresses...")
+
+	// Each node should eventually have 9 peers (all others)
+	deadline := time.Now().Add(60 * time.Second)
+	allConnected := false
+
+	for time.Now().Before(deadline) && !allConnected {
+		allConnected = true
+		for i, node := range nodes {
+			peerCount := node.Network.PeerCount()
+			if peerCount < numNodes-1 {
+				allConnected = false
+				t.Logf("Node %d has %d peers (need %d)", i, peerCount, numNodes-1)
+			}
+		}
+		if !allConnected {
+			time.Sleep(2 * time.Second)
+		}
+	}
+
+	// Log final state
+	t.Log("Final peer counts:")
+	for i, node := range nodes {
+		t.Logf("  Node %d (%s): %d peers", i, node.PeerID().String()[:8], node.Network.PeerCount())
+	}
+
+	// Verify all nodes have discovered each other
+	for i, node := range nodes {
+		peerCount := node.Network.PeerCount()
+		require.GreaterOrEqual(t, peerCount, numNodes-1,
+			"node %d should have at least %d peers, has %d", i, numNodes-1, peerCount)
+	}
+
+	t.Log("PEX successfully propagated addresses to all nodes")
+}
+
 // BenchmarkTransactionGossip benchmarks transaction gossiping throughput.
 func BenchmarkTransactionGossip(b *testing.B) {
 	// Create two nodes

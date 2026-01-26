@@ -15,10 +15,11 @@ func TestNewPeerState(t *testing.T) {
 		ps := NewPeerState(peerID, true)
 		require.Equal(t, peerID, ps.PeerID)
 		require.True(t, ps.IsOutbound)
-		require.NotNil(t, ps.TxsSent)
-		require.NotNil(t, ps.TxsReceived)
-		require.NotNil(t, ps.BlocksSent)
-		require.NotNil(t, ps.BlocksReceived)
+		// Verify LRU caches are initialized by checking initial counts
+		require.Equal(t, 0, ps.TxsSentCount())
+		require.Equal(t, 0, ps.TxsReceivedCount())
+		require.Equal(t, 0, ps.BlocksSentCount())
+		require.Equal(t, 0, ps.BlocksReceivedCount())
 		require.False(t, ps.ConnectedAt.IsZero())
 	})
 
@@ -139,4 +140,88 @@ func TestPeerState_Seed(t *testing.T) {
 
 	ps.SetSeed(true)
 	require.True(t, ps.IsSeed)
+}
+
+func TestPeerState_LRUEviction(t *testing.T) {
+	ps := NewPeerState(peer.ID("test-peer"), true)
+
+	t.Run("tx cache evicts oldest entries", func(t *testing.T) {
+		// Fill beyond capacity
+		numEntries := MaxKnownTxsPerPeer + 100
+		for i := 0; i < numEntries; i++ {
+			txHash := []byte("tx:" + string([]byte{byte(i >> 16), byte(i >> 8), byte(i)}))
+			ps.MarkTxSent(txHash)
+		}
+
+		// Count should be capped at max
+		require.Equal(t, MaxKnownTxsPerPeer, ps.TxsSentCount())
+
+		// Newest entry should remain
+		lastIdx := numEntries - 1
+		newestHash := []byte("tx:" + string([]byte{byte(lastIdx >> 16), byte(lastIdx >> 8), byte(lastIdx)}))
+		require.True(t, ps.HasTx(newestHash))
+	})
+
+	t.Run("block cache evicts oldest entries", func(t *testing.T) {
+		// Fill beyond capacity
+		for i := int64(0); i < MaxKnownBlocksPerPeer+100; i++ {
+			ps.MarkBlockSent(i)
+		}
+
+		// Count should be capped at max
+		require.Equal(t, MaxKnownBlocksPerPeer, ps.BlocksSentCount())
+
+		// Newest entry should remain
+		require.True(t, ps.HasBlock(int64(MaxKnownBlocksPerPeer + 99)))
+	})
+}
+
+func TestPeerState_ClearHistory(t *testing.T) {
+	ps := NewPeerState(peer.ID("test-peer"), true)
+
+	// Add some data
+	ps.MarkTxSent([]byte("tx1"))
+	ps.MarkTxReceived([]byte("tx2"))
+	ps.MarkBlockSent(100)
+	ps.MarkBlockReceived(200)
+
+	t.Run("clear tx history", func(t *testing.T) {
+		ps.ClearTxHistory()
+		require.Equal(t, 0, ps.TxsSentCount())
+		require.Equal(t, 0, ps.TxsReceivedCount())
+		require.False(t, ps.HasTx([]byte("tx1")))
+	})
+
+	t.Run("clear block history", func(t *testing.T) {
+		ps.ClearBlockHistory()
+		require.Equal(t, 0, ps.BlocksSentCount())
+		require.Equal(t, 0, ps.BlocksReceivedCount())
+		require.False(t, ps.HasBlock(100))
+	})
+}
+
+func TestPeerState_ConcurrentAccess(t *testing.T) {
+	ps := NewPeerState(peer.ID("test-peer"), true)
+
+	// Concurrent transaction tracking
+	done := make(chan bool)
+	for i := 0; i < 10; i++ {
+		go func(id int) {
+			for j := 0; j < 100; j++ {
+				txHash := []byte{byte(id), byte(j)}
+				ps.MarkTxSent(txHash)
+				ps.HasTx(txHash)
+				ps.ShouldSendTx(txHash)
+			}
+			done <- true
+		}(i)
+	}
+
+	// Wait for all goroutines
+	for i := 0; i < 10; i++ {
+		<-done
+	}
+
+	// Should not panic or race - count should be reasonable
+	require.LessOrEqual(t, ps.TxsSentCount(), 1000)
 }

@@ -4,9 +4,14 @@ go 1.25.6
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/blockberries/cramberry v0.0.0
-	github.com/blockberries/glueberry v0.0.0-00010101000000-000000000000
+	github.com/blockberries/cramberry v1.2.0
+	github.com/blockberries/glueberry v1.0.1
 	github.com/cosmos/iavl v1.3.5
+	github.com/cosmos/ics23/go v0.10.0
+	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/libp2p/go-libp2p v0.46.0
+	github.com/multiformats/go-multiaddr v0.16.1
+	github.com/prometheus/client_golang v1.22.0
 	github.com/stretchr/testify v1.11.1
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
 )
@@ -18,7 +23,6 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cosmos/gogoproto v1.5.0 // indirect
-	github.com/cosmos/ics23/go v0.10.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
@@ -38,7 +42,6 @@ require (
 	github.com/koron/go-ssdp v0.0.6 // indirect
 	github.com/libp2p/go-buffer-pool v0.1.0 // indirect
 	github.com/libp2p/go-flow-metrics v0.2.0 // indirect
-	github.com/libp2p/go-libp2p v0.46.0 // indirect
 	github.com/libp2p/go-libp2p-asn-util v0.4.1 // indirect
 	github.com/libp2p/go-msgio v0.3.0 // indirect
 	github.com/libp2p/go-netroute v0.3.0 // indirect
@@ -52,7 +55,6 @@ require (
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect
-	github.com/multiformats/go-multiaddr v0.16.1 // indirect
 	github.com/multiformats/go-multiaddr-dns v0.4.1 // indirect
 	github.com/multiformats/go-multiaddr-fmt v0.1.0 // indirect
 	github.com/multiformats/go-multibase v0.2.0 // indirect
@@ -82,7 +84,6 @@ require (
 	github.com/pion/turn/v4 v4.0.2 // indirect
 	github.com/pion/webrtc/v4 v4.1.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.22.0 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
 	github.com/prometheus/common v0.64.0 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
@@ -109,9 +110,4 @@ require (
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
-)
-
-replace (
-	github.com/blockberries/cramberry => ../cramberry
-	github.com/blockberries/glueberry => ../glueberry
 )

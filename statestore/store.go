@@ -1,6 +1,15 @@
 // Package statestore provides merkleized state storage interface and implementations.
 package statestore
 
+import (
+	"bytes"
+	"fmt"
+
+	ics23 "github.com/cosmos/ics23/go"
+
+	"github.com/blockberries/blockberry/types"
+)
+
 // StateStore defines the interface for merkleized key-value state storage.
 // Implementations must be safe for concurrent use.
 type StateStore interface {
@@ -67,11 +76,45 @@ type Proof struct {
 
 // Verify verifies the proof against the given root hash.
 // Returns true if the proof is valid, false otherwise.
+// For existence proofs, it verifies the key-value pair exists at the root.
+// For non-existence proofs, it verifies the key does not exist.
 func (p *Proof) Verify(rootHash []byte) (bool, error) {
 	if p == nil {
-		return false, nil
+		return false, types.ErrInvalidProof
 	}
-	// Proof verification is delegated to the store implementation
-	// since it requires access to the ICS23 spec
-	return false, nil
+
+	if len(p.ProofBytes) == 0 {
+		return false, types.ErrInvalidProof
+	}
+
+	if len(rootHash) == 0 {
+		return false, fmt.Errorf("%w: empty root hash", types.ErrInvalidProof)
+	}
+
+	// Unmarshal the ICS23 commitment proof
+	var commitmentProof ics23.CommitmentProof
+	if err := commitmentProof.Unmarshal(p.ProofBytes); err != nil {
+		return false, fmt.Errorf("%w: failed to unmarshal proof: %v", types.ErrInvalidProof, err)
+	}
+
+	// Get the IAVL proof spec
+	spec := ics23.IavlSpec
+
+	// Verify based on proof type (existence or non-existence)
+	if p.Exists {
+		// Existence proof - verify key/value exists at root
+		return ics23.VerifyMembership(spec, rootHash, &commitmentProof, p.Key, p.Value), nil
+	}
+
+	// Non-existence proof - verify key does not exist
+	return ics23.VerifyNonMembership(spec, rootHash, &commitmentProof, p.Key), nil
+}
+
+// VerifyConsistent checks that the proof's stored root hash matches the given root hash.
+// This is useful for verifying that a proof was generated from a specific state.
+func (p *Proof) VerifyConsistent(rootHash []byte) bool {
+	if p == nil || len(p.RootHash) == 0 || len(rootHash) == 0 {
+		return false
+	}
+	return bytes.Equal(p.RootHash, rootHash)
 }

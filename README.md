@@ -8,9 +8,14 @@ A modular blockchain node framework in Go. Blockberry provides the foundational 
 - **Modular Architecture**: Swappable components for mempool, block storage, and state management
 - **P2P Networking**: Built on [glueberry](https://github.com/blockberries/glueberry) with encrypted streams and automatic reconnection
 - **Efficient Serialization**: Uses [cramberry](https://github.com/blockberries/cramberry) for compact binary encoding
-- **Merkle State Store**: IAVL-based state storage with historical queries and proofs
+- **Merkle State Store**: IAVL-based state storage with historical queries and ICS23 proofs
 - **Peer Discovery**: PEX (Peer Exchange) protocol for decentralized peer discovery
 - **Block Synchronization**: Efficient catch-up sync from peers
+- **Priority Mempool**: Transaction ordering by configurable priority with automatic eviction
+- **Transaction TTL**: Automatic expiration of stale transactions
+- **Rate Limiting**: Per-peer, per-stream rate limiting with token bucket algorithm
+- **Prometheus Metrics**: Comprehensive metrics for monitoring peers, blocks, transactions, and sync state
+- **Structured Logging**: Production-ready logging with slog integration
 
 ## Architecture
 
@@ -188,6 +193,16 @@ path = "data/blocks"
 [statestore]
 path = "data/state"
 cache_size = 10000
+
+[metrics]
+enabled = true
+namespace = "blockberry"
+listen_addr = ":9090"
+
+[logging]
+level = "info"       # debug, info, warn, error
+format = "json"      # text or json
+output = "stdout"    # stdout, stderr, or file path
 ```
 
 ## Core Components
@@ -220,7 +235,7 @@ n.PeerCount()  // Connected peers
 
 ### Mempool
 
-Transaction pool with configurable limits:
+Transaction pool with configurable limits. Multiple implementations available:
 
 ```go
 type Mempool interface {
@@ -234,6 +249,11 @@ type Mempool interface {
     Flush()                             // Clear all
 }
 ```
+
+**Implementations:**
+- `SimpleMempool`: Basic hash-based mempool with FIFO ordering
+- `PriorityMempool`: Priority-based ordering with configurable priority function and automatic eviction
+- `TTLMempool`: Priority mempool with automatic transaction expiration
 
 ### Block Store
 
@@ -355,24 +375,45 @@ github.com/blockberries/blockberry/
 ├── blockstore/    # Block storage implementations
 ├── config/        # Configuration loading and validation
 ├── handlers/      # Message handlers (handshake, transactions, blocks, consensus)
-├── mempool/       # Transaction pool
+├── logging/       # Structured logging with slog integration
+├── mempool/       # Transaction pool (simple, priority, TTL implementations)
+├── metrics/       # Prometheus metrics collection
 ├── node/          # Main Node coordinator
-├── p2p/           # Peer management and scoring
+├── p2p/           # Peer management, scoring, and rate limiting
 ├── pex/           # Peer exchange protocol
 ├── schema/        # Generated cramberry message types
-├── statestore/    # IAVL state storage
+├── statestore/    # IAVL state storage with ICS23 proofs
 ├── sync/          # Block synchronization
 ├── testing/       # Integration test helpers
-└── types/         # Common types and errors
+└── types/         # Common types, errors, and validation
 ```
 
 ## Dependencies
 
-- [glueberry](https://github.com/blockberries/glueberry) - P2P networking layer
-- [cramberry](https://github.com/blockberries/cramberry) - Binary serialization
-- [cosmos/iavl](https://github.com/cosmos/iavl) - Merkleized key-value store
-- [libp2p](https://github.com/libp2p/go-libp2p) - Peer-to-peer networking
-- [goleveldb](https://github.com/syndtr/goleveldb) - Block storage backend
+| Package | Version | Description |
+|---------|---------|-------------|
+| [glueberry](https://github.com/blockberries/glueberry) | v1.0.1 | P2P networking layer |
+| [cramberry](https://github.com/blockberries/cramberry) | v1.2.0 | Binary serialization |
+| [cosmos/iavl](https://github.com/cosmos/iavl) | v1.3.5 | Merkleized key-value store |
+| [cosmos/ics23](https://github.com/cosmos/ics23) | v0.10.0 | ICS23 proof verification |
+| [libp2p](https://github.com/libp2p/go-libp2p) | v0.46.0 | Peer-to-peer networking |
+| [goleveldb](https://github.com/syndtr/goleveldb) | latest | Block storage backend |
+| [prometheus/client_golang](https://github.com/prometheus/client_golang) | v1.22.0 | Metrics collection |
+| [hashicorp/golang-lru](https://github.com/hashicorp/golang-lru) | v2.0.7 | LRU cache for peer state |
+
+## Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the development roadmap including:
+
+- **Phase 1**: Storage & Sync Enhancements (BadgerDB, state pruning, state sync)
+- **Phase 2**: Consensus Framework (interface refinement, reference BFT implementation)
+- **Phase 3**: Networking Improvements (firewall detection, peer reputation persistence)
+- **Phase 4**: Developer Experience (transaction indexing, event subscriptions, RPC API, CLI)
+- **Phase 5**: Light Client Support
+- **Phase 6**: Performance Optimization
+- **Phase 7**: Security Hardening
+- **Phase 8**: Observability Enhancements
+- **Phase 9**: Ecosystem Integration (IBC, ABCI compatibility)
 
 ## License
 

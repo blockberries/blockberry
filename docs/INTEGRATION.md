@@ -237,63 +237,97 @@ func main() {
 }
 ```
 
-## Custom Mempool
+## Mempool Options
 
-Implement `mempool.Mempool` for custom transaction ordering:
+Blockberry provides three mempool implementations out of the box:
+
+### Simple Mempool (Default)
+
+Basic hash-based mempool with FIFO ordering:
 
 ```go
-type PriorityMempool struct {
-    txs      map[string]*TxWithPriority
-    mu       sync.RWMutex
-}
-
-type TxWithPriority struct {
-    Data     []byte
-    Fee      uint64
-    Priority int
-}
-
-func (m *PriorityMempool) AddTx(tx []byte) error {
-    // Parse and extract priority
-    parsed, _ := ParseTransaction(tx)
-    hash := types.HashTx(tx)
-
-    m.mu.Lock()
-    m.txs[string(hash)] = &TxWithPriority{
-        Data:     tx,
-        Fee:      parsed.Fee,
-        Priority: calculatePriority(parsed),
-    }
-    m.mu.Unlock()
-    return nil
-}
-
-func (m *PriorityMempool) ReapTxs(maxBytes int64) [][]byte {
-    m.mu.RLock()
-    defer m.mu.RUnlock()
-
-    // Sort by priority and return highest priority transactions
-    sorted := m.sortByPriority()
-
-    var result [][]byte
-    var totalSize int64
-    for _, tx := range sorted {
-        if totalSize+int64(len(tx.Data)) > maxBytes {
-            break
-        }
-        result = append(result, tx.Data)
-        totalSize += int64(len(tx.Data))
-    }
-    return result
-}
-
-// Implement remaining interface methods...
+mp := mempool.NewSimpleMempool(mempool.SimpleMempoolConfig{
+    MaxTxs:   5000,
+    MaxBytes: 1024 * 1024 * 1024, // 1GB
+})
+n, err := node.NewNode(cfg, node.WithMempool(mp))
 ```
 
-Use with node:
+### Priority Mempool
+
+Priority-based ordering with configurable priority function:
 
 ```go
-mp := NewPriorityMempool()
+// Custom priority function (e.g., by gas price)
+priorityFunc := func(tx []byte) int64 {
+    parsed, _ := ParseTransaction(tx)
+    return int64(parsed.GasPrice)
+}
+
+mp := mempool.NewPriorityMempool(mempool.PriorityMempoolConfig{
+    MaxTxs:       5000,
+    MaxBytes:     1024 * 1024 * 1024,
+    PriorityFunc: priorityFunc,
+})
+n, err := node.NewNode(cfg, node.WithMempool(mp))
+```
+
+Features:
+- Max-heap ordering for O(1) highest priority access
+- Automatic eviction of lowest priority when full
+- Built-in functions: `DefaultPriorityFunc`, `SizePriorityFunc`
+
+### TTL Mempool
+
+Priority mempool with automatic transaction expiration:
+
+```go
+mp := mempool.NewTTLMempool(mempool.TTLMempoolConfig{
+    MaxTxs:          5000,
+    MaxBytes:        1024 * 1024 * 1024,
+    TTL:             30 * time.Minute,     // Default TTL
+    CleanupInterval: time.Minute,           // Cleanup frequency
+    PriorityFunc:    priorityFunc,
+})
+defer mp.Stop() // Stop cleanup goroutine on shutdown
+
+n, err := node.NewNode(cfg, node.WithMempool(mp))
+```
+
+Additional methods:
+```go
+// Add with custom TTL
+mp.AddTxWithTTL(tx, 5*time.Minute)
+
+// Check/modify TTL
+remaining := mp.GetTTL(hash)
+mp.ExtendTTL(hash, 10*time.Minute)
+mp.SetTTL(hash, time.Now().Add(time.Hour))
+
+// Count non-expired transactions
+activeCount := mp.SizeActive()
+```
+
+### Custom Mempool
+
+Implement `mempool.Mempool` for fully custom behavior:
+
+```go
+type MyMempool struct {
+    // your fields
+}
+
+func (m *MyMempool) AddTx(tx []byte) error { /* ... */ }
+func (m *MyMempool) RemoveTxs(hashes [][]byte) { /* ... */ }
+func (m *MyMempool) ReapTxs(maxBytes int64) [][]byte { /* ... */ }
+func (m *MyMempool) HasTx(hash []byte) bool { /* ... */ }
+func (m *MyMempool) GetTx(hash []byte) ([]byte, error) { /* ... */ }
+func (m *MyMempool) Size() int { /* ... */ }
+func (m *MyMempool) SizeBytes() int64 { /* ... */ }
+func (m *MyMempool) Flush() { /* ... */ }
+func (m *MyMempool) TxHashes() [][]byte { /* ... */ }
+
+mp := &MyMempool{}
 n, err := node.NewNode(cfg, node.WithMempool(mp))
 ```
 
@@ -375,6 +409,69 @@ case errors.Is(err, types.ErrBlockNotFound):
 case errors.Is(err, types.ErrPeerNotFound):
     // Peer not connected
 }
+```
+
+## Observability
+
+### Metrics
+
+Enable Prometheus metrics for production monitoring:
+
+```go
+import "github.com/blockberries/blockberry/metrics"
+
+// Create metrics
+m := metrics.NewPrometheusMetrics("mychain")
+
+// Use with node
+n, err := node.NewNode(cfg, node.WithMetrics(m))
+
+// Expose /metrics endpoint (typically on a separate port)
+http.Handle("/metrics", m.Handler().(http.Handler))
+go http.ListenAndServe(":9090", nil)
+```
+
+Available metrics include:
+- Peer counts by direction (inbound/outbound)
+- Block height and sync progress
+- Mempool size and bytes
+- Transaction counts (received, rejected, evicted)
+- Message counts by stream
+- Latency histograms
+
+### Logging
+
+Use structured logging for production:
+
+```go
+import "github.com/blockberries/blockberry/logging"
+
+// Production: JSON format, INFO level
+logger := logging.NewProductionLogger()
+
+// Development: Text format, DEBUG level
+logger := logging.NewDevelopmentLogger()
+
+// Custom configuration
+logger := logging.NewJSONLogger(os.Stdout, slog.LevelInfo)
+
+// Use with node
+n, err := node.NewNode(cfg, node.WithLogger(logger))
+```
+
+Logging with context:
+
+```go
+logger.Info("block received",
+    logging.Height(block.Height),
+    logging.Hash(block.Hash()),
+    logging.PeerID(peerID),
+    logging.Size(len(block.Data)),
+)
+
+// Create component-specific logger
+txLogger := logger.WithComponent("transactions")
+txLogger.Debug("processing transaction", logging.TxHash(hash))
 ```
 
 ## Testing

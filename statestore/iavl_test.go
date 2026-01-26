@@ -473,6 +473,260 @@ func TestManyKeys(t *testing.T) {
 	}
 }
 
+func TestProof_VerifyExistence(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	// Set some values
+	require.NoError(t, store.Set([]byte("key1"), []byte("value1")))
+	require.NoError(t, store.Set([]byte("key2"), []byte("value2")))
+	_, _, err := store.Commit()
+	require.NoError(t, err)
+
+	// Get proof for existing key
+	proof, err := store.GetProof([]byte("key1"))
+	require.NoError(t, err)
+	require.NotNil(t, proof)
+	require.True(t, proof.Exists)
+	require.Equal(t, []byte("key1"), proof.Key)
+	require.Equal(t, []byte("value1"), proof.Value)
+
+	// Get root hash
+	rootHash := store.RootHash()
+
+	// Verify proof against correct root hash
+	valid, err := proof.Verify(rootHash)
+	require.NoError(t, err)
+	require.True(t, valid, "existence proof should be valid")
+
+	// Verify consistent check
+	require.True(t, proof.VerifyConsistent(rootHash))
+}
+
+func TestProof_VerifyNonExistence(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	// Set some values but NOT the key we'll prove against
+	require.NoError(t, store.Set([]byte("aaa"), []byte("value_aaa")))
+	require.NoError(t, store.Set([]byte("zzz"), []byte("value_zzz")))
+	_, _, err := store.Commit()
+	require.NoError(t, err)
+
+	// Get non-existence proof for key that doesn't exist
+	proof, err := store.GetProof([]byte("mmm"))
+	require.NoError(t, err)
+	require.NotNil(t, proof)
+	require.False(t, proof.Exists)
+	require.Nil(t, proof.Value)
+
+	// Verify proof
+	rootHash := store.RootHash()
+	valid, err := proof.Verify(rootHash)
+	require.NoError(t, err)
+	require.True(t, valid, "non-existence proof should be valid")
+}
+
+func TestProof_RejectsTamperedProof(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	require.NoError(t, store.Set([]byte("key1"), []byte("value1")))
+	_, _, err := store.Commit()
+	require.NoError(t, err)
+
+	proof, err := store.GetProof([]byte("key1"))
+	require.NoError(t, err)
+	rootHash := store.RootHash()
+
+	t.Run("tampered value", func(t *testing.T) {
+		// Create a copy of the proof with tampered value
+		tamperedProof := &Proof{
+			Key:        proof.Key,
+			Value:      []byte("tampered_value"),
+			Exists:     proof.Exists,
+			RootHash:   proof.RootHash,
+			Version:    proof.Version,
+			ProofBytes: proof.ProofBytes,
+		}
+
+		valid, err := tamperedProof.Verify(rootHash)
+		require.NoError(t, err)
+		require.False(t, valid, "tampered value proof should be invalid")
+	})
+
+	t.Run("tampered key", func(t *testing.T) {
+		// Create a copy of the proof with tampered key
+		tamperedProof := &Proof{
+			Key:        []byte("tampered_key"),
+			Value:      proof.Value,
+			Exists:     proof.Exists,
+			RootHash:   proof.RootHash,
+			Version:    proof.Version,
+			ProofBytes: proof.ProofBytes,
+		}
+
+		valid, err := tamperedProof.Verify(rootHash)
+		require.NoError(t, err)
+		require.False(t, valid, "tampered key proof should be invalid")
+	})
+
+	t.Run("wrong root hash", func(t *testing.T) {
+		// Verify against a different root hash
+		wrongHash := make([]byte, len(rootHash))
+		copy(wrongHash, rootHash)
+		wrongHash[0] ^= 0xFF // Flip some bits
+
+		valid, err := proof.Verify(wrongHash)
+		require.NoError(t, err)
+		require.False(t, valid, "proof against wrong root should be invalid")
+	})
+}
+
+func TestProof_NilAndEdgeCases(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	require.NoError(t, store.Set([]byte("key"), []byte("value")))
+	_, _, err := store.Commit()
+	require.NoError(t, err)
+
+	rootHash := store.RootHash()
+
+	t.Run("nil proof", func(t *testing.T) {
+		var nilProof *Proof
+		valid, err := nilProof.Verify(rootHash)
+		require.Error(t, err)
+		require.False(t, valid)
+	})
+
+	t.Run("empty root hash", func(t *testing.T) {
+		proof, err := store.GetProof([]byte("key"))
+		require.NoError(t, err)
+
+		valid, err := proof.Verify(nil)
+		require.Error(t, err)
+		require.False(t, valid)
+
+		valid, err = proof.Verify([]byte{})
+		require.Error(t, err)
+		require.False(t, valid)
+	})
+
+	t.Run("empty proof bytes", func(t *testing.T) {
+		proof := &Proof{
+			Key:        []byte("key"),
+			Value:      []byte("value"),
+			Exists:     true,
+			RootHash:   rootHash,
+			ProofBytes: nil,
+		}
+
+		valid, err := proof.Verify(rootHash)
+		require.Error(t, err)
+		require.False(t, valid)
+	})
+
+	t.Run("invalid proof bytes", func(t *testing.T) {
+		proof := &Proof{
+			Key:        []byte("key"),
+			Value:      []byte("value"),
+			Exists:     true,
+			RootHash:   rootHash,
+			ProofBytes: []byte("not a valid proof"),
+		}
+
+		valid, err := proof.Verify(rootHash)
+		require.Error(t, err)
+		require.False(t, valid)
+	})
+}
+
+func TestProof_VerifyConsistent(t *testing.T) {
+	t.Run("nil proof", func(t *testing.T) {
+		var nilProof *Proof
+		require.False(t, nilProof.VerifyConsistent([]byte("hash")))
+	})
+
+	t.Run("nil stored root hash", func(t *testing.T) {
+		proof := &Proof{
+			Key:      []byte("key"),
+			Value:    []byte("value"),
+			RootHash: nil,
+		}
+		require.False(t, proof.VerifyConsistent([]byte("hash")))
+	})
+
+	t.Run("nil input root hash", func(t *testing.T) {
+		proof := &Proof{
+			Key:      []byte("key"),
+			Value:    []byte("value"),
+			RootHash: []byte("stored_hash"),
+		}
+		require.False(t, proof.VerifyConsistent(nil))
+	})
+
+	t.Run("matching hashes", func(t *testing.T) {
+		hash := []byte("matching_hash")
+		proof := &Proof{
+			Key:      []byte("key"),
+			Value:    []byte("value"),
+			RootHash: hash,
+		}
+		require.True(t, proof.VerifyConsistent(hash))
+	})
+
+	t.Run("different hashes", func(t *testing.T) {
+		proof := &Proof{
+			Key:      []byte("key"),
+			Value:    []byte("value"),
+			RootHash: []byte("hash1"),
+		}
+		require.False(t, proof.VerifyConsistent([]byte("hash2")))
+	})
+}
+
+func TestProof_VerifyWithMultipleVersions(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	// Version 1
+	require.NoError(t, store.Set([]byte("key"), []byte("v1")))
+	hash1, _, err := store.Commit()
+	require.NoError(t, err)
+
+	proof1, err := store.GetProof([]byte("key"))
+	require.NoError(t, err)
+
+	// Version 2 - update the key
+	require.NoError(t, store.Set([]byte("key"), []byte("v2")))
+	hash2, _, err := store.Commit()
+	require.NoError(t, err)
+
+	proof2, err := store.GetProof([]byte("key"))
+	require.NoError(t, err)
+
+	// Proof 1 should verify against hash1
+	valid1, err := proof1.Verify(hash1)
+	require.NoError(t, err)
+	require.True(t, valid1)
+
+	// Proof 1 should NOT verify against hash2 (tree has changed)
+	valid1Against2, err := proof1.Verify(hash2)
+	require.NoError(t, err)
+	require.False(t, valid1Against2)
+
+	// Proof 2 should verify against hash2
+	valid2, err := proof2.Verify(hash2)
+	require.NoError(t, err)
+	require.True(t, valid2)
+
+	// Proof 2 should NOT verify against hash1
+	valid2Against1, err := proof2.Verify(hash1)
+	require.NoError(t, err)
+	require.False(t, valid2Against1)
+}
+
 // Helper function
 
 func newTestStore(t *testing.T) *IAVLStore {

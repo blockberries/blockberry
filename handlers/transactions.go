@@ -190,14 +190,13 @@ func (r *TransactionsReactor) handleTransactionsRequest(peerID peer.ID, data []b
 		return types.ErrInvalidMessage
 	}
 
+	// Validate required field
 	if req.BatchSize == nil {
 		return types.ErrInvalidMessage
 	}
 
-	batchSize := int(*req.BatchSize)
-	if batchSize <= 0 {
-		batchSize = 100
-	}
+	// Validate and clamp batch size
+	batchSize := int(types.ClampBatchSize(*req.BatchSize, types.MaxBatchSize))
 
 	if r.mempool == nil {
 		return nil
@@ -400,14 +399,23 @@ func (r *TransactionsReactor) handleTransactionDataResponse(peerID peer.ID, data
 	}
 
 	for _, txData := range resp.Transactions {
+		// Validate transaction data
 		if len(txData.Hash) == 0 || len(txData.Data) == 0 {
+			continue
+		}
+
+		// Validate transaction size
+		if err := types.ValidateTransactionSize(len(txData.Data)); err != nil {
+			if r.network != nil {
+				_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidTx, p2p.ReasonInvalidTx, "transaction too large")
+			}
 			continue
 		}
 
 		// Clear pending request
 		r.clearPendingRequest(peerID, txData.Hash)
 
-		// Verify hash matches
+		// Verify hash matches content
 		computedHash := types.HashTx(txData.Data)
 		if string(computedHash) != string(txData.Hash) {
 			// Hash mismatch - peer sent bad data

@@ -372,9 +372,30 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 
 	switch event.State {
 	case glueberry.StateConnected:
-		// Initiate handshake
-		n.network.OnPeerConnected(peerID, true) // TODO: determine if outbound
-		_ = n.handshakeHandler.OnPeerConnected(peerID, true)
+		// Query actual connection direction from Glueberry
+		isOutbound, err := n.glueNode.IsOutbound(peerID)
+		if err != nil {
+			// If we can't determine direction, assume inbound for safety
+			// (inbound connections are more restricted)
+			isOutbound = false
+		}
+
+		// Check peer limits before proceeding with handshake
+		if isOutbound {
+			if n.network.PeerManager().OutboundPeerCount() >= n.cfg.Network.MaxOutboundPeers {
+				_ = n.network.Disconnect(peerID)
+				return
+			}
+		} else {
+			if n.network.PeerManager().InboundPeerCount() >= n.cfg.Network.MaxInboundPeers {
+				_ = n.network.Disconnect(peerID)
+				return
+			}
+		}
+
+		// Initiate handshake with correct direction
+		n.network.OnPeerConnected(peerID, isOutbound)
+		_ = n.handshakeHandler.OnPeerConnected(peerID, isOutbound)
 
 	case glueberry.StateEstablished:
 		// Peer is fully connected, notify reactors
@@ -382,13 +403,16 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		if info != nil {
 			n.syncReactor.OnPeerConnected(peerID, info.PeerHeight)
 
+			// Get connection direction for PEX
+			isOutbound, _ := n.glueNode.IsOutbound(peerID)
+
 			// Get peer's multiaddr from libp2p peerstore for PEX
 			// This works for both outbound (in address book) and inbound connections
 			peerMultiaddr := ""
 			if addrs := n.glueNode.PeerAddrs(peerID); len(addrs) > 0 {
 				peerMultiaddr = fmt.Sprintf("%s/p2p/%s", addrs[0].String(), peerID.String())
 			}
-			n.pexReactor.OnPeerConnected(peerID, peerMultiaddr, true)
+			n.pexReactor.OnPeerConnected(peerID, peerMultiaddr, isOutbound)
 		}
 
 	case glueberry.StateDisconnected:

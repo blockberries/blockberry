@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -297,24 +298,30 @@ func (r *SyncReactor) SendBlocksRequest(peerID peer.ID, since int64) error {
 // HandleMessage processes incoming block sync messages.
 func (r *SyncReactor) HandleMessage(peerID peer.ID, data []byte) error {
 	if len(data) == 0 {
-		return types.ErrInvalidMessage
+		return fmt.Errorf("blocksync: %w: empty message", types.ErrInvalidMessage)
 	}
 
 	reader := cramberry.NewReader(data)
 	typeID := reader.ReadTypeID()
 	if reader.Err() != nil {
-		return types.ErrInvalidMessage
+		return fmt.Errorf("blocksync: %w: failed to read type ID", types.ErrInvalidMessage)
 	}
 
 	remaining := reader.Remaining()
 
 	switch typeID {
 	case TypeIDBlocksRequest:
-		return r.handleBlocksRequest(peerID, remaining)
+		if err := r.handleBlocksRequest(peerID, remaining); err != nil {
+			return fmt.Errorf("blocksync/request: %w", err)
+		}
+		return nil
 	case TypeIDBlocksResponse:
-		return r.handleBlocksResponse(peerID, remaining)
+		if err := r.handleBlocksResponse(peerID, remaining); err != nil {
+			return fmt.Errorf("blocksync/response: %w", err)
+		}
+		return nil
 	default:
-		return types.ErrUnknownMessageType
+		return fmt.Errorf("blocksync: %w: type ID %d", types.ErrUnknownMessageType, typeID)
 	}
 }
 
@@ -325,24 +332,27 @@ func (r *SyncReactor) handleBlocksRequest(peerID peer.ID, data []byte) error {
 		return types.ErrInvalidMessage
 	}
 
+	// Validate required fields
 	if req.BatchSize == nil || req.Since == nil {
+		return types.ErrInvalidMessage
+	}
+
+	// Validate and clamp batch size to safe limits
+	batchSize := types.ClampBatchSize(*req.BatchSize, types.MaxBatchSize)
+
+	// Validate height
+	since := *req.Since
+	if err := types.ValidateHeight(since); err != nil {
 		return types.ErrInvalidMessage
 	}
 
 	if r.blockStore == nil {
 		return nil
 	}
-
-	batchSize := int(*req.BatchSize)
-	if batchSize <= 0 {
-		batchSize = 100
-	}
-
-	since := *req.Since
 	ourHeight := r.blockStore.Height()
 
 	blocks := make([]schema.BlockData, 0, batchSize)
-	for height := since; height <= ourHeight && len(blocks) < batchSize; height++ {
+	for height := since; height <= ourHeight && len(blocks) < int(batchSize); height++ {
 		hash, blockData, err := r.blockStore.LoadBlock(height)
 		if err != nil {
 			// Block not found or error, stop here
@@ -403,7 +413,9 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 	}
 
 	for _, block := range resp.Blocks {
-		if block.Height == nil || len(block.Hash) == 0 || len(block.Data) == 0 {
+		// Validate block data structure
+		if err := types.ValidateBlockData(block.Height, block.Hash, block.Data); err != nil {
+			// Invalid block data - skip but don't penalize (could be partial response)
 			continue
 		}
 
@@ -414,7 +426,7 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 			continue
 		}
 
-		// Verify hash
+		// Verify hash matches content
 		computedHash := types.HashBlock(block.Data)
 		if string(computedHash) != string(block.Hash) {
 			if r.network != nil {

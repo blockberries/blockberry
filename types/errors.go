@@ -1,6 +1,33 @@
 package types
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// WrapMessageError wraps an error with message context (stream name and message type).
+func WrapMessageError(err error, stream string, msgType string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s/%s: %w", stream, msgType, err)
+}
+
+// WrapUnmarshalError wraps an unmarshal error with message type context.
+func WrapUnmarshalError(err error, msgType string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("unmarshal %s: %w", msgType, ErrInvalidMessage)
+}
+
+// WrapValidationError wraps a validation error with field context.
+func WrapValidationError(err error, field string) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("invalid %s: %w", field, err)
+}
 
 // Peer-related errors.
 var (

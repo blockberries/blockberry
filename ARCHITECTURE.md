@@ -15,12 +15,17 @@ Blockberry is a modular blockchain node framework written in Go. It provides the
 │                               BLOCKBERRY                                     │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
 │  │    Node     │  │   Mempool   │  │ BlockStore  │  │     StateStore      │ │
-│  │ Coordinator │  │  Interface  │  │  Interface  │  │   (IAVL-based)      │ │
+│  │ Coordinator │  │  (Priority/ │  │  Interface  │  │  (IAVL + ICS23)     │ │
+│  │             │  │   TTL)      │  │             │  │                     │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐ │
 │  │ PeerManager │  │     PEX     │  │  BlockSync  │  │      Handlers       │ │
-│  │  & Scoring  │  │   Reactor   │  │   Reactor   │  │  (Stream-specific)  │ │
+│  │ & RateLimiter│ │   Reactor   │  │   Reactor   │  │  (Stream-specific)  │ │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────────────┘ │
+│  ┌─────────────┐  ┌─────────────┐                                           │
+│  │   Metrics   │  │   Logging   │                                           │
+│  │ (Prometheus)│  │   (slog)    │                                           │
+│  └─────────────┘  └─────────────┘                                           │
 └─────────────────────────────────────────────────────────────────────────────┘
                                       │
                                       ▼
@@ -48,10 +53,13 @@ Blockberry is a modular blockchain node framework written in Go. It provides the
 
 ```
 github.com/blockberries/blockberry
-    ├── github.com/blockberries/glueberry     (P2P networking)
-    ├── github.com/blockberries/cramberry     (Serialization)
-    ├── github.com/cosmos/iavl                (Merkleized KV store)
-    └── (storage backend: leveldb/badgerdb)
+    ├── github.com/blockberries/glueberry v1.0.1   (P2P networking)
+    ├── github.com/blockberries/cramberry v1.2.0   (Serialization)
+    ├── github.com/cosmos/iavl v1.3.5              (Merkleized KV store)
+    ├── github.com/cosmos/ics23/go v0.10.0         (Proof verification)
+    ├── github.com/prometheus/client_golang        (Metrics)
+    ├── github.com/hashicorp/golang-lru/v2         (LRU caches)
+    └── github.com/syndtr/goleveldb                (Storage backend)
 ```
 
 ---
@@ -251,6 +259,47 @@ type Mempool interface {
 - Configurable size limits (count and bytes)
 - Thread-safe with RWMutex
 
+#### Priority-Based Mempool
+
+For applications that need transaction ordering by priority (e.g., gas price):
+
+```go
+type PriorityMempool struct {
+    txs          map[string]*mempoolTx
+    heap         txHeap              // Max-heap for priority ordering
+    maxTxs       int
+    maxBytes     int64
+    priorityFunc PriorityFunc        // Configurable priority calculation
+}
+```
+
+**Features:**
+- Max-heap ordering for O(1) highest priority access
+- Configurable `PriorityFunc` for custom priority calculation
+- Automatic eviction of lowest priority transactions when full
+- Built-in priority functions: `DefaultPriorityFunc`, `SizePriorityFunc`
+
+#### TTL Mempool
+
+Extends PriorityMempool with automatic transaction expiration:
+
+```go
+type TTLMempool struct {
+    // Wraps priority-based ordering with expiration
+    txs             map[string]*ttlTx
+    priorityHeap    ttlTxHeap
+    ttl             time.Duration      // Default TTL
+    cleanupInterval time.Duration      // Background cleanup interval
+}
+```
+
+**Features:**
+- Background goroutine for automatic expired transaction removal
+- `AddTxWithTTL(tx, ttl)` for custom per-transaction TTL
+- `GetTTL(hash)`, `ExtendTTL(hash, extension)`, `SetTTL(hash, expiresAt)`
+- `SizeActive()` returns count of non-expired transactions
+- `ReapTxs` automatically excludes expired transactions
+
 ### 5. Block Store
 
 Persistent storage for committed blocks.
@@ -366,11 +415,9 @@ type PeerState struct {
     PeerID    peer.ID
     PublicKey []byte
 
-    // Exchange tracking (avoid redundant sends)
-    TxsSent       *bloom.BloomFilter  // or map[string]bool
-    TxsReceived   *bloom.BloomFilter
-    BlocksSent    map[int64]bool      // height → sent
-    BlocksReceived map[int64]bool
+    // Exchange tracking with LRU caches (bounded memory)
+    knownTxs    *lru.Cache[string, struct{}]   // MaxKnownTxsPerPeer = 20000
+    knownBlocks *lru.Cache[string, struct{}]   // MaxKnownBlocksPerPeer = 2000
 
     // Scoring
     Score         int64
@@ -382,6 +429,29 @@ type PeerState struct {
     ConnectedAt   time.Time
     IsSeed        bool
     IsOutbound    bool
+}
+```
+
+**Memory Management:**
+- LRU caches prevent unbounded memory growth from transaction/block tracking
+- `MaxKnownTxsPerPeer = 20000` entries per peer
+- `MaxKnownBlocksPerPeer = 2000` entries per peer
+- Thread-safe with `hashicorp/golang-lru/v2`
+
+### 7a. Rate Limiter
+
+Per-peer, per-stream rate limiting using token bucket algorithm:
+
+```go
+type RateLimiter struct {
+    peers   map[peer.ID]*peerLimiter
+    limits  RateLimits
+}
+
+type RateLimits struct {
+    MessagesPerSecond map[string]float64  // Per-stream limits
+    BytesPerSecond    int64               // Overall bandwidth limit
+    BurstSize         int                 // Tokens for burst
 }
 ```
 
@@ -640,6 +710,77 @@ Utility functions for network health.
 
 ---
 
+## Observability
+
+### Prometheus Metrics
+
+Comprehensive metrics for monitoring node health and performance:
+
+```go
+type Metrics interface {
+    // Peer metrics
+    SetPeersTotal(direction string, count int)
+    IncPeerConnections(result string)
+    IncPeerDisconnections(reason string)
+
+    // Block metrics
+    SetBlockHeight(height int64)
+    IncBlocksReceived()
+    ObserveBlockLatency(seconds float64)
+    ObserveBlockSize(bytes int)
+
+    // Transaction metrics
+    SetMempoolSize(count int)
+    SetMempoolBytes(bytes int64)
+    IncTxsReceived()
+    IncTxsRejected(reason string)
+
+    // Sync metrics
+    SetSyncState(state string)
+    SetSyncProgress(progress float64)
+
+    // Message metrics
+    IncMessagesReceived(stream string)
+    IncMessagesSent(stream string)
+    IncMessageErrors(stream, errorType string)
+
+    // HTTP handler for /metrics endpoint
+    Handler() any
+}
+```
+
+**Implementations:**
+- `PrometheusMetrics`: Full Prometheus implementation with GaugeVec, CounterVec, Histograms
+- `NopMetrics`: Zero-overhead no-op implementation when metrics are disabled
+
+### Structured Logging
+
+Production-ready logging with slog integration:
+
+```go
+type Logger struct {
+    *slog.Logger
+}
+
+// Attribute constructors for blockchain-specific fields
+func Component(name string) slog.Attr
+func PeerID(id peer.ID) slog.Attr
+func Height(h int64) slog.Attr
+func Hash(h []byte) slog.Attr
+func Stream(name string) slog.Attr
+func Duration(d time.Duration) slog.Attr
+func Error(err error) slog.Attr
+```
+
+**Factory Functions:**
+- `NewTextLogger(w, level)`: Human-readable text format
+- `NewJSONLogger(w, level)`: Structured JSON format
+- `NewProductionLogger()`: JSON to stdout at INFO level
+- `NewDevelopmentLogger()`: Text to stdout at DEBUG level
+- `NewNopLogger()`: Zero-overhead discarding logger
+
+---
+
 ## Configuration
 
 Configuration is loaded from `config.toml`:
@@ -685,6 +826,16 @@ cache_size = 10000
 
 [housekeeping]
 latency_probe_interval = "60s"
+
+[metrics]
+enabled = true
+namespace = "blockberry"
+listen_addr = ":9090"
+
+[logging]
+level = "info"       # debug, info, warn, error
+format = "json"      # text or json
+output = "stdout"    # stdout, stderr, or file path
 ```
 
 ---
@@ -762,15 +913,17 @@ github.com/blockberries/blockberry/
 │   ├── lifecycle.go
 │   └── options.go
 ├── mempool/              # Mempool interface and implementations
-│   ├── mempool.go        # Interface
-│   ├── simple_mempool.go # Hash-based implementation
-│   └── mempool_test.go
+│   ├── mempool.go            # Interface
+│   ├── simple_mempool.go     # Hash-based implementation
+│   ├── priority_mempool.go   # Priority-based with heap ordering
+│   └── ttl_mempool.go        # TTL with automatic expiration
 ├── blockstore/           # Block storage
 │   ├── store.go          # Interface
 │   ├── leveldb.go        # LevelDB implementation
 │   └── store_test.go
-├── statestore/           # IAVL state storage
+├── statestore/           # IAVL state storage with ICS23 proofs
 │   ├── store.go          # Interface + IAVL wrapper
+│   ├── iavl_store.go     # IAVL implementation
 │   └── store_test.go
 ├── pex/                  # Peer exchange
 │   ├── reactor.go
@@ -786,17 +939,28 @@ github.com/blockberries/blockberry/
 │   └── housekeeping.go
 ├── p2p/                  # P2P abstractions over glueberry
 │   ├── peer_manager.go
-│   ├── peer_state.go
+│   ├── peer_state.go     # LRU-based peer state tracking
+│   ├── rate_limiter.go   # Token bucket rate limiting
 │   └── scoring.go
+├── metrics/              # Prometheus metrics
+│   ├── metrics.go        # Interface
+│   ├── prometheus.go     # Prometheus implementation
+│   └── nop.go            # No-op implementation
+├── logging/              # Structured logging
+│   └── logger.go         # slog wrapper with attribute constructors
 ├── types/                # Common types
 │   ├── block.go
 │   ├── tx.go
-│   └── errors.go
+│   ├── errors.go
+│   └── validation.go     # Input validation functions
 ├── config/               # Configuration
-│   ├── config.go
+│   ├── config.go         # Includes MetricsConfig, LoggingConfig
 │   └── defaults.go
 ├── schema/               # Generated cramberry code
 │   └── blockberry.go     # DO NOT EDIT
-└── cmd/                  # Example/reference implementations
-    └── blockberryd/
+├── testing/              # Integration test helpers
+└── examples/             # Example implementations
+    ├── simple_node/
+    ├── custom_mempool/
+    └── mock_consensus/
 ```

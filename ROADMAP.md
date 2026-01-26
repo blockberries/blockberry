@@ -1,706 +1,489 @@
 # Blockberry Roadmap
 
-This document outlines future improvements, enhancements, and features planned for blockberry. Items are organized by priority and category, with clear descriptions of scope and rationale.
+This document outlines the development roadmap for Blockberry, organized by priority and phase. Items are based on a comprehensive codebase review and industry best practices.
 
 ---
 
-## Table of Contents
+## Current Status (v1.0.0)
 
-1. [Current State Summary](#current-state-summary)
-2. [Critical Fixes](#critical-fixes)
-3. [High Priority Enhancements](#high-priority-enhancements)
-4. [Medium Priority Improvements](#medium-priority-improvements)
-5. [Future Features](#future-features)
-6. [Technical Debt](#technical-debt)
-7. [Documentation & Developer Experience](#documentation--developer-experience)
-8. [Performance Optimizations](#performance-optimizations)
-9. [Security Hardening](#security-hardening)
-10. [Ecosystem Integration](#ecosystem-integration)
+Blockberry v1.0.0 is a production-ready blockchain node framework with the following capabilities:
 
----
+### Core Components (Complete)
+- **Node Coordinator**: Full lifecycle management with graceful shutdown
+- **Mempool**: Three implementations (Simple, Priority, TTL) with configurable limits
+- **Block Store**: LevelDB-based persistent storage with memory option for testing
+- **State Store**: IAVL-based merkleized storage with ICS23 proof generation
+- **P2P Networking**: Glueberry-based with encrypted streams, peer management, and rate limiting
 
-## Current State Summary
+### Protocol Handlers (Complete)
+- Two-phase handshake with chain/version validation
+- Peer Exchange (PEX) with address book persistence
+- Transaction gossiping with deduplication
+- Block synchronization (batch catch-up)
+- Real-time block propagation
+- Pluggable consensus message routing
 
-Blockberry is a **production-ready** modular blockchain node framework with:
+### Observability (Complete)
+- Prometheus metrics (peers, blocks, transactions, sync, messages)
+- Structured logging via slog
+- Per-peer latency tracking
 
-| Component | Status | Notes |
-|-----------|--------|-------|
-| Core Types & Errors | ✅ Complete | 32 sentinel errors, hash functions |
-| Configuration | ✅ Complete | TOML loading, validation, defaults |
-| Block Storage | ✅ Complete | LevelDB + in-memory implementations |
-| State Storage | ⚠️ 95% Complete | IAVL-based, proof verification stub |
-| Mempool | ⚠️ Basic | FIFO only, no prioritization |
-| P2P Network | ✅ Complete | Peer management, scoring, encryption |
-| Peer Discovery | ✅ Complete | Full PEX protocol |
-| Block Sync | ✅ Complete | Batch synchronization |
-| Message Handlers | ✅ Complete | All streams implemented |
-| Node Coordinator | ✅ Complete | Lifecycle, event routing |
-| Integration Tests | ✅ Complete | Multi-node scenarios |
-
-**Test Coverage**: 22 test files, ~6,000 lines of tests, 150+ test functions
+### Safety Features (Complete)
+- Per-peer rate limiting (token bucket algorithm)
+- Peer scoring with penalty decay
+- LRU-bounded peer state (prevents memory leaks)
+- Comprehensive input validation
+- ICS23 proof verification
 
 ---
 
-## Critical Fixes
+## Phase 1: Storage & Sync Enhancements
 
-Issues that should be addressed before any production deployment.
+### P1.1: BadgerDB Block Store
+**Priority**: High
+**Effort**: 1-2 days
 
-### 1. Complete Proof Verification Implementation
+The configuration supports "badgerdb" as a backend option, but only LevelDB is implemented.
 
-**Location**: `statestore/store.go:70-77`
+**Tasks:**
+- Implement `BadgerDBBlockStore` in `blockstore/badgerdb.go`
+- Add configuration for BadgerDB-specific options (compression, value log)
+- Benchmark against LevelDB for various workloads
+- Add migration tooling between backends
 
-**Current State**: `Proof.Verify()` always returns `false`
+### P1.2: State Pruning
+**Priority**: High
+**Effort**: 3-5 days
 
-**Required Work**:
-- Implement ICS23 proof verification using cosmos/ics23/go
-- Parse `ProofBytes` and verify against provided root hash
-- Add comprehensive tests for existence and non-existence proofs
-- Document proof format and verification requirements
+Currently, all IAVL versions are retained indefinitely, consuming unbounded disk space.
 
-**Impact**: Critical for light clients, cross-chain verification, and state proofs
+**Tasks:**
+- Add `PruningConfig` with strategies: nothing, everything, custom
+- Implement `PruneVersions(keepRecent, keepEvery)` in StateStore
+- Background pruning goroutine with configurable intervals
+- Metrics for pruned versions and disk space reclaimed
 
-```go
-// Current (stub):
-func (p *Proof) Verify(rootHash []byte) (bool, error) {
-    return false, nil
-}
+### P1.3: State Sync (Fast Sync)
+**Priority**: High
+**Effort**: 1-2 weeks
 
-// Needed:
-func (p *Proof) Verify(rootHash []byte) (bool, error) {
-    // Parse ICS23 proof from ProofBytes
-    // Verify against rootHash using ics23.VerifyMembership or VerifyNonMembership
-}
-```
+New nodes must replay all blocks from genesis. State sync allows bootstrapping from a recent state snapshot.
 
-### 2. Fix Outbound Connection Detection
+**Tasks:**
+- Define snapshot format (IAVL export with metadata)
+- Add `SnapshotStore` interface for snapshot management
+- Implement snapshot creation at configurable intervals
+- Add snapshot discovery via PEX extension
+- Implement state sync reactor for streaming snapshots
+- Verification of snapshot integrity via root hash
 
-**Location**: `node/node.go:376`
+### P1.4: Block Pruning
+**Priority**: Medium
+**Effort**: 2-3 days
 
-**Current State**: `isOutbound` is hardcoded to `true`
+Archive nodes retain all blocks, but validators and full nodes may prune old blocks.
 
-**Required Work**:
-- Query glueberry for actual connection direction
-- Add `IsOutbound(peerID)` method to glueberry if not present
-- Update PeerManager to accurately track connection direction
-- Fix peer counts for inbound vs outbound limits
-
-**Impact**: Affects peer limit enforcement and connection management
-
----
-
-## High Priority Enhancements
-
-Features that significantly improve functionality or user experience.
-
-### 3. Priority-Based Mempool
-
-**Current State**: FIFO ordering only via `SimpleMempool`
-
-**Required Work**:
-- Create `PriorityMempool` implementation
-- Support configurable ordering strategies:
-  - Fee-per-byte ordering
-  - Gas price ordering
-  - Custom priority functions
-- Maintain backwards compatibility with `Mempool` interface
-- Add eviction policies for low-priority transactions when full
-
-**Interface Addition**:
-```go
-type PriorityMempool interface {
-    Mempool
-    SetPriorityFunc(func(tx []byte) int64)
-    UpdatePriority(hash []byte, priority int64) error
-}
-```
-
-**Impact**: Essential for fee-based blockchains and fair transaction ordering
-
-### 4. Transaction Expiration/TTL
-
-**Current State**: Transactions persist in mempool indefinitely
-
-**Required Work**:
-- Add `ttl` field to transaction metadata
-- Background goroutine for periodic cleanup
-- Configurable default TTL in `MempoolConfig`
-- Track insertion timestamp per transaction
-
-**Config Addition**:
-```toml
-[mempool]
-default_ttl = "1h"      # Default transaction lifetime
-cleanup_interval = "1m"  # How often to check for expired txs
-```
-
-**Impact**: Prevents mempool bloat with stale transactions
-
-### 5. Rate Limiting for Message Receipt
-
-**Current State**: No limits on incoming message rate
-
-**Required Work**:
-- Implement per-peer rate limiting
-- Configurable limits per stream type
-- Token bucket or leaky bucket algorithm
-- Automatic penalty for rate limit violations
-
-**Config Addition**:
-```toml
-[network.rate_limits]
-transactions_per_second = 100
-blocks_per_second = 10
-pex_requests_per_minute = 10
-```
-
-**Impact**: Prevents DoS attacks and bandwidth exhaustion
-
-### 6. Metrics and Observability
-
-**Current State**: No metrics or structured logging
-
-**Required Work**:
-- Add Prometheus metrics for:
-  - Peer counts (inbound, outbound)
-  - Message counts per stream
-  - Block heights (local, max peer)
-  - Mempool size and bytes
-  - Sync state and progress
-  - Latency histograms
-- Configurable metrics endpoint
-- Add structured logging with zerolog or slog
-- Trace ID propagation for debugging
-
-**Config Addition**:
-```toml
-[metrics]
-enabled = true
-listen_addr = "127.0.0.1:9090"
-```
-
-**Metrics Examples**:
-```
-blockberry_peers_total{direction="inbound"} 25
-blockberry_peers_total{direction="outbound"} 10
-blockberry_mempool_size 1234
-blockberry_mempool_bytes 5678901
-blockberry_block_height 100000
-blockberry_sync_state{state="synced"} 1
-blockberry_messages_received_total{stream="transactions"} 50000
-```
-
-**Impact**: Essential for production operations and debugging
-
-### 7. Firewall Detection Implementation
-
-**Location**: `handlers/housekeeping.go:253-292`
-
-**Current State**: Stub implementation that echoes endpoint back
-
-**Required Work**:
-- Implement actual reachability testing
-- Node A asks Node B to connect to Node A's external address
-- Node B attempts connection and reports success/failure
-- Track reachability status per node
-- Auto-detect NAT and report it
-
-**Impact**: Helps nodes understand their network reachability
+**Tasks:**
+- Add `BlockRetention` config (number of blocks or duration)
+- Implement `PruneBlocks(beforeHeight)` in BlockStore
+- Track `Base()` height correctly after pruning
+- Ensure sync reactor handles pruned peers gracefully
 
 ---
 
-## Medium Priority Improvements
+## Phase 2: Consensus Framework
 
-Features that improve robustness, efficiency, or developer experience.
+### P2.1: Consensus Interface Refinement
+**Priority**: High
+**Effort**: 3-5 days
 
-### 8. State Pruning Strategy
+The current `ConsensusHandler` interface is minimal. A richer interface would support more consensus patterns.
 
-**Current State**: All IAVL versions retained indefinitely
+**Tasks:**
+- Define `ConsensusEngine` interface with lifecycle methods
+- Add proposal generation hooks (`OnPropose(height, round)`)
+- Add vote handling hooks (`OnVote(height, round, type, vote)`)
+- Add commit handling (`OnCommit(height, block)`)
+- Support for consensus timeouts and round changes
 
-**Required Work**:
-- Implement configurable pruning strategies:
-  - `none`: Keep all versions
-  - `recent`: Keep last N versions
-  - `interval`: Keep every Nth version
-- Background pruning goroutine
-- Pruning during idle periods
+### P2.2: Reference BFT Implementation
+**Priority**: Medium
+**Effort**: 2-4 weeks
 
-**Config Addition**:
-```toml
-[statestore]
-pruning_strategy = "recent"  # none, recent, interval
-pruning_keep_recent = 100    # Number of recent versions to keep
-pruning_interval = 10        # For interval strategy
-```
+Provide a reference Tendermint-style BFT consensus implementation.
 
-**Impact**: Reduces disk usage for long-running nodes
+**Tasks:**
+- Implement `TendermintConsensus` engine
+- Proposal/prevote/precommit message types
+- Validator set management
+- Round-based state machine
+- WAL (Write-Ahead Log) for crash recovery
+- Evidence handling for double-signing
 
-### 9. Block Pruning
+### P2.3: Validator Set Updates
+**Priority**: Medium
+**Effort**: 1 week
 
-**Current State**: All blocks retained indefinitely
+Support dynamic validator sets that change at block boundaries.
 
-**Required Work**:
-- Implement block pruning for archival nodes
-- Keep headers for pruned blocks (for sync verification)
-- Update `Base()` as blocks are pruned
-- Configurable minimum blocks to retain
-
-**Config Addition**:
-```toml
-[blockstore]
-pruning_enabled = true
-min_retain_blocks = 10000  # Minimum blocks to keep
-```
-
-**Impact**: Enables non-archival node operation
-
-### 10. BadgerDB Block Store Implementation
-
-**Current State**: Only LevelDB supported
-
-**Required Work**:
-- Create `BadgerBlockStore` implementing `BlockStore` interface
-- Add backend selection in config
-- Performance benchmarks vs LevelDB
-- Migration tooling between backends
-
-**Config Addition**:
-```toml
-[blockstore]
-backend = "badgerdb"  # leveldb, badgerdb
-```
-
-**Impact**: Provides alternative with different performance characteristics
-
-### 11. Connection Pooling and Reuse
-
-**Current State**: No connection pooling for frequent operations
-
-**Required Work**:
-- Pool glueberry connections efficiently
-- Reuse stream writers/readers
-- Reduce allocation overhead for message encoding
-- Buffer pool for cramberry serialization
-
-**Impact**: Improved performance under high load
-
-### 12. Enhanced Handshake Recovery
-
-**Current State**: Lost HelloFinalize may cause connection hang
-
-**Required Work**:
-- Add handshake timeout per-peer
-- Retry HelloFinalize on timeout
-- Clean up stuck handshake states
-- Configurable retry parameters
-
-**Impact**: More robust connection establishment
-
-### 13. Bandwidth Allocation Per Stream
-
-**Current State**: All streams share bandwidth equally
-
-**Required Work**:
-- Priority queuing for outbound messages
-- Configurable bandwidth weights per stream
-- Fair queuing implementation
-- Back-pressure signaling
-
-**Config Addition**:
-```toml
-[network.bandwidth]
-consensus_weight = 100   # Highest priority
-blocks_weight = 80
-transactions_weight = 50
-pex_weight = 10          # Lowest priority
-```
-
-**Impact**: Ensures critical messages (consensus) aren't delayed
+**Tasks:**
+- `ValidatorSet` type with voting power tracking
+- `EndBlock()` returns validator updates
+- Validator set persistence in state store
+- Light client validator set verification
 
 ---
 
-## Future Features
+## Phase 3: Networking Improvements
 
-Longer-term enhancements for expanded functionality.
+### P3.1: Firewall Detection
+**Priority**: Medium
+**Effort**: 2-3 days
 
-### 14. Light Client Support
+The housekeeping reactor has placeholders for firewall detection.
 
-**Current State**: Only full nodes supported
+**Tasks:**
+- Implement `FirewallRequest`/`FirewallResponse` messages
+- Add reachability probing via third-party peers
+- Track and report NAT type (full cone, symmetric, etc.)
+- Expose reachability status in metrics
 
-**Required Work**:
-- Header-only sync mode
-- State proof verification
-- On-demand block/state fetching
-- Compact block notifications
-- Light client P2P protocol extensions
+### P3.2: Peer Reputation Persistence
+**Priority**: Medium
+**Effort**: 1-2 days
 
-**New Message Types**:
-```
-HeadersRequest { start_height, count }
-HeadersResponse { headers[] }
-StateProofRequest { key, height }
-StateProofResponse { proof, value }
-```
+Peer scores and penalties are lost on restart.
 
-**Impact**: Enables mobile and resource-constrained clients
+**Tasks:**
+- Serialize peer scores to address book
+- Load historical scores on startup
+- Gradual trust building for new peers
+- Configurable score decay across restarts
 
-### 15. Snapshot Sync
+### P3.3: Connection Diversity
+**Priority**: Low
+**Effort**: 2-3 days
 
-**Current State**: Must sync from genesis or latest known block
+Improve resilience by ensuring peer diversity.
 
-**Required Work**:
-- State snapshot creation at configurable intervals
-- Snapshot advertisement via PEX
-- Snapshot download protocol
-- State verification after snapshot application
-- Catch-up sync from snapshot height
+**Tasks:**
+- Track peer IP subnets and ASNs
+- Limit connections per subnet/ASN
+- Prefer geographically diverse peers
+- Metrics for peer distribution
 
-**New Message Types**:
-```
-SnapshotRequest { }
-SnapshotResponse { height, hash, chunks_count }
-SnapshotChunkRequest { height, chunk_index }
-SnapshotChunkResponse { data }
-```
+### P3.4: Protocol Upgrades
+**Priority**: Low
+**Effort**: 1 week
 
-**Impact**: Dramatically reduces sync time for new nodes
+Support protocol version negotiation and upgrades.
 
-### 16. Validator Set Management
-
-**Current State**: No built-in validator tracking
-
-**Required Work**:
-- Validator set interface and storage
-- Validator updates via consensus
-- Stake/power tracking
-- Validator address book integration
-
-**Impact**: Foundation for PoS consensus implementations
-
-### 17. RPC Server
-
-**Current State**: No RPC interface
-
-**Required Work**:
-- HTTP/JSON-RPC server
-- WebSocket subscriptions
-- gRPC support
-- Standard endpoints:
-  - `/status` - Node status
-  - `/block` - Block queries
-  - `/tx` - Transaction queries
-  - `/state` - State queries
-  - `/peers` - Peer information
-
-**Config Addition**:
-```toml
-[rpc]
-enabled = true
-listen_addr = "127.0.0.1:26657"
-max_connections = 100
-```
-
-**Impact**: Essential for applications and tooling
-
-### 18. Transaction Indexing
-
-**Current State**: No transaction indexing
-
-**Required Work**:
-- Configurable transaction indexing
-- Index by hash, sender, receiver (application-defined)
-- Query interface
-- Index storage (separate from blocks)
-
-**Config Addition**:
-```toml
-[indexing]
-enabled = true
-index_path = "data/txindex"
-```
-
-**Impact**: Enables transaction history queries
-
-### 19. Event System
-
-**Current State**: No application-level events
-
-**Required Work**:
-- Event emission from block execution
-- Event subscription interface
-- WebSocket event streaming
-- Event filtering by type/attributes
-
-**Impact**: Enables reactive applications and monitoring
-
-### 20. Multi-Chain Support
-
-**Current State**: Single chain per node
-
-**Required Work**:
-- Multiple chain ID support
-- Isolated stores per chain
-- Cross-chain message routing
-- Shared peer management
-
-**Impact**: Enables relay nodes and multi-chain applications
+**Tasks:**
+- Feature flags in handshake
+- Graceful degradation for older peers
+- Coordinated upgrade signaling
+- Protocol version metrics
 
 ---
 
-## Technical Debt
+## Phase 4: Developer Experience
 
-Code quality and maintainability improvements.
+### P4.1: Transaction Indexing
+**Priority**: High
+**Effort**: 1 week
 
-### 21. Improve Test Coverage
+Enable querying transactions by hash, sender, or other attributes.
 
-**Areas Needing More Tests**:
-- `p2p/network.go` - Only 37 lines of tests
-- `node/node.go` - Integration with all components
-- Error path testing in handlers
-- Concurrent access stress tests
+**Tasks:**
+- Define `TxIndexer` interface
+- Implement LevelDB-based indexer
+- Index by hash, height, sender (configurable)
+- Query API for transaction lookup
+- Reindexing tooling for existing chains
 
-**Target**: 80%+ coverage in all packages
+### P4.2: Event Subscription System
+**Priority**: High
+**Effort**: 1 week
 
-### 22. Add Benchmarks
+Allow clients to subscribe to blockchain events.
 
-**Missing Benchmarks**:
-- Message encoding/decoding
-- Block store operations under load
-- Mempool operations with large tx counts
-- PEX address book operations
-- Concurrent peer manager access
+**Tasks:**
+- Define event types (NewBlock, NewTx, ValidatorSetUpdate, etc.)
+- Implement pub/sub mechanism with filters
+- WebSocket transport for subscriptions
+- Event persistence for replay
 
-**Impact**: Enables performance regression detection
+### P4.3: RPC API
+**Priority**: High
+**Effort**: 2 weeks
 
-### 23. Refactor Duplicate Code
+Provide a standard RPC interface for node interaction.
 
-**Identified Duplications**:
-- `encodeMessage()` repeated in each reactor
-- Type ID prefix handling in all handlers
-- Similar error handling patterns
+**Tasks:**
+- Define RPC methods (status, broadcast_tx, query, etc.)
+- Implement JSON-RPC 2.0 transport
+- Add gRPC transport option
+- Authentication and rate limiting
+- OpenAPI/Swagger documentation
 
-**Solution**: Create shared message encoding utilities
+### P4.4: CLI Tooling
+**Priority**: Medium
+**Effort**: 1 week
 
-### 24. Consistent Context Usage
+Command-line tools for node operation.
 
-**Current State**: Mixed context usage across components
+**Tasks:**
+- `blockberry init` - Initialize node configuration
+- `blockberry start` - Start the node
+- `blockberry status` - Query node status
+- `blockberry peers` - List connected peers
+- `blockberry tx` - Submit transactions
+- `blockberry query` - Query state
 
-**Required Work**:
-- Add `context.Context` to all public APIs
-- Proper cancellation propagation
-- Timeout context support
-- Trace context integration
+### P4.5: Plugin System
+**Priority**: Low
+**Effort**: 2 weeks
 
----
+Allow extending blockberry without forking.
 
-## Documentation & Developer Experience
-
-### 25. API Documentation
-
-**Required Work**:
-- Godoc comments for all public types/methods
-- Package-level documentation
-- Example code in `example_test.go` files
-- Architecture decision records (ADRs)
-
-### 26. Protocol Specification
-
-**Required Work**:
-- Formal specification of all message types
-- State machine diagrams for handlers
-- Handshake sequence diagrams
-- PEX protocol specification
-
-### 27. Tutorials and Guides
-
-**Required Work**:
-- "Build Your First Chain" tutorial
-- Consensus implementation guide
-- Custom mempool implementation guide
-- Production deployment guide
-- Troubleshooting guide
-
-### 28. CLI Tool
-
-**Required Work**:
-- `blockberryd` binary for running nodes
-- Command-line configuration
-- Key generation utilities
-- Debug commands
+**Tasks:**
+- Define plugin interfaces (Mempool, Store, Handler)
+- Plugin discovery and loading
+- Configuration for plugin-specific settings
+- Example plugins
 
 ---
 
-## Performance Optimizations
+## Phase 5: Light Client Support
 
-### 29. Memory Pool for Messages
+### P5.1: Light Client Protocol
+**Priority**: Medium
+**Effort**: 2 weeks
 
-**Current State**: Allocations for each message
+Enable trustless light clients that verify headers without full blocks.
 
-**Required Work**:
-- Implement `sync.Pool` for common message types
-- Buffer pooling for cramberry encoding
-- Reduce allocations in hot paths
+**Tasks:**
+- Header-only sync reactor
+- Merkle proof verification for state queries
+- Trusted height/hash bootstrap
+- Bisection algorithm for header verification
 
-**Impact**: Reduced GC pressure under load
+### P5.2: Light Client Library
+**Priority**: Medium
+**Effort**: 1 week
 
-### 30. Parallel Block Validation
+Standalone library for building light clients.
 
-**Current State**: Sequential block processing
-
-**Required Work**:
-- Parallel transaction validation
-- Concurrent signature verification
-- Pipeline block processing
-
-**Impact**: Higher throughput for block processing
-
-### 31. Optimized Hash Caching
-
-**Current State**: Re-hashing on each access
-
-**Required Work**:
-- Cache transaction hashes
-- Cache block hashes
-- Lazy hash computation
-
-**Impact**: Reduced CPU usage for repeated operations
+**Tasks:**
+- `LightClient` type with sync and query methods
+- Multiple backend support (HTTP, WebSocket)
+- Proof verification utilities
+- Mobile-friendly (minimal dependencies)
 
 ---
 
-## Security Hardening
+## Phase 6: Performance Optimization
 
-### 32. Enhanced Peer Scoring
+### P6.1: Parallel Transaction Execution
+**Priority**: Medium
+**Effort**: 2-3 weeks
 
-**Current State**: Basic penalty system
+Execute independent transactions in parallel during block production.
 
-**Required Work**:
-- Reputation decay over time
-- Positive scoring for good behavior
-- Peer recommendation based on reputation
-- Eclipse attack detection
+**Tasks:**
+- Dependency analysis for transactions
+- Worker pool for parallel execution
+- Deterministic ordering of results
+- Conflict detection and fallback to serial
 
-### 33. Message Size Limits
+### P6.2: Message Compression
+**Priority**: Low
+**Effort**: 2-3 days
 
-**Current State**: No explicit size limits
+Reduce bandwidth usage with message compression.
 
-**Required Work**:
-- Configurable max message size per stream
-- Reject oversized messages early
-- Log suspicious large messages
+**Tasks:**
+- Add compression negotiation in handshake
+- Implement snappy/zstd compression for large messages
+- Per-stream compression settings
+- Metrics for compression ratios
 
-**Config Addition**:
-```toml
-[network.limits]
-max_block_size = 10485760      # 10MB
-max_transaction_size = 1048576  # 1MB
-max_pex_response = 102400       # 100KB
-```
+### P6.3: Memory Pool Optimization
+**Priority**: Low
+**Effort**: 1 week
 
-### 34. DoS Protection
+Reduce memory allocations in hot paths.
 
-**Current State**: Limited protection
+**Tasks:**
+- Object pooling for frequently allocated types
+- Buffer reuse for serialization
+- Zero-copy message passing where possible
+- Memory profiling and optimization
 
-**Required Work**:
-- Request rate limiting per peer
-- Connection rate limiting
-- Memory usage limits
-- CPU usage monitoring
-- Automatic peer banning for abuse
+### P6.4: Batch Processing Improvements
+**Priority**: Low
+**Effort**: 3-5 days
 
-### 35. Audit and Security Review
+Optimize batch operations for blocks and transactions.
 
-**Required Work**:
-- Third-party security audit
-- Fuzzing for message parsers
-- Static analysis with security linters
-- Dependency vulnerability scanning
-
----
-
-## Ecosystem Integration
-
-### 36. Cosmos SDK Compatibility
-
-**Required Work**:
-- ABCI 2.0 compatible interface
-- CometBFT-style state sync
-- Cosmos IBC compatibility layer
-
-### 37. Ethereum Compatibility Layer
-
-**Required Work**:
-- EVM state storage adapter
-- Ethereum RPC compatibility
-- Web3 provider support
-
-### 38. Cross-Platform Builds
-
-**Required Work**:
-- Windows support testing
-- ARM64 builds
-- Docker images
-- Reproducible builds
+**Tasks:**
+- Adaptive batch sizing based on network conditions
+- Pipelined block processing during sync
+- Parallel block validation
+- Metrics for batch efficiency
 
 ---
 
-## Priority Matrix
+## Phase 7: Security Hardening
 
-| Priority | Item | Effort | Impact |
-|----------|------|--------|--------|
-| Critical | Proof Verification | Medium | High |
-| Critical | Outbound Detection | Low | Medium |
-| High | Priority Mempool | High | High |
-| High | Transaction TTL | Medium | Medium |
-| High | Rate Limiting | Medium | High |
-| High | Metrics | High | High |
-| Medium | State Pruning | Medium | Medium |
-| Medium | Block Pruning | Medium | Medium |
-| Medium | BadgerDB Backend | Medium | Low |
-| Medium | Bandwidth Allocation | High | Medium |
-| Future | Light Client | Very High | High |
-| Future | Snapshot Sync | Very High | High |
-| Future | RPC Server | High | High |
+### P7.1: Enhanced DDoS Protection
+**Priority**: Medium
+**Effort**: 1 week
+
+Additional protection against denial-of-service attacks.
+
+**Tasks:**
+- Connection rate limiting per IP
+- Proof-of-work for new connections (optional)
+- Automatic blacklisting of attack sources
+- Metrics for attack detection
+
+### P7.2: Sybil Attack Mitigation
+**Priority**: Medium
+**Effort**: 1 week
+
+Prevent attackers from overwhelming the network with fake nodes.
+
+**Tasks:**
+- Peer identity verification options
+- Stake-weighted peer selection (for PoS chains)
+- IP diversity requirements
+- Anomaly detection for peer behavior
+
+### P7.3: Security Audit Preparation
+**Priority**: High
+**Effort**: 1-2 weeks
+
+Prepare codebase for external security audit.
+
+**Tasks:**
+- Document security assumptions
+- Review cryptographic usage
+- Fuzz testing for parsers and handlers
+- Static analysis tool integration
+
+---
+
+## Phase 8: Observability Enhancements
+
+### P8.1: Distributed Tracing
+**Priority**: Medium
+**Effort**: 1 week
+
+Add tracing support for debugging distributed issues.
+
+**Tasks:**
+- OpenTelemetry integration
+- Trace context propagation in messages
+- Span creation for key operations
+- Jaeger/Zipkin export support
+
+### P8.2: Health Check Endpoints
+**Priority**: Medium
+**Effort**: 2-3 days
+
+Standardized health checks for orchestration systems.
+
+**Tasks:**
+- `/health/live` - Node is running
+- `/health/ready` - Node is synced and accepting requests
+- `/health/startup` - Node has completed initialization
+- Kubernetes probe compatibility
+
+### P8.3: Admin API
+**Priority**: Low
+**Effort**: 1 week
+
+Protected API for node administration.
+
+**Tasks:**
+- Peer management (connect, disconnect, ban)
+- Configuration hot-reload
+- Log level adjustment
+- Profiling endpoints (pprof)
+
+---
+
+## Phase 9: Ecosystem Integration
+
+### P9.1: IBC Compatibility
+**Priority**: Low
+**Effort**: 4-6 weeks
+
+Support Inter-Blockchain Communication protocol.
+
+**Tasks:**
+- IBC client interface implementation
+- Connection and channel handshakes
+- Packet relay support
+- ICS-20 token transfer
+
+### P9.2: ABCI Compatibility Layer
+**Priority**: Low
+**Effort**: 2-3 weeks
+
+Compatibility with Cosmos SDK applications via ABCI.
+
+**Tasks:**
+- ABCI server implementation (socket/gRPC)
+- Proxy application type
+- Tendermint RPC compatibility mode
+- Migration guide from Tendermint
 
 ---
 
 ## Version Milestones
 
-### v0.2.0 - Stability Release
-- [ ] Complete proof verification
-- [ ] Fix outbound connection detection
-- [ ] Add rate limiting
-- [ ] Basic metrics support
+### v1.1.0 - Storage & Performance
+- BadgerDB block store (P1.1)
+- State pruning (P1.2)
+- Block pruning (P1.4)
+- Transaction indexing (P4.1)
 
-### v0.3.0 - Production Ready
-- [ ] Priority mempool
-- [ ] Transaction TTL
-- [ ] State and block pruning
-- [ ] Full metrics suite
-- [ ] Firewall detection
+### v1.2.0 - Developer Experience
+- RPC API (P4.3)
+- Event subscription (P4.2)
+- CLI tooling (P4.4)
+- Health check endpoints (P8.2)
 
-### v0.4.0 - Feature Complete
-- [ ] Light client support
-- [ ] Snapshot sync
-- [ ] RPC server
-- [ ] Transaction indexing
+### v1.3.0 - Fast Sync
+- State sync (P1.3)
+- Light client protocol (P5.1)
+- Light client library (P5.2)
 
-### v1.0.0 - Stable Release
-- [ ] Security audit completed
-- [ ] Full documentation
-- [ ] Production deployment guides
-- [ ] Ecosystem integrations
+### v2.0.0 - Consensus Framework
+- Consensus interface refinement (P2.1)
+- Reference BFT implementation (P2.2)
+- Validator set updates (P2.3)
 
 ---
 
 ## Contributing
 
-When implementing roadmap items:
+We welcome contributions to any roadmap item. Before starting work on a major feature:
 
-1. Create an issue referencing the roadmap item
-2. Follow the implementation guidelines in CLAUDE.md
-3. Add comprehensive tests
-4. Update documentation
-5. Update this roadmap with completion status
+1. Open an issue to discuss the approach
+2. Reference the roadmap item (e.g., "P1.2: State Pruning")
+3. Follow the contribution guidelines in CONTRIBUTING.md
+
+### Priority Legend
+- **High**: Critical for production use or highly requested
+- **Medium**: Important for completeness but not blocking
+- **Low**: Nice-to-have or specialized use cases
+
+### Effort Estimates
+Effort estimates assume a single experienced developer. Actual time may vary based on complexity discovered during implementation.
 
 ---
 
-*Last updated: January 2026*
+*Last Updated: January 2025*

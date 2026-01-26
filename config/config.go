@@ -19,6 +19,8 @@ type Config struct {
 	BlockStore   BlockStoreConfig   `toml:"blockstore"`
 	StateStore   StateStoreConfig   `toml:"statestore"`
 	Housekeeping HousekeepingConfig `toml:"housekeeping"`
+	Metrics      MetricsConfig      `toml:"metrics"`
+	Logging      LoggingConfig      `toml:"logging"`
 }
 
 // NodeConfig contains node identity and chain configuration.
@@ -111,6 +113,30 @@ type HousekeepingConfig struct {
 	LatencyProbeInterval Duration `toml:"latency_probe_interval"`
 }
 
+// MetricsConfig contains metrics configuration.
+type MetricsConfig struct {
+	// Enabled determines whether metrics collection is active.
+	Enabled bool `toml:"enabled"`
+
+	// Namespace is the Prometheus metrics namespace prefix.
+	Namespace string `toml:"namespace"`
+
+	// ListenAddr is the address to serve metrics on (e.g., ":9090").
+	ListenAddr string `toml:"listen_addr"`
+}
+
+// LoggingConfig contains logging configuration.
+type LoggingConfig struct {
+	// Level is the minimum log level ("debug", "info", "warn", "error").
+	Level string `toml:"level"`
+
+	// Format is the log output format ("text" or "json").
+	Format string `toml:"format"`
+
+	// Output is the log output destination ("stdout", "stderr", or a file path).
+	Output string `toml:"output"`
+}
+
 // Duration is a wrapper around time.Duration for TOML unmarshaling.
 type Duration time.Duration
 
@@ -174,6 +200,16 @@ func DefaultConfig() *Config {
 		Housekeeping: HousekeepingConfig{
 			LatencyProbeInterval: Duration(60 * time.Second),
 		},
+		Metrics: MetricsConfig{
+			Enabled:    false,
+			Namespace:  "blockberry",
+			ListenAddr: ":9090",
+		},
+		Logging: LoggingConfig{
+			Level:  "info",
+			Format: "text",
+			Output: "stderr",
+		},
 	}
 }
 
@@ -219,6 +255,11 @@ var (
 	ErrEmptyStateStorePath      = errors.New("statestore path cannot be empty")
 	ErrInvalidStateCacheSize    = errors.New("statestore cache_size must be non-negative")
 	ErrInvalidLatencyInterval   = errors.New("latency_probe_interval must be positive")
+	ErrEmptyMetricsNamespace    = errors.New("metrics namespace cannot be empty when enabled")
+	ErrEmptyMetricsListenAddr   = errors.New("metrics listen_addr cannot be empty when enabled")
+	ErrInvalidLogLevel          = errors.New("log level must be one of: debug, info, warn, error")
+	ErrInvalidLogFormat         = errors.New("log format must be 'text' or 'json'")
+	ErrEmptyLogOutput           = errors.New("log output cannot be empty")
 )
 
 // Validate checks the configuration for errors.
@@ -243,6 +284,12 @@ func (c *Config) Validate() error {
 	}
 	if err := c.Housekeeping.Validate(); err != nil {
 		return fmt.Errorf("housekeeping config: %w", err)
+	}
+	if err := c.Metrics.Validate(); err != nil {
+		return fmt.Errorf("metrics config: %w", err)
+	}
+	if err := c.Logging.Validate(); err != nil {
+		return fmt.Errorf("logging config: %w", err)
 	}
 	return nil
 }
@@ -338,6 +385,42 @@ func (c *HousekeepingConfig) Validate() error {
 	if c.LatencyProbeInterval.Duration() <= 0 {
 		return ErrInvalidLatencyInterval
 	}
+	return nil
+}
+
+// Validate checks the metrics configuration for errors.
+func (c *MetricsConfig) Validate() error {
+	if c.Enabled {
+		if c.Namespace == "" {
+			return ErrEmptyMetricsNamespace
+		}
+		if c.ListenAddr == "" {
+			return ErrEmptyMetricsListenAddr
+		}
+	}
+	return nil
+}
+
+// Validate checks the logging configuration for errors.
+func (c *LoggingConfig) Validate() error {
+	switch c.Level {
+	case "debug", "info", "warn", "error":
+		// Valid levels
+	default:
+		return ErrInvalidLogLevel
+	}
+
+	switch c.Format {
+	case "text", "json":
+		// Valid formats
+	default:
+		return ErrInvalidLogFormat
+	}
+
+	if c.Output == "" {
+		return ErrEmptyLogOutput
+	}
+
 	return nil
 }
 

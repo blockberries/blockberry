@@ -4,7 +4,7 @@ This guide walks you through setting up your first blockberry node.
 
 ## Prerequisites
 
-- Go 1.21 or later
+- Go 1.22 or later (1.25+ recommended)
 - A working knowledge of Go programming
 
 ## Installation

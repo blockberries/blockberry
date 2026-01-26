@@ -1,1244 +1,395 @@
-# Blockberry Progress Report
+# Blockberry Pre-Release Implementation Progress Report
 
-This file tracks implementation progress. Each completed task should have a summary appended here before committing.
+This document tracks the implementation progress for the pre-release hardening of Blockberry.
 
----
+## Completed Tasks
 
-## [Phase 1] Project Setup
+### Phase 1: Critical Fixes
 
-**Status:** Completed
-
-**Files Created:**
-- `go.mod` - Go module definition with all dependencies
-- `go.sum` - Dependency checksums
-- `Makefile` - Build automation (build, test, test-race, lint, generate, clean, coverage, check)
-- `.golangci.yml` - Linter configuration
-- `deps.go` - Dependency tracking file (build-tagged)
-- `blockstore/doc.go` - Package documentation stub
-- `config/doc.go` - Package documentation stub
-- `handlers/doc.go` - Package documentation stub
-- `mempool/doc.go` - Package documentation stub
-- `node/doc.go` - Package documentation stub
-- `p2p/doc.go` - Package documentation stub
-- `pex/doc.go` - Package documentation stub
-- `statestore/doc.go` - Package documentation stub
-- `sync/doc.go` - Package documentation stub
-- `types/doc.go` - Package documentation stub
-
-**Functionality Implemented:**
-- Go module initialized with dependencies:
-  - `github.com/blockberries/glueberry` (P2P networking)
-  - `github.com/blockberries/cramberry` (serialization)
-  - `github.com/cosmos/iavl` (merkleized state store)
-  - `github.com/syndtr/goleveldb` (block storage backend)
-  - `github.com/BurntSushi/toml` (configuration)
-  - `github.com/stretchr/testify` (testing)
-- Makefile with targets: build, test, test-race, lint, fmt, vet, generate, clean, coverage, tidy, check
-- Directory structure created per ARCHITECTURE.md
-- golangci-lint configuration with appropriate linters enabled
-
-**Test Coverage:**
-- No tests yet (Phase 1 is setup only)
-- Build, test, and lint all pass
-
-**Design Decisions:**
-- Using local replace directives for glueberry and cramberry during development
-- deps.go uses build tag to avoid being compiled into binaries while tracking dependencies
-- golangci-lint configured to exclude generated schema/ directory and test files from certain linters
-
----
-
-## [Phase 2] Configuration
-
-**Status:** Completed
-
-**Files Created:**
-- `config/config.go` - Complete configuration system
+#### P1-1: ICS23 Proof Verification Implementation
+**Status:** COMPLETED
 
 **Files Modified:**
-- `config/doc.go` - Removed (replaced by config.go)
-- `schema/blockberry.go` - Formatted by gofmt
+- `statestore/store.go` - Implemented full ICS23 proof verification
+- `statestore/iavl_test.go` - Added comprehensive tests for proof verification
 
-**Functionality Implemented:**
-- Configuration structures for all components:
-  - `Config` - Main configuration aggregating all sub-configs
-  - `NodeConfig` - chain_id, protocol_version, private_key_path
-  - `NetworkConfig` - listen_addrs, max_peers, timeouts, seeds
-  - `PEXConfig` - enabled, request_interval, max_addresses
-  - `MempoolConfig` - max_txs, max_bytes, cache_size
-  - `BlockStoreConfig` - backend (leveldb/badgerdb), path
-  - `StateStoreConfig` - path, cache_size
-  - `HousekeepingConfig` - latency_probe_interval
-- TOML configuration loading with `LoadConfig(path)`
-- Default configuration with `DefaultConfig()`
-- Configuration writing with `WriteConfigFile(path, cfg)`
-- Comprehensive validation for all config sections
-- Custom `Duration` type for TOML-compatible time.Duration parsing
-- `EnsureDataDirs()` to create required directories
+**Implementation Details:**
+- Added proper ICS23 proof verification using `ics23.VerifyMembership()` and `ics23.VerifyNonMembership()`
+- The `Proof.Verify(rootHash)` method now properly:
+  - Validates nil proof and empty inputs
+  - Unmarshals the commitment proof from `ProofBytes`
+  - Uses `ics23.IavlSpec` for IAVL tree verification
+  - Supports both existence and non-existence proofs
+- Added `VerifyConsistent(rootHash)` helper method
+- Added comprehensive tests covering:
+  - Existence proof verification
+  - Non-existence proof verification
+  - Tampered proof rejection
+  - Edge cases (nil proof, empty root hash, invalid proof bytes)
+  - Multi-version proof isolation
 
-**Test Coverage:**
-- 18 test functions with 40+ test cases
-- Tests for: default config, loading, partial loading, file not found, invalid TOML,
-  validation errors, all config section validations, write/read round-trip,
-  Duration marshaling/unmarshaling, directory creation
-- All tests pass with race detection
-
-**Design Decisions:**
-- Duration type wraps time.Duration for proper TOML serialization (e.g., "30s")
-- Validation only applies to enabled features (e.g., PEX fields only validated if enabled)
-- Zero cache sizes are valid (disables caching)
-- Zero max peers is valid (node can be isolated)
-- Sentinel errors allow callers to check specific validation failures with errors.Is()
-
----
-
-## [Phase 3] Types & Errors
-
-**Status:** Completed
-
-**Files Created:**
-- `types/types.go` - Common type definitions (Height, Hash, Tx, Block, PeerID)
-- `types/errors.go` - Sentinel error definitions for all components
-- `types/hash.go` - Hash functions using SHA-256
-- `types/types_test.go` - Tests for type methods
-- `types/hash_test.go` - Tests for hash functions
-- `types/errors_test.go` - Tests for error handling
+#### P1-2: Outbound Connection Detection
+**Status:** COMPLETED
 
 **Files Modified:**
-- `types/doc.go` - Removed (replaced by types.go)
+- `node/node.go` - Fixed hardcoded `true` for `isOutbound` parameter
 
-**Functionality Implemented:**
-
-Common Types:
-- `Height` - Block height with String() and Int64() methods
-- `Hash` - Cryptographic hash with String(), Bytes(), IsEmpty(), Equal() methods
-- `Tx` - Opaque transaction bytes with String(), Bytes(), Size() methods
-- `Block` - Opaque block bytes with String(), Bytes(), Size() methods
-- `PeerID` - Peer identifier with String() and IsEmpty() methods
-- `HashFromHex()` - Parse hash from hexadecimal string
-
-Hash Functions:
-- `HashTx(tx)` - SHA-256 hash of transaction
-- `HashBlock(block)` - SHA-256 hash of block
-- `HashBytes(data)` - SHA-256 hash of arbitrary bytes
-- `HashConcat(left, right)` - Hash concatenation for merkle trees
-- `EmptyHash()` - Hash of empty byte slice
-- `HashSize` constant (32 bytes)
-
-Sentinel Errors (32 total):
-- Peer errors: ErrPeerNotFound, ErrPeerBlacklisted, ErrPeerAlreadyConnected, ErrMaxPeersReached
-- Block errors: ErrBlockNotFound, ErrBlockAlreadyExists, ErrInvalidBlockHeight, ErrInvalidBlockHash
-- Transaction errors: ErrTxNotFound, ErrTxAlreadyExists, ErrInvalidTx, ErrTxTooLarge
-- Mempool errors: ErrMempoolFull, ErrMempoolClosed
-- Connection errors: ErrChainIDMismatch, ErrVersionMismatch, ErrHandshakeFailed, ErrHandshakeTimeout, ErrConnectionClosed, ErrNotConnected
-- Message errors: ErrInvalidMessage, ErrUnknownMessageType, ErrMessageTooLarge
-- State errors: ErrKeyNotFound, ErrStoreClosed, ErrInvalidProof
-- Sync errors: ErrAlreadySyncing, ErrNotSyncing, ErrSyncFailed
-- Node errors: ErrNodeNotStarted, ErrNodeAlreadyStarted, ErrNodeStopped
-
-**Test Coverage:**
-- 14 test functions with 60+ test cases
-- Tests for all type methods and edge cases
-- Hash function tests verify determinism and SHA-256 correctness
-- Error tests verify errors.Is() compatibility and distinctness
-- Benchmarks for hash operations
-- All tests pass with race detection
-
-**Design Decisions:**
-- Hash functions return nil for nil input (not empty hash)
-- String() methods truncate long values for readability
-- All errors are distinct and work with errors.Is() and fmt.Errorf wrapping
-- Using SHA-256 for all hashing (standard, 32-byte output)
+**Implementation Details:**
+- Now uses `n.glueNode.IsOutbound(peerID)` API from updated Glueberry
+- Added proper peer limit checking before handshake:
+  - Checks outbound peer count against `MaxOutboundPeers`
+  - Checks inbound peer count against `MaxInboundPeers`
+  - Disconnects if limits exceeded
+- PEX reactor now receives correct direction information
 
 ---
 
-## [Phase 4] Block Store
+### Phase 2: Memory & Safety
 
-**Status:** Completed
-
-**Files Created:**
-- `blockstore/store.go` - BlockStore interface definition
-- `blockstore/leveldb.go` - LevelDB-backed implementation
-- `blockstore/leveldb_test.go` - Comprehensive test suite with benchmarks
+#### P2-1: Peer State Memory Leak Fix
+**Status:** COMPLETED
 
 **Files Modified:**
-- `blockstore/doc.go` - Removed (replaced by store.go)
+- `p2p/peer_state.go` - Replaced unbounded maps with LRU caches
+- `p2p/peer_state_test.go` - Updated tests for LRU behavior
+- `go.mod` - Added `github.com/hashicorp/golang-lru/v2` dependency
 
-**Functionality Implemented:**
+**Implementation Details:**
+- Replaced unbounded `map[string]bool` for transaction tracking with LRU caches:
+  - `MaxKnownTxsPerPeer = 20000` entries per peer
+  - `MaxKnownBlocksPerPeer = 2000` entries per peer
+- Using `hashicorp/golang-lru/v2` for thread-safe LRU implementation
+- Added `ClearTxHistory()` and `ClearBlockHistory()` methods for state reset
+- Added tests for:
+  - LRU eviction behavior
+  - Concurrent access safety
+  - Clear history functionality
 
-BlockStore Interface (`store.go`):
-- `SaveBlock(height, hash, data)` - Persist block at height
-- `LoadBlock(height)` - Retrieve block by height (returns hash, data)
-- `LoadBlockByHash(hash)` - Retrieve block by hash (returns height, data)
-- `HasBlock(height)` - Check if block exists
-- `Height()` - Get latest block height
-- `Base()` - Get earliest available block height
-- `Close()` - Release resources
-- `BlockInfo` struct for block metadata
+#### P2-2: Race Condition Fixes
+**Status:** COMPLETED (Already Implemented)
 
-LevelDB Implementation (`leveldb.go`):
-- Key prefixes: `H:` for height→hash, `B:` for hash→data, `M:` for metadata
-- Atomic batch writes with `leveldb.Batch`
-- Sync writes for durability (`Sync: true`)
-- Metadata persistence (height, base) across restarts
-- Thread-safe with `sync.RWMutex`
-- Helper functions: `makeHeightKey`, `makeBlockKey`, `makeBlockValue`, `parseBlockValue`
-- Int64 encoding using big-endian for proper key ordering
+**Analysis:**
+- Reviewed `p2p/peer_manager.go`, `handlers/transactions.go`, `pex/address_book.go`, `sync/reactor.go`
+- All components already use proper RWMutex synchronization:
+  - PeerManager uses RWMutex for map access
+  - TransactionsReactor uses RWMutex for pendingRequests
+  - AddressBook uses RWMutex for all operations
+  - SyncReactor uses mutex protection for Start/Stop with channel close safety
 
-**Test Coverage:**
-- 12 test functions + 2 benchmarks
-- Tests for: creation, reopening, save/load, sequential blocks, duplicate rejection, out-of-order blocks, load by hash, HasBlock, Height/Base tracking, BlockCount, Close behavior, concurrent access (10 goroutines × 20 blocks), large blocks (1MB), persistence across restarts
-- All tests pass with race detection
-- Benchmarks for SaveBlock and LoadBlock operations
+#### P2-3: Input Validation
+**Status:** COMPLETED
 
-**Design Decisions:**
-- Height stored as big-endian uint64 for proper lexicographic ordering in LevelDB
-- Block value includes height prefix for reverse lookup by hash
-- Base tracks earliest block (for pruned stores)
-- Height tracks latest block
-- Empty store returns 0 for both Height() and Base()
-- Operations after Close() return errors
-- Using `//nolint:gosec` for safe int64↔uint64 conversions (heights are always non-negative)
+**Files Created:**
+- `types/validation.go` - Comprehensive validation functions
+- `types/validation_test.go` - Tests for validation functions
+
+**Implementation Details:**
+- Added validation constants:
+  - `MaxBatchSize = 1000`
+  - `MaxBlockHeight = 1<<62 - 1`
+  - `MaxMessageSize = 10MB`
+  - `MaxTransactionSize = 1MB`
+  - `MaxKeySize = 1KB`
+  - `MaxValueSize = 10MB`
+- Added validation functions:
+  - `ValidateHeight(h int64)`
+  - `ValidateHeightRange(from, to int64)`
+  - `ValidateBatchSize(size, maxSize int32)`
+  - `ValidateMessageSize(size int)`
+  - `ValidateTransactionSize(size int)`
+  - `ValidateKeySize(key []byte)`
+  - `ValidateValueSize(value []byte)`
+  - `ValidateHash(hash []byte, expectedLen int)`
+  - `ValidateBlockData(height *int64, hash, data []byte)`
+  - `ClampBatchSize(size, maxSize int32)`
+  - `MustNotBeNil(ptr any, name string)`
+- All functions return wrapped errors for proper error chain handling
 
 ---
 
-## [Phase 5] State Store
+### Phase 3: Integration Hardening
 
-**Status:** Completed
+#### P3-1: Version Pinning
+**Status:** BLOCKED
 
-**Files Created:**
-- `statestore/store.go` - StateStore interface and Proof type definitions
-- `statestore/iavl.go` - IAVL-backed implementation using cosmos/iavl
-- `statestore/iavl_test.go` - Comprehensive test suite
+**Reason:**
+- `glueberry` and `cramberry` are currently using local `replace` directives in `go.mod`
+- Cannot pin specific versions until they are published to a module registry
+- Requires publishing both dependencies before this can be completed
+
+#### P3-2: Message Validation After Unmarshal
+**Status:** COMPLETED
 
 **Files Modified:**
-- `statestore/doc.go` - Removed (replaced by store.go)
+- `sync/reactor.go` - Added validation in `handleBlocksRequest` and `handleBlocksResponse`
+- `handlers/transactions.go` - Added validation in request/response handlers
 
-**Functionality Implemented:**
+**Implementation Details:**
+- Block sync handlers now:
+  - Use `ClampBatchSize()` for safe batch size limits
+  - Validate block height with `ValidateHeight()`
+  - Validate block data structure with `ValidateBlockData()`
+- Transaction handlers now:
+  - Use `ClampBatchSize()` for batch size validation
+  - Validate transaction size with `ValidateTransactionSize()`
+  - Penalize peers for oversized transactions
 
-StateStore Interface (`store.go`):
-- `Get(key)` - Retrieve value for key
-- `Has(key)` - Check if key exists
-- `Set(key, value)` - Store key-value pair in working tree
-- `Delete(key)` - Remove key from working tree
-- `Commit()` - Save working tree as new version (returns hash, version)
-- `RootHash()` - Get current tree root hash
-- `Version()` - Get latest committed version
-- `LoadVersion(version)` - Load specific historical version
-- `GetProof(key)` - Generate merkle proof for key
-- `Close()` - Release resources
-
-Proof Type (`store.go`):
-- `Key`, `Value`, `Exists` - Key and value info
-- `RootHash`, `Version` - Tree state
-- `ProofBytes` - Serialized ICS23 commitment proof
-- `Verify()` - Placeholder for proof verification
-
-IAVL Implementation (`iavl.go`):
-- `NewIAVLStore(path, cacheSize)` - Create persistent store with LevelDB backend
-- `NewMemoryIAVLStore(cacheSize)` - Create in-memory store for testing
-- Uses `github.com/cosmos/iavl` v1.3.5 merkle tree
-- Uses `github.com/cosmos/iavl/db` for database abstraction
-- Thread-safe with `sync.RWMutex`
-- Additional methods: `VersionExists()`, `GetVersioned()`
-- Automatic loading of latest version on startup
-
-**Test Coverage:**
-- 15 test functions with 40+ test cases
-- Tests for: creation, reopening, get/set, has/delete, commit, root hash, versioning (load, exists, get versioned), proofs (existing, non-existing), concurrent access (10 goroutines), persistence, large values (1MB), many keys (1000)
-- All tests pass with race detection
-
-**Design Decisions:**
-- Uses cosmos/iavl v1.3.5 for merkle tree implementation
-- Uses iavl/db.NewGoLevelDB for persistent storage
-- Uses iavl/db.NewMemDB for in-memory testing
-- Proof includes serialized ICS23 commitment proof bytes
-- Working tree changes visible immediately via RootHash()
-- Changes only persisted via Commit()
-- LoadVersion allows time-travel to historical states
-
----
-
-## [Phase 6] Mempool
-
-**Status:** Completed (Later refactored - see Mempool Refactor below)
-
-**Files Created:**
-- `mempool/mempool.go` - Mempool interface and factory function
-- `mempool/simple_mempool.go` - SimpleMempool implementation (hash-based storage)
-- `mempool/mempool_test.go` - SimpleMempool test suite
+#### P3-3: Error Context Preservation
+**Status:** COMPLETED
 
 **Files Modified:**
-- `mempool/doc.go` - Removed (replaced by mempool.go)
+- `types/errors.go` - Added error wrapping helper functions
+- `sync/reactor.go` - Added contextual error wrapping
 
-**Functionality Implemented:**
-
-Mempool Interface (`mempool.go`):
-- `AddTx(tx)` - Add transaction to mempool
-- `RemoveTxs(hashes)` - Remove transactions by hash
-- `ReapTxs(maxBytes)` - Get transactions in insertion order up to size limit
-- `HasTx(hash)` - Check if transaction exists
-- `GetTx(hash)` - Retrieve transaction by hash
-- `Size()` - Number of transactions
-- `SizeBytes()` - Total bytes of all transactions
-- `Flush()` - Remove all transactions
-- `NewMempool(cfg)` - Factory function using config
-
-SimpleMempool (`simple_mempool.go`):
-- `NewSimpleMempool(maxTxs, maxBytes)` - Create with limits
-- Stores tx hash → tx data mapping
-- Maintains insertion order for ReapTxs
-- Enforces maxTxs and maxBytes limits
-- Thread-safe with `sync.RWMutex`
-- `TxHashes()` - Get all transaction hashes
-
-**Test Coverage:**
-- 12 test functions + 1 benchmark
-- SimpleMempool tests: add/get, duplicates, nil tx, max limits, has/get, remove, reap ordering, flush, tx hashes, concurrent access (10 goroutines × 50 txs), insertion order preservation
-- All tests pass with race detection
-- Benchmark for AddTx operation
-
-**Design Decisions:**
-- Simple hash-based storage (no merkle tree - peers don't need membership proofs)
-- ReapTxs returns copies, originals stay in mempool
-- Insertion order preserved even after removals
-- Uses types.HashTx for transaction hashing (SHA-256)
+**Implementation Details:**
+- Added helper functions in `types/errors.go`:
+  - `WrapMessageError(err, stream, msgType)` - Wraps error with stream/message context
+  - `WrapUnmarshalError(err, msgType)` - Wraps unmarshal errors with message type
+  - `WrapValidationError(err, field)` - Wraps validation errors with field context
+- Updated `sync/reactor.go` HandleMessage to include:
+  - Stream name in error context
+  - Message type in error context
+  - Type ID for unknown message types
+- Errors now provide traceable context like "blocksync/request: invalid block height: -1"
 
 ---
 
-## [Phase 7] P2P Layer
+### Phase 4: Observability
 
-**Status:** Completed
+#### P4-1: Prometheus Metrics
+**Status:** COMPLETED
 
 **Files Created:**
-- `p2p/peer_state.go` - PeerState for tracking individual peer information
-- `p2p/peer_manager.go` - PeerManager for managing all connected peers
-- `p2p/scoring.go` - PeerScorer for penalty-based peer reputation
-- `p2p/network.go` - Network wrapper for glueberry node
-- `p2p/peer_state_test.go` - PeerState test suite
-- `p2p/peer_manager_test.go` - PeerManager test suite
-- `p2p/scoring_test.go` - PeerScorer test suite
-- `p2p/network_test.go` - Network test suite
+- `metrics/metrics.go` - Metrics interface with comprehensive label constants
+- `metrics/prometheus.go` - Full Prometheus implementation
+- `metrics/nop.go` - No-op implementation for when metrics are disabled
+- `metrics/metrics_test.go` - Comprehensive test coverage
 
 **Files Modified:**
-- `p2p/doc.go` - Removed (replaced by implementation files)
+- `config/config.go` - Added MetricsConfig with validation
+- `go.mod` - Added `github.com/prometheus/client_golang` as direct dependency
 
-**Functionality Implemented:**
+**Implementation Details:**
+- Created `Metrics` interface with methods for:
+  - Peer metrics (connections, disconnections, totals by direction)
+  - Block metrics (height, received/proposed counts, latency, size)
+  - Transaction metrics (mempool size/bytes, received/proposed/rejected/evicted counts)
+  - Sync metrics (state, progress, peer height, duration)
+  - Message metrics (received/sent counts, errors, sizes by stream)
+  - Latency metrics (per-peer latency, RTT histogram)
+  - State store metrics (version, size, operation counts and latency)
+- `PrometheusMetrics` implementation features:
+  - Separate registry for clean metrics export
+  - GaugeVec for labeled metrics (direction, stream, reason, etc.)
+  - Histograms with appropriate buckets for latency and size measurements
+  - HTTP handler for serving `/metrics` endpoint
+- `NopMetrics` implementation for disabled metrics (zero overhead)
+- `MetricsConfig` with:
+  - `Enabled` flag to enable/disable metrics collection
+  - `Namespace` for Prometheus metric prefix (default: "blockberry")
+  - `ListenAddr` for metrics HTTP endpoint (default: ":9090")
+- Comprehensive label constants for consistent metric labeling
+- Thread-safe concurrent access (verified with race detector tests)
 
-PeerState (`peer_state.go`):
-- Tracks peer identity (PeerID, PublicKey, IsOutbound, IsSeed)
-- Tracks connection timing (ConnectedAt, LastSeen, Latency)
-- Tracks exchanged transactions (TxsSent, TxsReceived maps)
-- Tracks exchanged blocks (BlocksSent, BlocksReceived maps)
-- Penalty point management (AddPenalty, DecayPenalty, GetPenaltyPoints)
-- `ShouldSendTx(hash)` / `ShouldSendBlock(height)` - Avoid duplicate sends
-- `HasTx(hash)` / `HasBlock(height)` - Check if peer has item
-- Count methods (TxsSentCount, TxsReceivedCount, BlocksSentCount, BlocksReceivedCount)
-- Thread-safe with `sync.RWMutex`
-
-PeerManager (`peer_manager.go`):
-- `AddPeer(peerID, isOutbound)` - Add peer and create state
-- `RemovePeer(peerID)` - Remove peer
-- `GetPeer(peerID)` / `HasPeer(peerID)` - Lookup peer
-- `AllPeers()` / `AllPeerIDs()` - List all peers
-- `PeerCount()` - Number of connected peers
-- `MarkTxSent/Received(peerID, txHash)` - Track tx exchanges
-- `MarkBlockSent/Received(peerID, height)` - Track block exchanges
-- `ShouldSendTx/Block(peerID, item)` - Check before sending
-- `PeersToSendTx(hash)` / `PeersToSendBlock(height)` - Get peers needing item
-- `SetPublicKey(peerID, pubKey)` - Set peer's public key after handshake
-- Thread-safe with `sync.RWMutex`
-
-PeerScorer (`scoring.go`):
-- Penalty point thresholds: Warn (10), Ban (100)
-- Penalty values: InvalidMessage (5), InvalidBlock (20), InvalidTx (5), Timeout (2), DuplicateMessage (1), ProtocolViolation (50), ChainMismatch (100), VersionMismatch (100)
-- `AddPenalty(peerID, points, reason, message)` - Add penalty points
-- `GetPenaltyPoints(peerID)` - Get current points
-- `ShouldBan(peerID)` - Check if threshold exceeded
-- `GetBanDuration(peerID)` - Exponential backoff (1h, 2h, 4h... up to 24h max)
-- `RecordBan(peerID)` / `ResetBanCount(peerID)` - Track ban history
-- `DecayPenalties(points)` - Apply decay to all peers
-- `StartDecayLoop(stop)` - Background goroutine for hourly decay
-- Event logging with `RecentEvents(count)` and `PeerEventsCount(peerID)`
-- Capped at 1000 events in memory
-
-Network (`network.go`):
-- Stream name constants: handshake, pex, transactions, blocksync, blocks, consensus, housekeeping
-- `AllStreams()` - Returns all encrypted stream names
-- `NewNetwork(node)` - Wraps glueberry.Node
-- `Start()` / `Stop()` - Lifecycle management
-- `PeerID()` / `PublicKey()` - Local identity
-- `Connect(peerID)` / `Disconnect(peerID)` - Connection management
-- `Send(peerID, streamName, data)` - Send to specific peer
-- `Broadcast(streamName, data)` - Send to all peers
-- `BroadcastTx(txHash, data)` - Broadcast tx with dedup tracking
-- `BroadcastBlock(height, data)` - Broadcast block with dedup tracking
-- `PrepareStreams()` / `FinalizeHandshake()` / `CompleteHandshake()` - Two-phase handshake
-- `BlacklistPeer(peerID)` - Ban and disconnect peer
-- `AddPenalty(peerID, points, reason, message)` - Add penalty, auto-ban if threshold
-- `OnPeerConnected/Disconnected()` - Event handlers
-- `OnTxReceived(peerID, txHash)` / `OnBlockReceived(peerID, height)` - Track incoming
-- `Messages()` / `Events()` - Access incoming channels
-- `ConnectionState(peerID)` / `PeerCount()` - Status methods
-
-**Test Coverage:**
-- 24 test functions with 70+ test cases
-- PeerState tests: creation, tx tracking, block tracking, penalties, timing, public key, seed flag
-- PeerManager tests: add/remove, lookup, AllPeers, tx tracking, block tracking, PeersToSend, concurrent access (10 goroutines × 50 ops), SetPublicKey
-- PeerScorer tests: AddPenalty, accumulation, ShouldBan, ban duration escalation, decay, event logging, decay loop
-- Network tests: AllStreams, stream constants
-- All tests pass with race detection
-
-**Design Decisions:**
-- Tx/block tracking uses string keys from hash bytes for map efficiency
-- Penalty decay is 1 point per hour via background goroutine
-- Ban duration doubles each time (exponential backoff) up to 24h max
-- Network wraps glueberry.Node rather than embedding for better encapsulation
-- Stream names are constants to prevent typos
-- PeerScorer logs events for debugging/monitoring (capped at 1000)
-- Shift amount capped at 5 in GetBanDuration to prevent integer overflow
-
----
-
-## [Phase 8] Handshake
-
-**Status:** Completed
+#### P4-2: Structured Logging
+**Status:** COMPLETED
 
 **Files Created:**
-- `handlers/handshake.go` - HandshakeHandler for connection establishment protocol
-- `handlers/handshake_test.go` - Comprehensive test suite
+- `logging/logger.go` - Structured logger wrapping Go's slog package
+- `logging/logger_test.go` - Comprehensive test coverage
 
 **Files Modified:**
-- `handlers/doc.go` - Retained as package documentation
+- `config/config.go` - Added LoggingConfig with validation
 
-**Functionality Implemented:**
-
-HandshakeHandler (`handshake.go`):
-- Manages handshake protocol for peer connections
-- State machine: StateInit → StateHelloSent → StateHelloReceived → StateResponseSent → StateResponseReceived → StateFinalizeSent → StateComplete
-- Per-peer handshake state tracking with PeerHandshakeState struct
-- Message type ID constants matching schema (128, 129, 130)
-
-HelloRequest Handling:
-- `OnPeerConnected(peerID, isOutbound)` - Initiates handshake by sending HelloRequest
-- `sendHelloRequest(peerID)` - Sends HelloRequest with node_id, version, chain_id, timestamp, latest_height
-- `handleHelloRequest(peerID, data)` - Validates chain_id and version, blacklists on mismatch, sends HelloResponse
-
-HelloResponse Handling:
-- `sendHelloResponse(peerID, accepted)` - Sends HelloResponse with acceptance and public key
-- `handleHelloResponse(peerID, data)` - Checks acceptance, calls PrepareStreams with peer's public key, sends HelloFinalize
-
-HelloFinalize Handling:
-- `sendHelloFinalize(peerID, success)` - Sends HelloFinalize with success flag
-- `handleHelloFinalize(peerID, data)` - Calls FinalizeHandshake, stores peer's public key in PeerManager, transitions to StateComplete
-
-Message Encoding:
-- `HandleMessage(peerID, data)` - Dispatches incoming messages by type ID
-- `encodeHandshakeMessage(typeID, msg)` - Encodes message with type ID prefix
-- Uses cramberry for serialization
-
-Utility Methods:
-- `OnPeerDisconnected(peerID)` - Cleans up handshake state
-- `GetPeerState(peerID)` - Returns handshake state for peer
-- `IsHandshakeComplete(peerID)` - Checks if handshake is complete
-- `PeerCount()` - Returns number of peers with active handshakes
-
-**Test Coverage:**
-- 10 test functions with 20+ test cases
-- TestHandshakeState: initial state, state after init, is handshake complete, peer count, cleanup on disconnect
-- TestEncodeDecodeHelloRequest: encode/decode round-trip
-- TestEncodeDecodeHelloResponse: encode/decode round-trip
-- TestEncodeDecodeHelloFinalize: encode/decode round-trip
-- TestHandleHelloRequestValidation: chain ID mismatch, version mismatch, missing required field
-- TestHandleHelloResponseValidation: no handshake state, rejection response
-- TestHandleHelloFinalizeValidation: no handshake state, failure response, early finalize
-- TestHandleMessageDispatch: empty message, unknown type ID, valid HelloRequest dispatch
-- TestHandshakeConstants: verifies type ID constants match schema
-- All tests pass with race detection
-
-**Design Decisions:**
-- State machine tracks both local and remote handshake progress
-- Nil network/peerManager checks for testability without full P2P stack
-- Type ID prefix written before message data for polymorphic decoding
-- Chain ID and version mismatches result in peer blacklisting (permanent ban)
-- Handshake rejection (accepted=false) and failure (success=false) both disconnect peer
-- Early HelloFinalize receipt (before we've sent ours) is gracefully handled
+**Implementation Details:**
+- Created `Logger` type wrapping `*slog.Logger` with:
+  - Factory functions: `NewTextLogger`, `NewJSONLogger`, `NewDevelopmentLogger`, `NewProductionLogger`, `NewNopLogger`
+  - Builder methods: `With`, `WithComponent`, `WithPeer`, `WithStream`
+- Comprehensive attribute constructors for blockchain-specific fields:
+  - `Component(name)` - Module identification
+  - `PeerID(id)`, `PeerIDStr(id)` - Peer identification
+  - `Height(h)`, `Version(v)` - Block/version numbers
+  - `Hash(h)`, `TxHash(h)`, `BlockHash(h)` - Hex-encoded hashes
+  - `Stream(name)`, `MsgType(t)` - Message context
+  - `Duration(d)`, `DurationSeconds(d)`, `Latency(d)` - Timing
+  - `Count(n)`, `Size(n)`, `BatchSize(n)`, `Index(n)` - Numeric metrics
+  - `ChainID(id)`, `NodeID(id)`, `Address(addr)` - Node identification
+  - `Direction(isOutbound)`, `State(s)`, `Progress(p)` - State information
+  - `Error(err)`, `Reason(r)` - Error handling
+- `NopHandler` for discarding logs (zero overhead when disabled)
+- `LoggingConfig` with:
+  - `Level` - Minimum log level (debug, info, warn, error)
+  - `Format` - Output format (text or json)
+  - `Output` - Destination (stdout, stderr, or file path)
+- All attribute constructors produce slog.Attr for proper structured output
 
 ---
 
-## [Phase 9] PEX (Peer Exchange)
+### Phase 5: Features & Polish
 
-**Status:** Completed
+#### P5-1: Priority-Based Mempool
+**Status:** COMPLETED
 
 **Files Created:**
-- `pex/address_book.go` - AddressBook with JSON persistence
-- `pex/reactor.go` - PEX reactor for peer exchange protocol
-- `pex/address_book_test.go` - AddressBook test suite
-- `pex/reactor_test.go` - Reactor test suite
+- `mempool/priority_mempool.go` - Priority-based mempool with heap ordering
+- `mempool/priority_mempool_test.go` - Comprehensive tests
 
-**Files Modified:**
-- `p2p/peer_manager.go` - Added GetConnectedPeers, OutboundPeerCount, InboundPeerCount
-- `p2p/network.go` - Added ConnectMultiaddr for connecting via multiaddr string
+**Implementation Details:**
+- `PriorityMempool` implementation with:
+  - Configurable `PriorityFunc` for custom priority calculation
+  - Max-heap ordering for O(1) highest priority access
+  - Automatic eviction of lowest priority transactions when full
+  - Built-in priority functions: `DefaultPriorityFunc`, `SizePriorityFunc`
+- Features:
+  - `AddTx(tx)` - Adds with computed priority, evicts if needed
+  - `ReapTxs(maxBytes)` - Returns highest priority transactions first
+  - `GetPriority(hash)` - Returns transaction priority
+  - `HighestPriority()` - Returns max priority in mempool
+  - `SetPriorityFunc(fn)` - Updates priority function
+- Eviction policy: Only evicts if new transaction has higher priority than lowest
+- Thread-safe with RWMutex protection
 
-**Functionality Implemented:**
-
-AddressBook (`address_book.go`):
-- `NewAddressBook(path)` - Create address book with optional persistence
-- `Load()` / `Save()` - JSON persistence with atomic writes
-- `AddPeer(peerID, multiaddr, nodeID, latency)` - Add or update peer
-- `RemovePeer(peerID)` - Remove peer
-- `GetPeer(peerID)` / `HasPeer(peerID)` - Lookup peer
-- `GetPeers()` / `Size()` - List all peers
-- `MarkSeed(peerID)` - Mark peer as seed node
-- `UpdateLastSeen(peerID)` / `UpdateLatency(peerID, latency)` - Update peer info
-- `RecordAttempt(peerID)` / `ResetAttempts(peerID)` - Connection attempt tracking
-- `GetPeersForExchange(lastSeenAfter, max)` - Get peers for PEX response
-- `GetPeersToConnect(exclude, max)` - Get connection candidates with backoff
-- `AddSeeds(addrs)` / `GetSeeds()` - Seed node management
-- `Prune(maxAge)` - Remove stale peers (preserves seeds)
-
-AddressEntry struct:
-- Multiaddr, NodeID, LastSeen, Latency
-- IsSeed, LastAttempt, AttemptCount
-
-Reactor (`reactor.go`):
-- `NewReactor(enabled, requestInterval, maxAddresses, addressBook, network, peerManager, maxInbound, maxOutbound)` - Create reactor
-- `Start()` / `Stop()` - Lifecycle management
-- `HandleMessage(peerID, data)` - Process incoming PEX messages
-- `handleAddressRequest(peerID, data)` - Respond with peer addresses
-- `handleAddressResponse(peerID, data)` - Add received peers to address book
-- `sendAddressRequest(peerID)` - Send address request
-- `sendAddressResponse(peerID, resp)` - Send address response
-- `encodeMessage(typeID, msg)` - Encode message with type ID prefix
-- `requestLoop()` - Periodic address requests to connected peers
-- `connectionLoop()` - Periodic connection management
-- `ensureOutboundConnections()` - Maintain outbound peer count
-- `OnPeerConnected(peerID, multiaddr, isOutbound)` - Handle new connection
-- `OnPeerDisconnected(peerID)` - Handle disconnection
-- `GetAddressBook()` / `IsRunning()` - Accessor methods
-- `RequestAddresses(peerID)` - Manual address request
-
-PeerManager Additions:
-- `GetConnectedPeers()` - Returns all connected peer IDs
-- `OutboundPeerCount()` - Count of outbound peers
-- `InboundPeerCount()` - Count of inbound peers
-
-Network Additions:
-- `ConnectMultiaddr(addrStr)` - Connect using multiaddr string
-
-**Test Coverage:**
-- 27 test functions with 50+ test cases
-- AddressBook tests: creation, add/get/update/remove peer, has peer, size, get peers, mark seed, update last seen, update latency, record/reset attempts, peers for exchange (filtering, limiting, sorting), peers to connect (backoff, exclusion, sorting), seeds, prune, save/load persistence, empty path handling, concurrency (4 goroutines)
-- Reactor tests: creation, start/stop, disabled start, empty message, invalid type ID, address request handling, address response handling, invalid node ID handling, peer connected/disconnected, encode message, type ID constants, requester exclusion, missing fields handling
-- All tests pass with race detection
-
-**Design Decisions:**
-- AddressBook stores peers by peer.ID with full entry metadata
-- JSON persistence with atomic writes (write to .tmp, then rename)
-- Connection attempts tracked with exponential backoff (1s, 2s, 4s... up to 1h)
-- Peers sorted by latency then last seen for connection selection
-- PEX responses exclude the requesting peer
-- Address response peers with invalid node IDs are silently skipped
-- Reactor handles nil network/peerManager gracefully for testing
-- File permissions set to 0600 for security
-
----
-
-## Mempool Refactor
-
-**Status:** Completed
-
-**Reason:** The merkle tree implementation was unnecessary since the mempool does not need to prove to other peers that it has or doesn't have a specific transaction. Simplified to a basic hash-based storage.
-
-**Files Deleted:**
-- `mempool/merkle.go` - Merkle tree implementation
-- `mempool/merkle_mempool.go` - MerkleMempool implementation
-- `mempool/merkle_test.go` - Merkle tree tests
+#### P5-2: Transaction Expiration/TTL
+**Status:** COMPLETED
 
 **Files Created:**
-- `mempool/simple_mempool.go` - SimpleMempool with hash-based storage
+- `mempool/ttl_mempool.go` - TTL mempool with automatic expiration
+- `mempool/ttl_mempool_test.go` - Comprehensive tests
 
-**Files Modified:**
-- `mempool/mempool.go` - Removed RootHash() from interface, updated factory function
-- `mempool/mempool_test.go` - Updated tests to use SimpleMempool, removed RootHash tests
-- `CLAUDE.md` - Updated mempool description to reflect hash-based storage
+**Implementation Details:**
+- `TTLMempool` wrapping priority-based ordering with expiration:
+  - Configurable default TTL and cleanup interval
+  - Background cleanup goroutine for expired transactions
+  - `AddTxWithTTL(tx, ttl)` - Add with custom TTL
+- TTL management methods:
+  - `GetTTL(hash)` - Returns remaining TTL
+  - `ExtendTTL(hash, extension)` - Extends expiration time
+  - `SetTTL(hash, expiresAt)` - Sets specific expiration time
+  - `SizeActive()` - Returns count of non-expired transactions
+- `ReapTxs` and `HasTx` automatically exclude expired transactions
+- `Stop()` method for clean shutdown of cleanup goroutine
 
-**Changes:**
-- Removed `RootHash()` method from Mempool interface
-- Replaced MerkleMempool with SimpleMempool
-- Removed in-memory merkle tree implementation
-- Simplified storage to plain hash map with insertion order tracking
-- All existing functionality preserved (AddTx, RemoveTxs, ReapTxs, etc.)
-
-**Test Coverage:**
-- 12 test functions + 1 benchmark
-- All tests pass with race detection
-
----
-
-## [Phase 10] Transactions
-
-**Status:** Completed
+#### P5-3: Rate Limiting
+**Status:** COMPLETED
 
 **Files Created:**
-- `handlers/transactions.go` - TransactionsReactor for transaction gossiping
-- `handlers/transactions_test.go` - Transaction reactor test suite
+- `p2p/rate_limiter.go` - Per-peer rate limiter with token bucket algorithm
+- `p2p/rate_limiter_test.go` - Comprehensive tests
 
-**Files Modified:**
-- `mempool/mempool.go` - Added TxHashes() to Mempool interface
-
-**Functionality Implemented:**
-
-TransactionsReactor (`handlers/transactions.go`):
-- `NewTransactionsReactor(mempool, network, peerManager, requestInterval, batchSize)` - Create reactor
-- `Start()` / `Stop()` - Lifecycle management with background gossip loop
-- `HandleMessage(peerID, data)` - Process incoming transaction messages
-- `SendTransactionsRequest(peerID)` - Request tx hashes from peer
-- `BroadcastTx(tx)` - Broadcast new transaction to all peers
-- `OnPeerDisconnected(peerID)` - Cleanup pending requests
-
-Message Handlers:
-- `TransactionsRequest` (type 133) - Responds with tx hashes from mempool
-- `TransactionsResponse` (type 134) - Checks for missing txs, requests data
-- `TransactionDataRequest` (type 135) - Responds with full tx data
-- `TransactionDataResponse` (type 136) - Validates hash, adds to mempool
-
-Per-Peer Tracking:
-- Tracks pending data requests per peer
-- Uses PeerManager.MarkTxSent/MarkTxReceived to avoid duplicates
-- Uses PeerManager.ShouldSendTx to filter txs peer already has
-- Hash verification with penalty on mismatch
-
-**Test Coverage:**
-- 17 test functions covering:
-  - Reactor creation and lifecycle (start/stop)
-  - Message encoding/decoding for all 4 message types
-  - Request/response handlers
-  - Hash mismatch detection
-  - Pending request tracking
-  - Peer disconnect cleanup
-  - Duplicate transaction handling
-
-**Design Decisions:**
-- Background gossip loop with configurable interval
-- Pending request map prevents duplicate data requests
-- Hash verification catches malicious/corrupted data
-- Graceful handling of nil dependencies for testing
-- Reactor handles nil network/peerManager gracefully
+**Implementation Details:**
+- `RateLimiter` with per-peer, per-stream rate limiting:
+  - Token bucket algorithm for smooth rate limiting
+  - Configurable messages per second by stream type
+  - Configurable bytes per second overall bandwidth limit
+  - Burst support for temporary traffic spikes
+- `RateLimits` configuration:
+  - `MessagesPerSecond` - Map of stream name to rate
+  - `BytesPerSecond` - Overall bandwidth limit
+  - `BurstSize` - Number of tokens for burst
+- `DefaultRateLimits()` provides sensible defaults for all stream types
+- Methods:
+  - `Allow(peerID, stream, messageSize)` - Check single message
+  - `AllowN(peerID, stream, n, totalSize)` - Check batch of messages
+  - `ResetPeer(peerID)` - Reset throttled peer
+  - `RemovePeer(peerID)` - Clean up peer state
+- Automatic cleanup of idle peer limiters
+- Thread-safe concurrent access
 
 ---
 
-## [Phase 11] Block Sync
+## Remaining Tasks
 
-**Status:** Completed
+### P3-1: Version Pinning
+**Status:** ✅ COMPLETE
 
-**Files Created:**
-- `sync/reactor.go` - SyncReactor for block synchronization
-- `sync/reactor_test.go` - Sync reactor test suite
-- `blockstore/memory.go` - In-memory block store for testing
+**Cramberry:** ✅ COMPLETED
+- Pinned to `v1.2.0` in go.mod
+- Removed local `replace` directive
+- Build and all tests pass with the published version
 
-**Files Modified:**
-- `types/errors.go` - Added ErrBlockExists alias and ErrInvalidBlock
-
-**Functionality Implemented:**
-
-SyncReactor (`sync/reactor.go`):
-- `NewSyncReactor(blockStore, network, peerManager, syncInterval, batchSize)` - Create reactor
-- `Start()` / `Stop()` - Lifecycle management with background sync loop
-- `HandleMessage(peerID, data)` - Process incoming block sync messages
-- `SendBlocksRequest(peerID, since)` - Request blocks from peer
-- `UpdatePeerHeight(peerID, height)` - Track peer block heights
-- `SetValidator(fn)` - Set block validation callback
-- `SetOnSyncComplete(fn)` - Set sync completion callback
-- `OnPeerConnected(peerID, height)` / `OnPeerDisconnected(peerID)` - Peer lifecycle
-
-Sync State Machine:
-- `StateSynced` - Node is caught up with peers
-- `StateSyncing` - Node is catching up
-- Automatic state transitions based on peer heights
-
-Message Handlers:
-- `BlocksRequest` (type 137) - Responds with blocks from BlockStore
-- `BlocksResponse` (type 138) - Validates, stores blocks, continues syncing
-
-Block Validation:
-- Hash verification before storage
-- Optional validator callback for application-level validation
-- Penalty on hash mismatch via PeerManager
-
-MemoryBlockStore (`blockstore/memory.go`):
-- In-memory implementation for testing
-- Implements full BlockStore interface
-- Thread-safe with RWMutex
-
-**Test Coverage:**
-- 18 test functions covering:
-  - Reactor creation and lifecycle
-  - Message encoding/decoding
-  - Block request/response handlers
-  - Hash mismatch detection
-  - Custom validator rejection
-  - Peer height tracking
-  - State transitions
-  - Sync complete callback
-  - Duplicate block handling
-
-**Design Decisions:**
-- Background sync loop with configurable interval
-- Tracks peer heights to select sync targets
-- Pending request tracking prevents duplicate requests
-- Hash verification catches malicious/corrupted blocks
-- Optional validator callback for application-level validation
-- Memory block store for testing without disk I/O
+**Glueberry:** ✅ COMPLETED
+- Pinned to `v1.0.1` in go.mod
+- Removed local `replace` directive
+- Build and all tests pass with the published version
 
 ---
 
-## [Phase 12] Block Propagation
+## Test Coverage
 
-**Status:** Completed
+All implemented features have comprehensive test coverage:
+- Unit tests with race detection enabled
+- Integration tests pass (10-node PEX test)
+- All tests pass with `go test -race ./...`
 
-**Files Created:**
-- `handlers/blocks.go` - BlockReactor for real-time block propagation
-- `handlers/blocks_test.go` - Block reactor test suite
+## Dependencies Updated
 
-**Functionality Implemented:**
-
-BlockReactor (`handlers/blocks.go`):
-- `NewBlockReactor(blockStore, network, peerManager)` - Create reactor
-- `HandleMessage(peerID, data)` - Process incoming block messages
-- `BroadcastBlock(height, hash, data)` - Broadcast new block to all peers
-- `SetValidator(fn)` - Set block validation callback
-- `SetOnBlockReceived(fn)` - Set new block callback
-- `OnPeerDisconnected(peerID)` - Peer lifecycle (no-op)
-
-Message Handler:
-- `BlockData` (type 139) - Receives, validates, stores, and relays blocks
-
-Block Processing:
-- Hash verification before storage
-- Optional validator callback for application-level validation
-- Penalty on hash mismatch via PeerManager
-- Automatic relay to peers who don't have the block
-- onBlockReceived callback for application notification
-
-Block Broadcasting:
-- Uses PeerManager.PeersToSendBlock to find peers
-- Tracks sent blocks via PeerManager.MarkBlockSent
-- Excludes peer who sent the block during relay
-
-**Test Coverage:**
-- 12 test functions covering:
-  - Reactor creation
-  - Message encoding/decoding
-  - Block data handling
-  - Hash mismatch detection
-  - Custom validator rejection
-  - Duplicate block handling
-  - Block received callback
-  - Missing field rejection
-  - Nil dependency handling
-
-**Design Decisions:**
-- Stateless reactor (no per-peer state)
-- Hash verification before storage
-- Relay to all peers who don't have the block
-- Separate from sync reactor for real-time propagation
+- Added `github.com/hashicorp/golang-lru/v2` for LRU cache implementation
+- Added `github.com/prometheus/client_golang` for Prometheus metrics
+- Verified compatibility with updated `glueberry` (IsOutbound API)
+- Verified compatibility with updated `cramberry` (security hardening)
 
 ---
 
-## [Phase 13] Consensus Integration
-
-**Status:** Completed
-
-**Files Created:**
-- `handlers/consensus.go` - ConsensusReactor for consensus message pass-through
-- `handlers/consensus_test.go` - Consensus reactor test suite
-
-**Functionality Implemented:**
-
-ConsensusHandler Interface:
-```go
-type ConsensusHandler interface {
-    HandleConsensusMessage(peerID peer.ID, data []byte) error
-}
-```
-
-ConsensusReactor (`handlers/consensus.go`):
-- `NewConsensusReactor(network, peerManager)` - Create reactor
-- `SetHandler(handler)` / `GetHandler()` - Register application handler
-- `HandleMessage(peerID, data)` - Route messages to handler
-- `SendConsensusMessage(peerID, data)` - Send to specific peer
-- `BroadcastConsensusMessage(data)` - Send to all peers
-- `OnPeerDisconnected(peerID)` - Peer lifecycle (no-op)
-
-**Test Coverage:**
-- 10 test functions covering:
-  - Reactor creation
-  - Handler registration
-  - Empty message rejection
-  - Message routing to handler
-  - Multiple message handling
-  - Handler error propagation
-  - Nil dependency handling
-
-**Design Decisions:**
-- Pass-through design - blockberry doesn't interpret consensus messages
-- Application registers handler to receive messages
-- SendConsensusMessage for unicast, BroadcastConsensusMessage for multicast
-- Silent ignore when no handler registered
-- Stateless reactor (no per-peer state)
-
----
-
-## [Phase 14] Housekeeping
-
-**Status:** Completed
-
-**Files Created:**
-- `handlers/housekeeping.go` - HousekeepingReactor for latency probes and firewall detection
-- `handlers/housekeeping_test.go` - Housekeeping reactor test suite
-
-**Files Modified:**
-- `p2p/peer_manager.go` - Added UpdateLatency method
-
-**Functionality Implemented:**
-
-HousekeepingReactor (`handlers/housekeeping.go`):
-- `NewHousekeepingReactor(network, peerManager, probeInterval)` - Create reactor
-- `Start()` / `Stop()` - Lifecycle management with background probe loop
-- `HandleMessage(peerID, data)` - Process incoming housekeeping messages
-- `SendLatencyRequest(peerID, timestamp)` - Send latency probe to peer
-- `OnPeerDisconnected(peerID)` - Cleanup pending probes
-- `GetPendingProbes()` - Get count of pending latency probes
-- `IsRunning()` - Check if reactor is running
-
-Message Handlers:
-- `LatencyRequest` (type 140) - Calculates processing latency, sends response
-- `LatencyResponse` (type 141) - Calculates RTT, updates peer latency in PeerManager
-- `FirewallRequest` (type 142) - Stub for firewall detection
-- `FirewallResponse` (type 143) - Stub for firewall detection
-
-Latency Probing:
-- Background goroutine sends periodic probes to all connected peers
-- Pending probe tracking (peerID → request timestamp)
-- RTT calculation from request/response timestamps
-- Updates PeerManager.UpdateLatency with measured RTT
-
-PeerManager Addition:
-- `UpdateLatency(peerID, latency)` - Update peer's latency measurement
-
-**Test Coverage:**
-- 14 test functions covering:
-  - Reactor creation
-  - Start/stop lifecycle
-  - Empty message rejection
-  - Unknown type rejection
-  - Message encoding/decoding for all 4 message types
-  - Latency request/response handlers
-  - Latency response with no pending probe
-  - Firewall request/response handlers
-  - Peer disconnect cleanup
-  - Type ID constant verification
-  - Nil network handling
-
-**Design Decisions:**
-- Background probe loop with configurable interval
-- Pending probe map tracks request timestamps for RTT calculation
-- Firewall detection is stubbed (logs only, not implemented)
-- Graceful handling of nil dependencies for testing
-- RTT calculated as time.Duration for consistent time handling
-
----
-
-## [Phase 15] Node Coordinator
-
-**Status:** Completed
-
-**Files Created:**
-- `node/node.go` - Main Node struct with lifecycle and event loop
-- `node/node_test.go` - Node test suite
-
-**Files Modified:**
-- `handlers/handshake.go` - Added GetPeerInfo method to access full peer handshake state
-- `node/doc.go` - Removed (replaced by node.go)
-
-**Functionality Implemented:**
-
-Node (`node/node.go`):
-- `NewNode(cfg, opts...)` - Create node with all components wired together
-- `Start()` - Start network, reactors, event loop, connect to seeds
-- `Stop()` - Graceful shutdown of all components
-- `IsRunning()` - Check if node is running
-- `PeerID()` / `NodeID()` - Node identity accessors
-- `Network()` / `BlockStore()` / `Mempool()` - Component accessors
-- `PeerCount()` - Number of connected peers
-
-Component Wiring:
-- Loads or generates Ed25519 private key
-- Creates glueberry node with blockberry config
-- Wraps with p2p.Network layer
-- Creates BlockStore (LevelDB) and Mempool
-- Creates all reactors: Handshake, PEX, Transactions, Blocks, BlockSync, Consensus, Housekeeping
-- Wires dependencies between components
-
-Event Loop:
-- Handles glueberry ConnectionEvents (StateConnected, StateEstablished, StateDisconnected)
-- Routes incoming messages to appropriate reactors by stream name
-- Adds penalties for message handling errors
-
-Functional Options:
-- `WithMempool(mp)` - Use custom mempool
-- `WithBlockStore(bs)` - Use custom block store
-- `WithConsensusHandler(ch)` - Set consensus handler
-
-Key Loading:
-- `loadOrGenerateKey(path)` - Loads binary or hex-encoded key, or generates new
-- Keys saved with 0600 permissions
-
-Seed Connection:
-- `connectToSeeds()` - Connects to configured seed nodes on startup
-
-HandshakeHandler Addition:
-- `GetPeerInfo(peerID)` - Returns full PeerHandshakeState including PeerHeight
-
-**Test Coverage:**
-- 8 test functions covering:
-  - Key generation and loading (binary and hex formats)
-  - Invalid key file handling
-  - Multiaddr parsing (valid and invalid)
-  - Functional options (WithMempool, WithBlockStore)
-
-**Design Decisions:**
-- Single node.go file for simplicity (lifecycle and options inline)
-- Event loop in background goroutine with select on stop channel
-- All reactors started/stopped in order with rollback on failure
-- Private key stored as raw bytes (not hex) for efficiency
-- Hex-encoded keys supported for backwards compatibility
-- Seed connection failures logged but not fatal
-- Penalties added for any message handling errors
-
----
-
-## [Phase 16] Application Interface
-
-**Status:** Completed
-
-**Files Created:**
-- `types/application.go` - Application interface definition
-- `types/null_app.go` - NullApplication no-op implementation
-- `types/application_test.go` - Application test suite
-
-**Functionality Implemented:**
-
-Application Interface (`types/application.go`):
-```go
-type Application interface {
-    CheckTx(tx []byte) error
-    BeginBlock(height int64, hash []byte) error
-    DeliverTx(tx []byte) error
-    EndBlock() error
-    Commit() (appHash []byte, err error)
-    Query(path string, data []byte) ([]byte, error)
-    HandleConsensusMessage(peerID peer.ID, data []byte) error
-}
-```
-
-Helper Types:
-- `TxValidator` - Function type for transaction validation
-- `BlockValidator` - Function type for block validation
-
-NullApplication (`types/null_app.go`):
-- `NewNullApplication()` - Create new null application
-- All methods return nil (accept everything)
-- Tracks `LastBlockHeight`, `LastBlockHash`, `AppHash`
-- Implements `Application` interface (compile-time check)
-
-**Test Coverage:**
-- 7 test functions covering:
-  - NullApplication creation
-  - CheckTx accepts all transactions
-  - Block flow (BeginBlock, DeliverTx, EndBlock, Commit)
-  - Query returns nil
-  - HandleConsensusMessage accepts all
-  - Interface implementation verification
-  - Multiple block processing
-
-**Design Decisions:**
-- Application includes ConsensusHandler for unified consensus handling
-- NullApplication useful for testing and as template for real apps
-- TxValidator and BlockValidator types for callback-based validation
-- AppHash initialized to 32 zero bytes (standard hash size)
-- All NullApplication methods are no-ops for maximum flexibility
-
----
-
-## [Phase 17] Integration Testing
-
-**Status:** Completed
-
-**Files Created:**
-- `testing/helpers.go` - Test utilities for integration tests
-- `testing/integration_test.go` - Integration test suite
-
-**Functionality Implemented:**
-
-Test Utilities (`testing/helpers.go`):
-- `TestNode` - Wrapper for blockberry node with test utilities
-- `TestNodeConfig` - Configuration options for test nodes
-- `NewTestNode(cfg)` - Creates test node with random keys and ephemeral ports
-- `Start()` / `Stop()` / `Cleanup()` - Lifecycle management
-- `ConnectTo(other)` - Connect to another test node
-- `WaitForConnection(peerID, timeout)` - Wait for connection establishment
-- `WaitForPeerCount(count, timeout)` - Wait for peer count
-- `MockApplication` - Test application tracking received events
-
-Integration Tests (`testing/integration_test.go`):
-
-Two-Node Tests:
-- `TestTwoNodes_Handshake` - Two nodes connect and complete handshake
-- `TestTwoNodes_ChainIDMismatch` - Chain ID mismatch prevents connection
-- `TestTwoNodes_TransactionGossip` - Transaction propagation between nodes
-- `TestTwoNodes_BlockPropagation` - Block propagation between nodes
-- `TestTwoNodes_BlockSync` - Block synchronization from peer
-- `TestTwoNodes_ConsensusMessages` - Consensus message exchange
-
-Multi-Node Tests:
-- `TestThreeNodes_MeshNetwork` - Three nodes form mesh network
-- `TestThreeNodes_TransactionPropagation` - Transaction propagates through network
-
-Failure Scenario Tests:
-- `TestNode_Disconnect` - Node disconnection handling
-- `TestNode_Reconnect` - Connecting to new node after disconnect
-
-Performance Benchmarks:
-- `BenchmarkTransactionGossip` - Transaction gossiping throughput
-- `BenchmarkBlockPropagation` - Block propagation latency
-
-**Test Coverage:**
-- 10 integration tests covering full node-to-node communication
-- 2 benchmarks for performance testing
-- Tests use race detection and appropriate timeouts
-- All tests skip in short mode for CI efficiency
-
-**Design Decisions:**
-- TestNode wraps full blockberry node stack for realistic testing
-- Ephemeral ports (`/ip4/127.0.0.1/tcp/0`) for test isolation
-- Temporary directories for data storage, cleaned up after tests
-- 1-second gossip intervals for faster test execution
-- MockApplication tracks all received events for verification
-- `cleanupNode()` helper for deferred cleanup without error checking
-- Makefile updated: `test` uses `-short`, `test-integration` runs full suite
-
----
-
-## Integration Test Fixes - Flag-Based Handshake
-
-**Status:** Completed
-
-**Problem:** Integration tests were failing ~60% of the time due to race conditions in the handshake protocol. The handshake handler used a linear state machine that couldn't handle simultaneous initiation from both peers.
-
-**Root Cause Analysis:**
-- The glueberry integration test (`../glueberry/integration_working_test.go`) passes 100% of the time
-- The difference: glueberry uses a **flag-based approach** with order-independent completion
-- Pattern: `if streamsPrepared && gotComplete { FinalizeHandshake() }` - works regardless of message arrival order
-- Blockberry's original handshake used states like `StateHelloSent`, `StateHelloReceived`, etc. in a linear progression
-
-**Files Modified:**
-
-`handlers/handshake.go` - Complete rewrite from linear state machine to flag-based approach:
-- `PeerHandshakeState` now uses independent flags:
-  - `SentRequest`, `ReceivedRequest`, `SentResponse`, `ReceivedResponse`
-  - `StreamsPrepared`, `SentFinalize`, `ReceivedFinalize`
-- New `tryComplete()` method checks completion conditions:
-  - `canComplete := StreamsPrepared && ReceivedFinalize && State != StateComplete`
-  - Called from both `handleHelloResponse` and `handleHelloFinalize`
-- Order-independent: works regardless of which peer initiates or which messages arrive first
-
-`handlers/handshake_test.go` - Updated tests for new flag-based approach:
-- Tests now use flag fields instead of old state constants
-- Added tests for early finalize handling
-
-`handlers/transactions.go` - Two fixes:
-1. Removed debug logging (EVENT, MSG prints)
-2. Fixed `handleTransactionsRequest` to send multiple batched responses when transactions exceed batchSize
-
-`testing/helpers.go` - Event-based connection waiting:
-- Added `RegisterForEstablished(peerID)` - returns channel for notification
-- Added `WaitForEstablished(ch, timeout)` - waits on the notification channel
-- Added `ConnectAndWait(other, timeout)` - register BEFORE connecting to avoid race
-- Removed debug logging
-
-`testing/integration_test.go` - Updated all tests to use `ConnectAndWait` pattern
-
-**Test Results:**
-- Before fix: ~40% pass rate, flaky with race detector
-- After fix: 100% pass rate (50/50 runs), 100% with race detector (10/10 runs)
-
-**Design Decisions:**
-- Flag-based state tracking handles simultaneous initiation correctly
-- Register for established event BEFORE connecting eliminates race window
-- `tryComplete()` called from both response handlers ensures completion regardless of message order
-- Removed linear state constants (`StateHelloSent`, etc.) in favor of boolean flags
-
----
-
-## [Phase 18] Documentation
-
-**Status:** Completed
-
-**Files Created:**
-- `examples/simple_node/main.go` - Minimal node setup example
-- `examples/custom_mempool/main.go` - Custom priority mempool implementation
-- `examples/mock_consensus/main.go` - Mock consensus handler demonstration
-- `examples/config.example.toml` - Annotated configuration file
-
-**Functionality Implemented:**
-
-Simple Node Example (`examples/simple_node/`):
-- Demonstrates basic node creation and lifecycle
-- Loads config from file or uses defaults
-- Graceful shutdown on SIGINT/SIGTERM
-- Shows proper error handling patterns
-
-Custom Mempool Example (`examples/custom_mempool/`):
-- Implements `PriorityMempool` with fee-based transaction ordering
-- Uses heap data structure for priority queue
-- Demonstrates implementing the `Mempool` interface
-- Includes demonstration of priority ordering behavior
-
-Mock Consensus Example (`examples/mock_consensus/`):
-- Implements `ConsensusHandler` interface
-- Shows message encoding/decoding patterns (Proposal, Vote, Commit)
-- Demonstrates integration with blockberry's consensus stream
-- Serves as template for real consensus implementations
-
-Configuration Example (`examples/config.example.toml`):
-- Fully annotated TOML configuration file
-- Documents all configuration options with comments
-- Provides sensible default values
-- Organized by component section
-
-**Bug Fixes:**
-- Fixed time.Duration bug in `node/node.go`: `5000` → `5*time.Second` for reactor intervals
-- Fixed syntax error in `testing/helpers.go`: removed stray "git push" text
-- Fixed flaky `TestTwoNodes_TransactionGossip`: added 500ms delay after connection and increased timeout
-
-**Design Decisions:**
-- Examples are standalone programs that can be run directly
-- Each example focuses on a single concept
-- Config example serves as both documentation and template
-- Mock consensus demonstrates integration pattern without implementing real consensus
-
----
-
-## Phase 18 Completion - Comprehensive Documentation
-
-**Status:** Completed
-
-**Files Created:**
-- `README.md` - Main project README with overview, quick start, and reference
-- `docs/GETTING_STARTED.md` - Getting started guide for new users
-- `docs/CONFIGURATION.md` - Complete configuration reference
-- `docs/INTEGRATION.md` - Integration guide for application developers
-- `docs/API.md` - Detailed API reference for all public interfaces
-
-**PEX Integration Test Added:**
-- `TestTenNodes_PeerExchange` - Tests that 10 nodes discover each other through PEX
-  - 1 seed node, 9 nodes that only know the seed
-  - All nodes discover each other within ~12 seconds
-  - Verified with 100% pass rate with race detector
-
-**Glueberry Enhancement:**
-- Added `PeerAddrs(peerID peer.ID) []multiaddr.Multiaddr` method to glueberry `Node`
-- Allows accessing peer addresses from libp2p's peerstore
-- Critical for PEX to work with incoming connections (which aren't in the address book)
-
-**Files Modified:**
-- `glueberry/node.go` - Added PeerAddrs method
-- `blockberry/node/node.go` - Updated to use PeerAddrs for PEX address handling
-- `blockberry/testing/helpers.go` - Updated to use PeerAddrs for PEX address handling
-- `blockberry/testing/integration_test.go` - Added TestTenNodes_PeerExchange
-
-**Documentation Summary:**
-
-README.md:
-- Project overview and features
-- Architecture diagram
-- Installation and quick start
-- Configuration overview
-- Core components documentation
-- Package structure
-
-docs/GETTING_STARTED.md:
-- Step-by-step setup guide
-- Basic node creation
-- Connecting to peers
-- Transaction submission
-- Block access
-- Consensus implementation intro
-
-docs/CONFIGURATION.md:
-- All configuration sections documented
-- Field types, defaults, and descriptions
-- Duration format reference
-- Complete example configuration
-- Programmatic configuration guide
-- Multiaddr format reference
-
-docs/INTEGRATION.md:
-- Application interface implementation
-- CheckTx, block execution, consensus handler
-- Building complete applications
-- Custom mempool implementation
-- Sending consensus messages
-- Error handling reference
-- Testing utilities
-
-docs/API.md:
-- Node package API
-- Mempool interface
-- BlockStore interface
-- StateStore interface
-- Network API
-- ConsensusHandler interface
-- Types and errors reference
-- Config package API
-
----
-
-## Project Completion Summary
-
-All 18 phases of the implementation plan have been completed:
-
-1. **Project Setup** - Build system, dependencies, directory structure
-2. **Configuration** - TOML config loading, validation, defaults
-3. **Types & Errors** - Common types, hash functions, sentinel errors
-4. **Block Store** - LevelDB-backed persistent block storage
-5. **State Store** - IAVL-based merkleized key-value store
-6. **Mempool** - Hash-based transaction pool with limits
-7. **P2P Layer** - Peer state, manager, scoring, network wrapper
-8. **Handshake** - Flag-based connection establishment protocol
-9. **PEX** - Peer exchange with address book and auto-connect
-10. **Transactions** - Transaction gossiping between peers
-11. **Block Sync** - Historical block synchronization
-12. **Block Propagation** - Real-time block broadcasting
-13. **Consensus Integration** - Pass-through consensus stream
-14. **Housekeeping** - Latency probes and peer health
-15. **Node Coordinator** - Main node orchestration
-16. **Application Interface** - ABCI-like application integration
-17. **Integration Testing** - Full node-to-node tests
-18. **Documentation** - README, guides, API reference
-
-**Test Statistics:**
-- 150+ test functions across all packages
-- 500+ test cases covering edge cases
-- All tests pass with race detection
-- Integration tests verify full P2P communication
-
-**Key Features:**
-- Consensus-agnostic design
-- Modular, pluggable components
-- Encrypted P2P communication
-- Efficient peer discovery via PEX
-- Merkleized state with proofs
-- Robust handshake protocol
+## Summary
+
+### Completed Phases
+
+| Phase | Items | Status |
+|-------|-------|--------|
+| Phase 1: Critical Fixes | P1-1, P1-2 | ✅ Complete |
+| Phase 2: Memory & Safety | P2-1, P2-2, P2-3 | ✅ Complete |
+| Phase 3: Integration Hardening | P3-2, P3-3 | ✅ Complete (P3-1 blocked) |
+| Phase 4: Observability | P4-1, P4-2 | ✅ Complete |
+| Phase 5: Features & Polish | P5-1, P5-2, P5-3 | ✅ Complete |
+
+### New Packages Created
+
+- `metrics/` - Prometheus metrics with interface, implementation, and no-op
+- `logging/` - Structured logging with slog wrapper and attribute constructors
+
+### Files Modified
+
+- `statestore/store.go` - ICS23 proof verification
+- `node/node.go` - Outbound connection detection
+- `p2p/peer_state.go` - LRU caches for memory management
+- `p2p/rate_limiter.go` - Per-peer rate limiting
+- `types/validation.go` - Input validation functions
+- `types/errors.go` - Error wrapping helpers
+- `sync/reactor.go` - Message validation and error context
+- `handlers/transactions.go` - Message validation
+- `mempool/priority_mempool.go` - Priority-based mempool
+- `mempool/ttl_mempool.go` - TTL mempool with expiration
+- `config/config.go` - Added MetricsConfig and LoggingConfig
+
+### Documentation Updated
+
+All documentation has been updated to reflect the pre-release changes:
+- `README.md` - Added new features, updated dependencies with versions, added Roadmap section
+- `ARCHITECTURE.md` - Added metrics/logging, priority mempool, rate limiter sections
+- `docs/CONFIGURATION.md` - Added metrics, logging, ratelimit, blockstore backend configuration
+- `docs/API.md` - Added PriorityMempool, TTLMempool, RateLimiter, Metrics, Logger APIs, Config struct corrections
+- `docs/INTEGRATION.md` - Added mempool options, observability integration guide
+- `docs/GETTING_STARTED.md` - Updated Go version requirement
+
+### ROADMAP.md Created
+
+Created comprehensive development roadmap with 9 phases:
+- **Phase 1**: Storage & Sync Enhancements (BadgerDB, state/block pruning, state sync)
+- **Phase 2**: Consensus Framework (interface refinement, reference BFT, validator set updates)
+- **Phase 3**: Networking Improvements (firewall detection, peer reputation, connection diversity)
+- **Phase 4**: Developer Experience (transaction indexing, events, RPC API, CLI, plugins)
+- **Phase 5**: Light Client Support (protocol, library)
+- **Phase 6**: Performance Optimization (parallel tx execution, compression, memory pools)
+- **Phase 7**: Security Hardening (DDoS protection, Sybil mitigation, audit preparation)
+- **Phase 8**: Observability Enhancements (distributed tracing, health checks, admin API)
+- **Phase 9**: Ecosystem Integration (IBC, ABCI compatibility)
+
+Version milestones defined: v1.1.0, v1.2.0, v1.3.0, v2.0.0
+
+### Test Coverage
+
+All new features have comprehensive test coverage:
+- Unit tests with race detection enabled
+- Integration tests pass (10-node PEX test)
+- Concurrent access tests for thread safety
+- All tests pass with `go test -race ./...`

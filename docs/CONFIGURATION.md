@@ -65,6 +65,7 @@ Block storage settings.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
+| `backend` | string | `"leveldb"` | Storage backend (`"leveldb"` or `"badgerdb"`). Note: BadgerDB implementation is planned for v1.1.0. |
 | `path` | string | `"data/blocks"` | Directory path for block storage. |
 
 ### [statestore]
@@ -83,6 +84,47 @@ Housekeeping and health check settings.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `latency_probe_interval` | duration | `"60s"` | How often to probe peer latency. |
+
+### [metrics]
+
+Prometheus metrics configuration.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `false` | Enable/disable Prometheus metrics collection. |
+| `namespace` | string | `"blockberry"` | Prometheus metric namespace prefix. |
+| `listen_addr` | string | `":9090"` | HTTP address for the `/metrics` endpoint. |
+
+### [logging]
+
+Structured logging configuration.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `level` | string | `"info"` | Minimum log level: `debug`, `info`, `warn`, `error`. |
+| `format` | string | `"text"` | Output format: `text` (human-readable) or `json` (structured). |
+| `output` | string | `"stdout"` | Log destination: `stdout`, `stderr`, or a file path. |
+
+### [ratelimit]
+
+Per-peer rate limiting configuration.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `enabled` | bool | `true` | Enable/disable rate limiting. |
+| `cleanup_interval` | duration | `"5m"` | How often to clean up idle peer limiters. |
+| `peer_idle_timeout` | duration | `"30m"` | Remove limiter state after peer idle for this duration. |
+
+Default rate limits per stream (messages per second):
+- `handshake`: 1
+- `pex`: 0.5 (1 per 2 seconds)
+- `transactions`: 100
+- `blocksync`: 10
+- `blocks`: 10
+- `consensus`: 100
+- `housekeeping`: 1
+
+Default bandwidth limit: 10 MB/s per peer.
 
 ## Duration Format
 
@@ -127,6 +169,7 @@ max_bytes = 1073741824
 cache_size = 10000
 
 [blockstore]
+backend = "leveldb"
 path = "data/blocks"
 
 [statestore]
@@ -135,6 +178,16 @@ cache_size = 10000
 
 [housekeeping]
 latency_probe_interval = "60s"
+
+[metrics]
+enabled = true
+namespace = "blockberry"
+listen_addr = ":9090"
+
+[logging]
+level = "info"
+format = "json"
+output = "stdout"
 ```
 
 ## Programmatic Configuration

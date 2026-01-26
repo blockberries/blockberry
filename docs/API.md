@@ -220,6 +220,114 @@ TxHashes() [][]byte
 
 Returns hashes of all transactions in mempool.
 
+### Type: PriorityMempool
+
+Priority-based mempool with configurable ordering.
+
+```go
+type PriorityMempool struct {
+    // unexported fields
+}
+```
+
+#### func NewPriorityMempool
+
+```go
+func NewPriorityMempool(cfg PriorityMempoolConfig) *PriorityMempool
+```
+
+Creates a new priority-based mempool.
+
+#### func (*PriorityMempool) GetPriority
+
+```go
+func (m *PriorityMempool) GetPriority(hash []byte) int64
+```
+
+Returns the priority of a transaction (0 if not found).
+
+#### func (*PriorityMempool) HighestPriority
+
+```go
+func (m *PriorityMempool) HighestPriority() int64
+```
+
+Returns the highest priority in the mempool.
+
+#### func (*PriorityMempool) SetPriorityFunc
+
+```go
+func (m *PriorityMempool) SetPriorityFunc(fn PriorityFunc)
+```
+
+Updates the priority calculation function.
+
+### Type: TTLMempool
+
+Mempool with automatic transaction expiration.
+
+```go
+type TTLMempool struct {
+    // unexported fields
+}
+```
+
+#### func NewTTLMempool
+
+```go
+func NewTTLMempool(cfg TTLMempoolConfig) *TTLMempool
+```
+
+Creates a new TTL-based mempool.
+
+#### func (*TTLMempool) AddTxWithTTL
+
+```go
+func (m *TTLMempool) AddTxWithTTL(tx []byte, ttl time.Duration) error
+```
+
+Adds a transaction with a custom TTL.
+
+#### func (*TTLMempool) GetTTL
+
+```go
+func (m *TTLMempool) GetTTL(hash []byte) time.Duration
+```
+
+Returns remaining TTL for a transaction (0 if not found or expired).
+
+#### func (*TTLMempool) ExtendTTL
+
+```go
+func (m *TTLMempool) ExtendTTL(hash []byte, extension time.Duration) bool
+```
+
+Extends the TTL for a transaction. Returns false if not found.
+
+#### func (*TTLMempool) SetTTL
+
+```go
+func (m *TTLMempool) SetTTL(hash []byte, expiresAt time.Time) bool
+```
+
+Sets a specific expiration time. Returns false if not found.
+
+#### func (*TTLMempool) SizeActive
+
+```go
+func (m *TTLMempool) SizeActive() int
+```
+
+Returns count of non-expired transactions.
+
+#### func (*TTLMempool) Stop
+
+```go
+func (m *TTLMempool) Stop()
+```
+
+Stops the background cleanup goroutine.
+
 ---
 
 ## Package: blockstore
@@ -385,12 +493,28 @@ Generates a merkle proof for a key.
 type Proof struct {
     Key        []byte
     Value      []byte
-    Exists     bool
-    RootHash   []byte
+    ProofBytes []byte  // Serialized ICS23 commitment proof
     Version    int64
-    ProofBytes []byte  // Serialized ICS23 proof
 }
 ```
+
+#### func (*Proof) Verify
+
+```go
+func (p *Proof) Verify(rootHash []byte) (bool, error)
+```
+
+Verifies the proof against a root hash using ICS23 verification. Supports both existence proofs (key-value exists) and non-existence proofs (key does not exist).
+
+Returns `(true, nil)` if valid, `(false, nil)` if invalid, or `(false, error)` if verification fails.
+
+#### func (*Proof) VerifyConsistent
+
+```go
+func (p *Proof) VerifyConsistent(rootHash []byte) error
+```
+
+Helper that returns an error if the proof is invalid.
 
 ---
 
@@ -466,6 +590,215 @@ const (
 )
 ```
 
+### Type: RateLimiter
+
+Per-peer, per-stream rate limiting.
+
+```go
+type RateLimiter struct {
+    // unexported fields
+}
+```
+
+#### func NewRateLimiter
+
+```go
+func NewRateLimiter(cfg RateLimiterConfig) *RateLimiter
+```
+
+Creates a new rate limiter with the given configuration.
+
+#### func (*RateLimiter) Allow
+
+```go
+func (rl *RateLimiter) Allow(peerID peer.ID, stream string, messageSize int) bool
+```
+
+Checks if a message from a peer should be allowed. Returns true if within limits.
+
+#### func (*RateLimiter) AllowN
+
+```go
+func (rl *RateLimiter) AllowN(peerID peer.ID, stream string, n int, totalSize int) bool
+```
+
+Checks if n messages with total size should be allowed.
+
+#### func (*RateLimiter) ResetPeer
+
+```go
+func (rl *RateLimiter) ResetPeer(peerID peer.ID)
+```
+
+Resets rate limit state for a peer (allows them to send again after being throttled).
+
+#### func (*RateLimiter) RemovePeer
+
+```go
+func (rl *RateLimiter) RemovePeer(peerID peer.ID)
+```
+
+Removes all rate limit state for a peer.
+
+#### func (*RateLimiter) SetLimits
+
+```go
+func (rl *RateLimiter) SetLimits(limits RateLimits)
+```
+
+Updates rate limits (affects new peer limiters only).
+
+#### func (*RateLimiter) Stop
+
+```go
+func (rl *RateLimiter) Stop()
+```
+
+Stops the background cleanup goroutine.
+
+### Type: RateLimits
+
+```go
+type RateLimits struct {
+    MessagesPerSecond map[string]float64  // Per-stream message limits
+    BytesPerSecond    int64               // Overall bandwidth limit (0 = unlimited)
+    BurstSize         int                 // Token bucket burst size
+}
+```
+
+#### func DefaultRateLimits
+
+```go
+func DefaultRateLimits() RateLimits
+```
+
+Returns sensible default rate limits for all stream types.
+
+---
+
+## Package: metrics
+
+### Interface: Metrics
+
+```go
+type Metrics interface {
+    // Peer metrics
+    SetPeersTotal(direction string, count int)
+    IncPeerConnections(result string)
+    IncPeerDisconnections(reason string)
+
+    // Block metrics
+    SetBlockHeight(height int64)
+    IncBlocksReceived()
+    IncBlocksProposed()
+    ObserveBlockLatency(seconds float64)
+    ObserveBlockSize(bytes int)
+
+    // Transaction metrics
+    SetMempoolSize(count int)
+    SetMempoolBytes(bytes int64)
+    IncTxsReceived()
+    IncTxsProposed()
+    IncTxsRejected(reason string)
+    IncTxsEvicted()
+
+    // Sync metrics
+    SetSyncState(state string)
+    SetSyncProgress(progress float64)
+    SetSyncPeerHeight(height int64)
+    ObserveSyncDuration(seconds float64)
+
+    // Message metrics
+    IncMessagesReceived(stream string)
+    IncMessagesSent(stream string)
+    IncMessageErrors(stream, errorType string)
+    ObserveMessageSize(stream string, bytes int)
+
+    // Latency metrics
+    ObservePeerLatency(peerID string, seconds float64)
+
+    // State store metrics
+    SetStateVersion(version int64)
+    SetStateSize(bytes int64)
+
+    // HTTP handler
+    Handler() any
+}
+```
+
+#### func NewPrometheusMetrics
+
+```go
+func NewPrometheusMetrics(namespace string) *PrometheusMetrics
+```
+
+Creates Prometheus metrics with the given namespace.
+
+#### func NewNopMetrics
+
+```go
+func NewNopMetrics() *NopMetrics
+```
+
+Creates a no-op metrics implementation (zero overhead when disabled).
+
+---
+
+## Package: logging
+
+### Type: Logger
+
+```go
+type Logger struct {
+    *slog.Logger
+}
+```
+
+Wraps `slog.Logger` with convenience methods for blockchain-specific logging.
+
+#### Factory Functions
+
+```go
+func NewTextLogger(w io.Writer, level slog.Level) *Logger
+func NewJSONLogger(w io.Writer, level slog.Level) *Logger
+func NewProductionLogger() *Logger   // JSON to stdout, INFO level
+func NewDevelopmentLogger() *Logger  // Text to stdout, DEBUG level
+func NewNopLogger() *Logger          // Discards all logs
+```
+
+#### Builder Methods
+
+```go
+func (l *Logger) With(args ...any) *Logger
+func (l *Logger) WithComponent(name string) *Logger
+func (l *Logger) WithPeer(id peer.ID) *Logger
+func (l *Logger) WithStream(name string) *Logger
+```
+
+#### Attribute Constructors
+
+```go
+func Component(name string) slog.Attr      // "component" field
+func PeerID(id peer.ID) slog.Attr          // "peer_id" field
+func PeerIDStr(id string) slog.Attr        // "peer_id" field (string)
+func Height(h int64) slog.Attr             // "height" field
+func Version(v int64) slog.Attr            // "version" field
+func Hash(h []byte) slog.Attr              // "hash" field (hex)
+func TxHash(h []byte) slog.Attr            // "tx_hash" field (hex)
+func BlockHash(h []byte) slog.Attr         // "block_hash" field (hex)
+func Stream(name string) slog.Attr         // "stream" field
+func MsgType(t string) slog.Attr           // "msg_type" field
+func Duration(d time.Duration) slog.Attr   // "duration" field
+func Latency(d time.Duration) slog.Attr    // "latency_ms" field
+func Count(n int) slog.Attr                // "count" field
+func Size(n int) slog.Attr                 // "size" field
+func ChainID(id string) slog.Attr          // "chain_id" field
+func NodeID(id string) slog.Attr           // "node_id" field
+func Direction(isOutbound bool) slog.Attr  // "direction" field
+func Error(err error) slog.Attr            // "error" field
+func Reason(r string) slog.Attr            // "reason" field
+```
+
 ---
 
 ## Package: handlers
@@ -499,6 +832,35 @@ type Block []byte
 func HashTx(tx Tx) Hash
 func HashBlock(block Block) Hash
 func HashBytes(data []byte) Hash
+```
+
+### Validation Functions
+
+```go
+func ValidateHeight(h int64) error
+func ValidateHeightRange(from, to int64) error
+func ValidateBatchSize(size, maxSize int32) error
+func ValidateMessageSize(size int) error
+func ValidateTransactionSize(size int) error
+func ValidateKeySize(key []byte) error
+func ValidateValueSize(value []byte) error
+func ValidateHash(hash []byte, expectedLen int) error
+func ValidateBlockData(height *int64, hash, data []byte) error
+func ClampBatchSize(size, maxSize int32) int32
+func MustNotBeNil(ptr any, name string) error
+```
+
+### Validation Constants
+
+```go
+const (
+    MaxBatchSize       = 1000
+    MaxBlockHeight     = 1<<62 - 1
+    MaxMessageSize     = 10 * 1024 * 1024  // 10 MB
+    MaxTransactionSize = 1 * 1024 * 1024   // 1 MB
+    MaxKeySize         = 1024              // 1 KB
+    MaxValueSize       = 10 * 1024 * 1024  // 10 MB
+)
 ```
 
 ### Error Types
@@ -551,6 +913,8 @@ type Config struct {
     BlockStore   BlockStoreConfig
     StateStore   StateStoreConfig
     Housekeeping HousekeepingConfig
+    Metrics      MetricsConfig
+    Logging      LoggingConfig
 }
 ```
 

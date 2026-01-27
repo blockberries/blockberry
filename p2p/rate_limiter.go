@@ -23,13 +23,13 @@ type RateLimits struct {
 func DefaultRateLimits() RateLimits {
 	return RateLimits{
 		MessagesPerSecond: map[string]float64{
-			StreamHandshake:    1,    // 1 per second
-			StreamPEX:          0.5,  // 1 per 2 seconds
-			StreamTransactions: 100,  // 100 per second
-			StreamBlockSync:    10,   // 10 per second
-			StreamBlocks:       10,   // 10 per second
-			StreamConsensus:    100,  // 100 per second
-			StreamHousekeeping: 1,    // 1 per second
+			StreamHandshake:    1,   // 1 per second
+			StreamPEX:          0.5, // 1 per 2 seconds
+			StreamTransactions: 100, // 100 per second
+			StreamBlockSync:    10,  // 10 per second
+			StreamBlocks:       10,  // 10 per second
+			StreamConsensus:    100, // 100 per second
+			StreamHousekeeping: 1,   // 1 per second
 		},
 		BytesPerSecond: 10 * 1024 * 1024, // 10 MB/s
 		BurstSize:      10,
@@ -54,7 +54,7 @@ type peerLimiter struct {
 type tokenBucket struct {
 	tokens     float64
 	maxTokens  float64
-	refillRate float64   // tokens per second
+	refillRate float64 // tokens per second
 	lastRefill time.Time
 }
 

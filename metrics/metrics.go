@@ -86,19 +86,19 @@ const (
 
 // Transaction rejection reason labels.
 const (
-	ReasonMempoolFull    = "mempool_full"
-	ReasonTxTooLarge     = "tx_too_large"
-	ReasonTxInvalid      = "tx_invalid"
-	ReasonTxDuplicate    = "tx_duplicate"
-	ReasonTxExpired      = "tx_expired"
-	ReasonTxLowPriority  = "tx_low_priority"
+	ReasonMempoolFull   = "mempool_full"
+	ReasonTxTooLarge    = "tx_too_large"
+	ReasonTxInvalid     = "tx_invalid"
+	ReasonTxDuplicate   = "tx_duplicate"
+	ReasonTxExpired     = "tx_expired"
+	ReasonTxLowPriority = "tx_low_priority"
 )
 
 // Transaction eviction reason labels.
 const (
-	EvictionTTLExpired    = "ttl_expired"
-	EvictionLowPriority   = "low_priority"
-	EvictionMempoolFull   = "mempool_full"
+	EvictionTTLExpired  = "ttl_expired"
+	EvictionLowPriority = "low_priority"
+	EvictionMempoolFull = "mempool_full"
 )
 
 // Message error type labels.

@@ -172,7 +172,7 @@ func TestPeerState_LRUEviction(t *testing.T) {
 		require.Equal(t, MaxKnownBlocksPerPeer, ps.BlocksSentCount())
 
 		// Newest entry should remain
-		require.True(t, ps.HasBlock(int64(MaxKnownBlocksPerPeer + 99)))
+		require.True(t, ps.HasBlock(int64(MaxKnownBlocksPerPeer+99)))
 	})
 }
 

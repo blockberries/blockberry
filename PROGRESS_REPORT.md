@@ -772,4 +772,74 @@ All timing and size values are now in configuration with sensible defaults.
 
 ---
 
+### 1.6 Fix Options Pattern
+**Status:** Complete
+
+**Files Created:**
+- `node/builder.go` - NodeBuilder fluent interface for node construction
+- `node/builder_test.go` - Comprehensive tests for builder pattern
+
+**Key Changes:**
+
+1. **NodeBuilder Pattern**: New fluent interface for constructing nodes:
+   ```go
+   type NodeBuilder struct {
+       cfg              *config.Config
+       mempool          mempool.Mempool
+       blockStore       blockstore.BlockStore
+       consensusHandler handlers.ConsensusHandler
+       blockValidator   bsync.BlockValidator
+       callbacks        *types.NodeCallbacks
+       err              error
+   }
+   ```
+
+2. **Fluent Methods**: Chain-able methods for setting components:
+   ```go
+   node, err := NewNodeBuilder(cfg).
+       WithMempool(customMempool).
+       WithBlockStore(customBlockStore).
+       WithConsensusHandler(myHandler).
+       WithBlockValidator(myValidator).
+       WithCallbacks(myCallbacks).
+       Build()
+   ```
+
+3. **Single-Pass Initialization**: The builder ensures all components are configured before `Build()` is called, preventing the double-apply issues that existed in the Options pattern (lines 186-188 and 254-256 of node.go).
+
+4. **Error Tracking**: Builder tracks errors during configuration. If any error occurs, subsequent method calls are no-ops and `Build()` returns the error.
+
+5. **MustBuild()**: Convenience method that panics on error, useful for tests and simple scenarios where errors are unexpected.
+
+6. **Backward Compatibility**: `NewNodeWithBuilder()` is an alias for `NewNodeBuilder()`, providing clear naming while maintaining existing patterns.
+
+7. **HandlersConfig Integration**: The builder uses `HandlersConfig` values from configuration when creating reactors, ensuring timing values come from config rather than hardcoded defaults.
+
+**Test Coverage:**
+- `TestNodeBuilder_Basic` - Verifies basic node creation with all components
+- `TestNodeBuilder_WithMempool` - Tests custom mempool injection
+- `TestNodeBuilder_WithCallbacks` - Tests callback configuration with invocation verification
+- `TestNodeBuilder_WithBlockValidator` - Tests validator injection
+- `TestNodeBuilder_WithConsensusHandler` - Tests consensus handler injection
+- `TestNodeBuilder_InvalidConfig` - Verifies invalid config returns error
+- `TestNodeBuilder_Chaining` - Tests method chaining with multiple options
+- `TestNodeBuilder_MustBuild_Panics` - Verifies MustBuild panics on error
+- `TestNodeBuilder_MustBuild_Success` - Verifies MustBuild succeeds with valid config
+- `TestNewNodeWithBuilder` - Tests the alias function
+- `TestNodeBuilder_ConsensusHandlerIsSet` - Verifies handler is retrievable from reactor
+- `TestNodeBuilder_ErrorPropagation` - Tests that invalid config doesn't panic during chaining
+- `TestNodeBuilder_ConsensusHandlerInterface` - Verifies interface compatibility
+
+**Design Decisions:**
+- Builder pattern provides clear single-pass initialization
+- Error tracking in builder prevents partial configuration issues
+- All methods check for prior errors before proceeding
+- Fluent interface enables clean, readable configuration
+- MustBuild() provides panic-on-error for simple use cases
+- Builder creates all reactors in one pass using config values
+- Default components (mempool, blockstore) are created if not explicitly provided
+- Consensus handler and block validator are set on reactors during build
+
+---
+
 *Last Updated: January 2025*

@@ -4,9 +4,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/blockberries/blockberry/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/blockberries/blockberry/types"
 )
 
 func TestPriorityMempool_Basic(t *testing.T) {
@@ -54,9 +55,9 @@ func TestPriorityMempool_PriorityOrdering(t *testing.T) {
 	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Add transactions with different priorities (first byte determines priority)
-	txLow := []byte{10, 0, 0, 0}    // Priority 10
-	txMed := []byte{50, 0, 0, 0}    // Priority 50
-	txHigh := []byte{100, 0, 0, 0}  // Priority 100
+	txLow := []byte{10, 0, 0, 0}   // Priority 10
+	txMed := []byte{50, 0, 0, 0}   // Priority 50
+	txHigh := []byte{100, 0, 0, 0} // Priority 100
 
 	require.NoError(t, m.AddTx(txLow))
 	require.NoError(t, m.AddTx(txMed))
@@ -132,8 +133,8 @@ func TestPriorityMempool_NoEvictionForLowerPriority(t *testing.T) {
 	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Fill with high priority transactions
-	tx1 := []byte{80, 1, 1, 1} // Priority 80
-	tx2 := []byte{90, 2, 2, 2} // Priority 90
+	tx1 := []byte{80, 1, 1, 1}  // Priority 80
+	tx2 := []byte{90, 2, 2, 2}  // Priority 90
 	tx3 := []byte{100, 3, 3, 3} // Priority 100
 
 	require.NoError(t, m.AddTx(tx1))
@@ -338,7 +339,7 @@ func TestPriorityMempool_HighestPriority(t *testing.T) {
 	require.NoError(t, m.AddTx([]byte{50})) // Priority 50
 	assert.Equal(t, int64(50), m.HighestPriority())
 
-	require.NoError(t, m.AddTx([]byte{30})) // Priority 30
+	require.NoError(t, m.AddTx([]byte{30}))         // Priority 30
 	assert.Equal(t, int64(50), m.HighestPriority()) // Still 50
 }
 
@@ -352,7 +353,7 @@ func TestPriorityMempool_SizePriorityFunc(t *testing.T) {
 	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Smaller transactions should have higher priority
-	txSmall := []byte("hi")       // 2 bytes
+	txSmall := []byte("hi")                                      // 2 bytes
 	txLarge := []byte("hello world this is a large transaction") // 39 bytes
 
 	require.NoError(t, m.AddTx(txSmall))

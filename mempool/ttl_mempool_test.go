@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blockberries/blockberry/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/blockberries/blockberry/types"
 )
 
 func TestTTLMempool_Basic(t *testing.T) {

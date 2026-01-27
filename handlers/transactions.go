@@ -21,6 +21,9 @@ const (
 	TypeIDTransactionDataResponse cramberry.TypeID = 136
 )
 
+// DefaultMaxPendingAge is the default maximum age for pending requests.
+const DefaultMaxPendingAge = 60 * time.Second
+
 // TransactionsReactor handles transaction gossiping between peers.
 type TransactionsReactor struct {
 	// Dependencies
@@ -31,7 +34,8 @@ type TransactionsReactor struct {
 	// Configuration
 	requestInterval time.Duration
 	batchSize       int32
-	maxPending      int // Max pending data requests per peer
+	maxPending      int           // Max pending data requests per peer
+	maxPendingAge   time.Duration // Max age for pending requests before cleanup
 
 	// State tracking
 	pendingRequests map[peer.ID]map[string]time.Time // peerID -> txHash -> requestTime
@@ -58,9 +62,15 @@ func NewTransactionsReactor(
 		requestInterval: requestInterval,
 		batchSize:       batchSize,
 		maxPending:      100,
+		maxPendingAge:   DefaultMaxPendingAge,
 		pendingRequests: make(map[peer.ID]map[string]time.Time),
 		stop:            make(chan struct{}),
 	}
+}
+
+// Name returns the component name for identification.
+func (r *TransactionsReactor) Name() string {
+	return "transactions-reactor"
 }
 
 // Start begins the transaction gossip loop.
@@ -114,6 +124,7 @@ func (r *TransactionsReactor) gossipLoop() {
 		case <-r.stop:
 			return
 		case <-ticker.C:
+			r.cleanupStaleRequests()
 			r.requestTransactionsFromPeers()
 		}
 	}
@@ -415,9 +426,9 @@ func (r *TransactionsReactor) handleTransactionDataResponse(peerID peer.ID, data
 		// Clear pending request
 		r.clearPendingRequest(peerID, txData.Hash)
 
-		// Verify hash matches content
+		// Verify hash matches content using constant-time comparison to prevent timing attacks
 		computedHash := types.HashTx(txData.Data)
-		if string(computedHash) != string(txData.Hash) {
+		if !types.HashEqual(computedHash, txData.Hash) {
 			// Hash mismatch - peer sent bad data
 			if r.network != nil {
 				_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidTx, p2p.ReasonInvalidTx, "transaction hash mismatch")
@@ -447,6 +458,25 @@ func (r *TransactionsReactor) clearPendingRequest(peerID peer.ID, txHash []byte)
 
 	if pending, ok := r.pendingRequests[peerID]; ok {
 		delete(pending, string(txHash))
+		if len(pending) == 0 {
+			delete(r.pendingRequests, peerID)
+		}
+	}
+}
+
+// cleanupStaleRequests removes pending requests that have exceeded maxPendingAge.
+// This prevents unbounded memory growth from requests that never receive responses.
+func (r *TransactionsReactor) cleanupStaleRequests() {
+	now := time.Now()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for peerID, pending := range r.pendingRequests {
+		for txHash, requestTime := range pending {
+			if now.Sub(requestTime) > r.maxPendingAge {
+				delete(pending, txHash)
+			}
+		}
 		if len(pending) == 0 {
 			delete(r.pendingRequests, peerID)
 		}

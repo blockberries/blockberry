@@ -54,6 +54,11 @@ func NewHousekeepingReactor(
 	}
 }
 
+// Name returns the component name for identification.
+func (r *HousekeepingReactor) Name() string {
+	return "housekeeping-reactor"
+}
+
 // Start begins the periodic latency probe loop.
 func (r *HousekeepingReactor) Start() error {
 	r.mu.Lock()

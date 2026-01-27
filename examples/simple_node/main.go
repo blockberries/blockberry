@@ -19,6 +19,7 @@ import (
 
 	"github.com/blockberries/blockberry/config"
 	"github.com/blockberries/blockberry/node"
+	bsync "github.com/blockberries/blockberry/sync"
 )
 
 func main() {
@@ -33,8 +34,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Create node
-	n, err := node.NewNode(cfg)
+	// Create node with block validator.
+	// Note: AcceptAllBlockValidator is for demonstration only.
+	// Production code should implement proper block validation.
+	n, err := node.NewNode(cfg, node.WithBlockValidator(bsync.AcceptAllBlockValidator))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating node: %v\n", err)
 		os.Exit(1)

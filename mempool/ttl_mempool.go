@@ -27,6 +27,9 @@ type TTLMempool struct {
 	// Priority calculation function
 	priorityFunc PriorityFunc
 
+	// Transaction validation
+	validator TxValidator
+
 	// Current state
 	sizeBytes int64
 
@@ -172,6 +175,8 @@ func (m *TTLMempool) AddTx(tx []byte) error {
 }
 
 // AddTxWithTTL adds a transaction with a custom TTL.
+// The transaction is validated before being added.
+// If no validator is set, DefaultTxValidator (reject all) is used.
 func (m *TTLMempool) AddTxWithTTL(tx []byte, ttl time.Duration) error {
 	if tx == nil {
 		return types.ErrInvalidTx
@@ -188,6 +193,15 @@ func (m *TTLMempool) AddTxWithTTL(tx []byte, ttl time.Duration) error {
 	// Check if already exists
 	if _, exists := m.txs[hashKey]; exists {
 		return types.ErrTxAlreadyExists
+	}
+
+	// Validate transaction using validator or default (fail-closed)
+	validator := m.validator
+	if validator == nil {
+		validator = DefaultTxValidator
+	}
+	if err := validator(tx); err != nil {
+		return err
 	}
 
 	// Calculate priority
@@ -450,4 +464,11 @@ func (m *TTLMempool) GetPriority(hash []byte) int64 {
 		return 0
 	}
 	return mtx.priority
+}
+
+// SetTxValidator sets the transaction validation function.
+func (m *TTLMempool) SetTxValidator(validator TxValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validator = validator
 }

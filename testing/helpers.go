@@ -157,6 +157,10 @@ func NewTestNode(tc *TestNodeConfig) (*TestNode, error) {
 	bs := blockstore.NewMemoryBlockStore()
 	mp := mempool.NewSimpleMempool(cfg.Mempool.MaxTxs, cfg.Mempool.MaxBytes)
 
+	// Set default validator for testing (accepts all transactions)
+	// Production code should use a proper validator
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
+
 	// Create node
 	nodeID := fmt.Sprintf("%x", pub)
 	tn := &TestNode{
@@ -235,6 +239,10 @@ func NewTestNode(tc *TestNodeConfig) (*TestNode, error) {
 		1*time.Second, // sync interval
 		100,           // batch size
 	)
+
+	// Set default validator for testing (accepts all blocks)
+	// Production code should use a proper validator
+	tn.SyncReactor.SetValidator(bsync.AcceptAllBlockValidator)
 
 	return tn, nil
 }

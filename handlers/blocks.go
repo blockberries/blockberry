@@ -33,6 +33,9 @@ type BlockReactor struct {
 	// Callback for when a new block is received
 	onBlockReceived func(height int64, hash, data []byte)
 
+	// Lifecycle
+	running bool
+
 	mu sync.RWMutex
 }
 
@@ -47,6 +50,35 @@ func NewBlockReactor(
 		network:     network,
 		peerManager: peerManager,
 	}
+}
+
+// Name returns the component name for identification.
+func (r *BlockReactor) Name() string {
+	return "block-reactor"
+}
+
+// Start starts the block reactor.
+// BlockReactor is stateless (no background goroutines), so this just marks it as running.
+func (r *BlockReactor) Start() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.running = true
+	return nil
+}
+
+// Stop stops the block reactor.
+func (r *BlockReactor) Stop() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.running = false
+	return nil
+}
+
+// IsRunning returns whether the reactor is running.
+func (r *BlockReactor) IsRunning() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.running
 }
 
 // SetValidator sets the block validation callback.
@@ -107,9 +139,9 @@ func (r *BlockReactor) handleBlockData(peerID peer.ID, data []byte) error {
 		return nil
 	}
 
-	// Verify hash
+	// Verify hash using constant-time comparison to prevent timing attacks
 	computedHash := types.HashBlock(block.Data)
-	if string(computedHash) != string(block.Hash) {
+	if !types.HashEqual(computedHash, block.Hash) {
 		if r.network != nil {
 			_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, "block hash mismatch")
 		}

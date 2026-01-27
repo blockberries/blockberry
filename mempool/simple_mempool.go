@@ -21,6 +21,9 @@ type SimpleMempool struct {
 	// Current state
 	sizeBytes int64
 
+	// Transaction validation
+	validator TxValidator
+
 	mu sync.RWMutex
 }
 
@@ -35,6 +38,8 @@ func NewSimpleMempool(maxTxs int, maxBytes int64) *SimpleMempool {
 }
 
 // AddTx adds a transaction to the mempool.
+// The transaction is validated before being added.
+// If no validator is set, DefaultTxValidator (reject all) is used.
 func (m *SimpleMempool) AddTx(tx []byte) error {
 	if tx == nil {
 		return types.ErrInvalidTx
@@ -49,6 +54,15 @@ func (m *SimpleMempool) AddTx(tx []byte) error {
 	// Check if already exists
 	if _, exists := m.txs[hashKey]; exists {
 		return types.ErrTxAlreadyExists
+	}
+
+	// Validate transaction using validator or default (fail-closed)
+	validator := m.validator
+	if validator == nil {
+		validator = DefaultTxValidator
+	}
+	if err := validator(tx); err != nil {
+		return err
 	}
 
 	// Check capacity
@@ -173,4 +187,11 @@ func (m *SimpleMempool) TxHashes() [][]byte {
 	result := make([][]byte, len(m.order))
 	copy(result, m.order)
 	return result
+}
+
+// SetTxValidator sets the transaction validation function.
+func (m *SimpleMempool) SetTxValidator(validator TxValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validator = validator
 }

@@ -4,8 +4,8 @@ go 1.25.6
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	github.com/blockberries/cramberry v1.2.0
-	github.com/blockberries/glueberry v1.0.1
+	github.com/blockberries/cramberry v1.4.3
+	github.com/blockberries/glueberry v1.2.4
 	github.com/cosmos/iavl v1.3.5
 	github.com/cosmos/ics23/go v0.10.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7

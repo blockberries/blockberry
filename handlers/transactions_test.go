@@ -184,6 +184,7 @@ func TestTransactionsReactor_EncodeDecodeTransactionDataResponse(t *testing.T) {
 
 func TestTransactionsReactor_HandleTransactionsRequest(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Add some transactions to the mempool
@@ -209,6 +210,7 @@ func TestTransactionsReactor_HandleTransactionsRequest(t *testing.T) {
 
 func TestTransactionsReactor_HandleTransactionsResponse(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Add one transaction
@@ -236,6 +238,7 @@ func TestTransactionsReactor_HandleTransactionsResponse(t *testing.T) {
 
 func TestTransactionsReactor_HandleTransactionDataRequest(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Add a transaction
@@ -262,6 +265,7 @@ func TestTransactionsReactor_HandleTransactionDataRequest(t *testing.T) {
 
 func TestTransactionsReactor_HandleTransactionDataResponse(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Create transaction with correct hash
@@ -292,6 +296,7 @@ func TestTransactionsReactor_HandleTransactionDataResponse(t *testing.T) {
 
 func TestTransactionsReactor_HandleTransactionDataResponseHashMismatch(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Create transaction with wrong hash
@@ -378,6 +383,7 @@ func TestTransactionsReactor_TypeIDConstants(t *testing.T) {
 
 func TestTransactionsReactor_HandleDuplicateTransaction(t *testing.T) {
 	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
 	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
 
 	// Add a transaction
@@ -401,4 +407,92 @@ func TestTransactionsReactor_HandleDuplicateTransaction(t *testing.T) {
 
 	// Mempool should still have exactly 1 transaction
 	require.Equal(t, 1, mp.Size())
+}
+
+func TestTransactionsReactor_DefaultMaxPendingAge(t *testing.T) {
+	reactor := NewTransactionsReactor(nil, nil, nil, time.Second, 50)
+
+	// Verify default maxPendingAge is set
+	require.Equal(t, DefaultMaxPendingAge, reactor.maxPendingAge)
+}
+
+func TestTransactionsReactor_CleanupStaleRequests(t *testing.T) {
+	reactor := NewTransactionsReactor(nil, nil, nil, time.Second, 50)
+	reactor.maxPendingAge = 100 * time.Millisecond // Short timeout for testing
+
+	peer1 := peer.ID("peer1")
+	peer2 := peer.ID("peer2")
+
+	// Add some pending requests
+	reactor.mu.Lock()
+	now := time.Now()
+	// Stale request for peer1 (old)
+	reactor.pendingRequests[peer1] = map[string]time.Time{
+		"stale_hash": now.Add(-200 * time.Millisecond), // Older than maxPendingAge
+		"fresh_hash": now,                              // Fresh
+	}
+	// All stale requests for peer2
+	reactor.pendingRequests[peer2] = map[string]time.Time{
+		"stale1": now.Add(-200 * time.Millisecond),
+		"stale2": now.Add(-300 * time.Millisecond),
+	}
+	reactor.mu.Unlock()
+
+	// Run cleanup
+	reactor.cleanupStaleRequests()
+
+	// Check results
+	reactor.mu.RLock()
+	defer reactor.mu.RUnlock()
+
+	// peer1 should still exist with only the fresh hash
+	pending1, exists1 := reactor.pendingRequests[peer1]
+	require.True(t, exists1, "peer1 should still have pending requests")
+	require.Len(t, pending1, 1, "peer1 should have exactly 1 pending request")
+	_, hasFresh := pending1["fresh_hash"]
+	require.True(t, hasFresh, "fresh_hash should remain")
+	_, hasStale := pending1["stale_hash"]
+	require.False(t, hasStale, "stale_hash should be removed")
+
+	// peer2 should be completely removed (all requests were stale)
+	_, exists2 := reactor.pendingRequests[peer2]
+	require.False(t, exists2, "peer2 should be removed (all requests stale)")
+}
+
+func TestTransactionsReactor_CleanupStaleRequestsEmpty(t *testing.T) {
+	reactor := NewTransactionsReactor(nil, nil, nil, time.Second, 50)
+
+	// Run cleanup on empty pendingRequests - should not panic
+	reactor.cleanupStaleRequests()
+
+	reactor.mu.RLock()
+	defer reactor.mu.RUnlock()
+	require.Empty(t, reactor.pendingRequests)
+}
+
+func TestTransactionsReactor_CleanupStaleRequestsAllFresh(t *testing.T) {
+	reactor := NewTransactionsReactor(nil, nil, nil, time.Second, 50)
+	reactor.maxPendingAge = time.Hour // Long timeout
+
+	peer1 := peer.ID("peer1")
+
+	// Add fresh pending requests
+	reactor.mu.Lock()
+	now := time.Now()
+	reactor.pendingRequests[peer1] = map[string]time.Time{
+		"hash1": now,
+		"hash2": now,
+	}
+	reactor.mu.Unlock()
+
+	// Run cleanup
+	reactor.cleanupStaleRequests()
+
+	// All requests should remain
+	reactor.mu.RLock()
+	defer reactor.mu.RUnlock()
+
+	pending, exists := reactor.pendingRequests[peer1]
+	require.True(t, exists)
+	require.Len(t, pending, 2)
 }

@@ -209,3 +209,82 @@ func BenchmarkHashConcat(b *testing.B) {
 		HashConcat(h1, h2)
 	}
 }
+
+func TestHashEqual(t *testing.T) {
+	t.Run("equal hashes", func(t *testing.T) {
+		h1 := HashBytes([]byte("test"))
+		h2 := HashBytes([]byte("test"))
+		require.True(t, HashEqual(h1, h2))
+	})
+
+	t.Run("different hashes", func(t *testing.T) {
+		h1 := HashBytes([]byte("test1"))
+		h2 := HashBytes([]byte("test2"))
+		require.False(t, HashEqual(h1, h2))
+	})
+
+	t.Run("empty vs non-empty", func(t *testing.T) {
+		h1 := EmptyHash()
+		h2 := HashBytes([]byte("test"))
+		require.False(t, HashEqual(h1, h2))
+	})
+
+	t.Run("empty vs empty", func(t *testing.T) {
+		h1 := EmptyHash()
+		h2 := EmptyHash()
+		require.True(t, HashEqual(h1, h2))
+	})
+
+	t.Run("nil slices", func(t *testing.T) {
+		// Both nil should be equal (subtle.ConstantTimeCompare returns 1 for empty slices)
+		require.True(t, HashEqual(nil, nil))
+	})
+
+	t.Run("nil vs empty", func(t *testing.T) {
+		// nil and empty byte slice are both zero-length
+		require.True(t, HashEqual(nil, []byte{}))
+	})
+
+	t.Run("nil vs non-empty", func(t *testing.T) {
+		h := HashBytes([]byte("test"))
+		require.False(t, HashEqual(nil, h))
+	})
+
+	t.Run("different lengths", func(t *testing.T) {
+		h1 := []byte("short")
+		h2 := HashBytes([]byte("test")) // 32 bytes
+		require.False(t, HashEqual(h1, h2))
+	})
+
+	t.Run("constant time property", func(t *testing.T) {
+		// This test verifies the function works correctly, not timing
+		// (timing attacks are hard to test in unit tests)
+		h1 := HashBytes([]byte("secret1"))
+		h2 := HashBytes([]byte("secret2"))
+		// Comparison should work regardless of where bytes differ
+		require.False(t, HashEqual(h1, h2))
+
+		// First byte differs
+		b1 := make([]byte, 32)
+		b2 := make([]byte, 32)
+		b1[0] = 0x01
+		b2[0] = 0x02
+		require.False(t, HashEqual(b1, b2))
+
+		// Last byte differs
+		b1 = make([]byte, 32)
+		b2 = make([]byte, 32)
+		b1[31] = 0x01
+		b2[31] = 0x02
+		require.False(t, HashEqual(b1, b2))
+	})
+}
+
+func BenchmarkHashEqual(b *testing.B) {
+	h1 := HashBytes([]byte("benchmark hash data"))
+	h2 := HashBytes([]byte("benchmark hash data"))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		HashEqual(h1, h2)
+	}
+}

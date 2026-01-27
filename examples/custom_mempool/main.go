@@ -18,6 +18,7 @@ import (
 	"github.com/blockberries/blockberry/config"
 	"github.com/blockberries/blockberry/mempool"
 	"github.com/blockberries/blockberry/node"
+	bsync "github.com/blockberries/blockberry/sync"
 	"github.com/blockberries/blockberry/types"
 )
 
@@ -32,8 +33,13 @@ func main() {
 		return
 	}
 
-	// Create node with custom mempool
-	n, err := node.NewNode(cfg, node.WithMempool(priorityPool))
+	// Create node with custom mempool.
+	// Note: AcceptAllBlockValidator is for demonstration only.
+	// Production code should implement proper block validation.
+	n, err := node.NewNode(cfg,
+		node.WithMempool(priorityPool),
+		node.WithBlockValidator(bsync.AcceptAllBlockValidator),
+	)
 	if err != nil {
 		fmt.Printf("Error creating node: %v\n", err)
 		return
@@ -104,6 +110,7 @@ type PriorityMempool struct {
 	maxTxs    int
 	maxBytes  int64
 	sizeBytes int64
+	validator mempool.TxValidator
 	mu        sync.RWMutex
 }
 
@@ -256,6 +263,13 @@ func (m *PriorityMempool) TxHashes() [][]byte {
 		hashes = append(hashes, []byte(hash))
 	}
 	return hashes
+}
+
+// SetTxValidator sets the transaction validation function.
+func (m *PriorityMempool) SetTxValidator(validator mempool.TxValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validator = validator
 }
 
 // Verify interface compliance

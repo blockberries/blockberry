@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"testing"
+	"time"
 
 	"github.com/blockberries/cramberry/pkg/cramberry"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -482,4 +483,117 @@ func TestHandshakeConstants(t *testing.T) {
 	require.Equal(t, TypeIDHelloRequest, schema.HandshakeMessageTypeID(req))
 	require.Equal(t, TypeIDHelloResponse, schema.HandshakeMessageTypeID(resp))
 	require.Equal(t, TypeIDHelloFinalize, schema.HandshakeMessageTypeID(fin))
+}
+
+func TestHandshakeHandler_DefaultTimeouts(t *testing.T) {
+	h := NewHandshakeHandler(
+		"test-chain",
+		1,
+		"node-1",
+		[]byte("pubkey-1"),
+		nil,
+		nil,
+		func() int64 { return 100 },
+	)
+
+	require.Equal(t, DefaultHandshakeTimeout, h.timeout)
+	require.Equal(t, DefaultHandshakeCheckInterval, h.checkInterval)
+}
+
+func TestHandshakeHandler_StartStop(t *testing.T) {
+	h := NewHandshakeHandler(
+		"test-chain",
+		1,
+		"node-1",
+		[]byte("pubkey-1"),
+		nil,
+		nil,
+		func() int64 { return 100 },
+	)
+
+	// Should not be running initially
+	require.False(t, h.IsRunning())
+
+	// Start
+	err := h.Start()
+	require.NoError(t, err)
+	require.True(t, h.IsRunning())
+
+	// Start again should be no-op
+	err = h.Start()
+	require.NoError(t, err)
+
+	// Stop
+	err = h.Stop()
+	require.NoError(t, err)
+	require.False(t, h.IsRunning())
+
+	// Stop again should be no-op
+	err = h.Stop()
+	require.NoError(t, err)
+}
+
+func TestHandshakeHandler_CleanupStaleHandshakes(t *testing.T) {
+	h := NewHandshakeHandler(
+		"test-chain",
+		1,
+		"node-1",
+		[]byte("pubkey-1"),
+		nil, // Network nil so disconnect won't be called
+		nil,
+		func() int64 { return 100 },
+	)
+	h.timeout = 100 * time.Millisecond // Short timeout for testing
+
+	peer1 := peer.ID("stale-peer")
+	peer2 := peer.ID("fresh-peer")
+	peer3 := peer.ID("complete-peer")
+
+	// Add some handshake states
+	h.mu.Lock()
+	now := time.Now()
+	// Stale incomplete handshake (old)
+	h.states[peer1] = &PeerHandshakeState{
+		State:     StateInit,
+		StartedAt: now.Add(-200 * time.Millisecond), // Older than timeout
+	}
+	// Fresh incomplete handshake
+	h.states[peer2] = &PeerHandshakeState{
+		State:     StateInit,
+		StartedAt: now, // Fresh
+	}
+	// Complete handshake (old, but should not be cleaned up)
+	h.states[peer3] = &PeerHandshakeState{
+		State:     StateComplete,
+		StartedAt: now.Add(-200 * time.Millisecond), // Old but complete
+	}
+	h.mu.Unlock()
+
+	// Run cleanup
+	h.cleanupStaleHandshakes()
+
+	// Give time for async disconnect (which won't happen with nil network)
+	time.Sleep(10 * time.Millisecond)
+
+	// Check results
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	// peer1 should be removed (stale incomplete)
+	_, exists1 := h.states[peer1]
+	require.False(t, exists1, "stale incomplete handshake should be removed")
+
+	// peer2 should still exist (fresh)
+	_, exists2 := h.states[peer2]
+	require.True(t, exists2, "fresh handshake should remain")
+
+	// peer3 should still exist (complete, even though old)
+	_, exists3 := h.states[peer3]
+	require.True(t, exists3, "complete handshake should remain regardless of age")
+}
+
+func TestHandshakeHandler_TimeoutConstants(t *testing.T) {
+	// Verify the default timeout constants are reasonable
+	require.Equal(t, 30*time.Second, DefaultHandshakeTimeout)
+	require.Equal(t, 5*time.Second, DefaultHandshakeCheckInterval)
 }

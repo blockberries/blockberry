@@ -2,9 +2,30 @@
 package mempool
 
 import (
+	"fmt"
+
 	"github.com/blockberries/blockberry/config"
 	"github.com/blockberries/blockberry/types"
 )
+
+// TxValidator is a callback for validating transactions before adding to mempool.
+// Applications must provide their own validator to accept transactions.
+type TxValidator func(tx []byte) error
+
+// DefaultTxValidator is a fail-closed validator that rejects all transactions.
+// This is used when no validator is explicitly set, ensuring transactions are never
+// accepted without proper validation. Applications MUST provide their own
+// validator to accept transactions.
+var DefaultTxValidator TxValidator = func(tx []byte) error {
+	return fmt.Errorf("%w: no transaction validator configured", types.ErrNoTxValidator)
+}
+
+// AcceptAllTxValidator is a validator that accepts all transactions.
+// WARNING: This should ONLY be used for testing purposes.
+// Production systems must use a proper validator that verifies transaction validity.
+var AcceptAllTxValidator TxValidator = func(tx []byte) error {
+	return nil
+}
 
 // Mempool defines the interface for transaction pool management.
 // Implementations must be safe for concurrent use.
@@ -39,6 +60,11 @@ type Mempool interface {
 
 	// TxHashes returns all transaction hashes in the mempool.
 	TxHashes() [][]byte
+
+	// SetTxValidator sets the transaction validation function.
+	// Must be called before AddTx to enable validation.
+	// If not set, DefaultTxValidator (reject all) is used.
+	SetTxValidator(validator TxValidator)
 }
 
 // TxInfo contains metadata about a transaction in the mempool.

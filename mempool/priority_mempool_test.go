@@ -15,6 +15,7 @@ func TestPriorityMempool_Basic(t *testing.T) {
 		MaxBytes: 1024 * 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	require.NotNil(t, m)
 
 	// Add a transaction
@@ -50,6 +51,7 @@ func TestPriorityMempool_PriorityOrdering(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Add transactions with different priorities (first byte determines priority)
 	txLow := []byte{10, 0, 0, 0}    // Priority 10
@@ -85,6 +87,7 @@ func TestPriorityMempool_Eviction(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Fill the mempool
 	tx1 := []byte{10, 1, 1, 1} // Priority 10
@@ -126,6 +129,7 @@ func TestPriorityMempool_NoEvictionForLowerPriority(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Fill with high priority transactions
 	tx1 := []byte{80, 1, 1, 1} // Priority 80
@@ -163,6 +167,7 @@ func TestPriorityMempool_ByteLimitEviction(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Add low priority transaction (5 bytes)
 	txLow := []byte{10, 1, 2, 3, 4} // Priority 10, 5 bytes
@@ -192,6 +197,7 @@ func TestPriorityMempool_DuplicateRejection(t *testing.T) {
 		MaxBytes: 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	tx := []byte("duplicate test")
 	require.NoError(t, m.AddTx(tx))
@@ -219,6 +225,7 @@ func TestPriorityMempool_RemoveTxs(t *testing.T) {
 		MaxBytes: 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	tx1 := []byte("tx1")
 	tx2 := []byte("tx2")
@@ -244,6 +251,7 @@ func TestPriorityMempool_Flush(t *testing.T) {
 		MaxBytes: 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	require.NoError(t, m.AddTx([]byte("tx1")))
 	require.NoError(t, m.AddTx([]byte("tx2")))
@@ -262,6 +270,7 @@ func TestPriorityMempool_TxHashes(t *testing.T) {
 		MaxBytes: 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	tx1 := []byte("tx1")
 	tx2 := []byte("tx2")
@@ -292,6 +301,7 @@ func TestPriorityMempool_GetPriority(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	tx := []byte("hello") // 5 bytes -> priority 50
 	require.NoError(t, m.AddTx(tx))
@@ -317,6 +327,7 @@ func TestPriorityMempool_HighestPriority(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Empty mempool
 	assert.Equal(t, int64(0), m.HighestPriority())
@@ -338,6 +349,7 @@ func TestPriorityMempool_SizePriorityFunc(t *testing.T) {
 		PriorityFunc: SizePriorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Smaller transactions should have higher priority
 	txSmall := []byte("hi")       // 2 bytes
@@ -359,6 +371,7 @@ func TestPriorityMempool_ConcurrentAccess(t *testing.T) {
 		MaxBytes: 1024 * 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	var wg sync.WaitGroup
 	errChan := make(chan error, 100)
@@ -414,6 +427,7 @@ func TestPriorityMempool_ReapTxsMaxBytes(t *testing.T) {
 		PriorityFunc: priorityFunc,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Add transactions
 	tx1 := []byte{100, 1, 1, 1, 1} // Priority 100, 5 bytes
@@ -437,6 +451,7 @@ func TestPriorityMempool_SetPriorityFunc(t *testing.T) {
 		MaxBytes: 1024,
 	}
 	m := NewPriorityMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 
 	// Add with default priority
 	tx := []byte("test")

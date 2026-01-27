@@ -110,6 +110,18 @@ func (n *Network) Stop() error {
 	return nil
 }
 
+// Name returns the component name for identification.
+func (n *Network) Name() string {
+	return "network"
+}
+
+// IsRunning returns whether the network is running.
+func (n *Network) IsRunning() bool {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.started
+}
+
 // PeerID returns the local peer ID.
 func (n *Network) PeerID() peer.ID {
 	return n.node.PeerID()

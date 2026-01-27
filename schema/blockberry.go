@@ -7,14 +7,17 @@ import (
 	"github.com/blockberries/cramberry/pkg/cramberry"
 )
 
+
+
+
 type HelloRequest struct {
-	NodeId       *string `cramberry:"1,required" json:"node_id"`
-	Version      *int32  `cramberry:"2,required" json:"version"`
-	InboundUrl   string  `cramberry:"3" json:"inbound_url"`
-	InboundPort  int32   `cramberry:"4" json:"inbound_port"`
-	ChainId      *string `cramberry:"5,required" json:"chain_id"`
-	Timestamp    *int64  `cramberry:"6,required" json:"timestamp"`
-	LatestHeight *int64  `cramberry:"7,required" json:"latest_height"`
+NodeId *string `cramberry:"1,required" json:"node_id"`
+Version *int32 `cramberry:"2,required" json:"version"`
+InboundUrl string `cramberry:"3" json:"inbound_url"`
+InboundPort int32 `cramberry:"4" json:"inbound_port"`
+ChainId *string `cramberry:"5,required" json:"chain_id"`
+Timestamp *int64 `cramberry:"6,required" json:"timestamp"`
+LatestHeight *int64 `cramberry:"7,required" json:"latest_height"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -82,28 +85,28 @@ func (m *HelloRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp string
-			tmp = r.ReadString()
-			m.NodeId = &tmp
+		tmp = r.ReadString()
+		m.NodeId = &tmp
 		case 2:
 			var tmp int32
-			tmp = r.ReadInt32()
-			m.Version = &tmp
+		tmp = r.ReadInt32()
+		m.Version = &tmp
 		case 3:
 			m.InboundUrl = r.ReadString()
 		case 4:
 			m.InboundPort = r.ReadInt32()
 		case 5:
 			var tmp string
-			tmp = r.ReadString()
-			m.ChainId = &tmp
+		tmp = r.ReadString()
+		m.ChainId = &tmp
 		case 6:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.Timestamp = &tmp
+		tmp = r.ReadInt64()
+		m.Timestamp = &tmp
 		case 7:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.LatestHeight = &tmp
+		tmp = r.ReadInt64()
+		m.LatestHeight = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -140,9 +143,10 @@ func (m *HelloRequest) Validate() error {
 	return nil
 }
 
+
 type HelloResponse struct {
-	Accepted  *bool  `cramberry:"1,required" json:"accepted"`
-	PublicKey []byte `cramberry:"2" json:"public_key"`
+Accepted *bool `cramberry:"1,required" json:"accepted"`
+PublicKey []byte `cramberry:"2" json:"public_key"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -190,8 +194,8 @@ func (m *HelloResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp bool
-			tmp = r.ReadBool()
-			m.Accepted = &tmp
+		tmp = r.ReadBool()
+		m.Accepted = &tmp
 		case 2:
 			m.PublicKey = r.ReadBytes()
 		default:
@@ -214,8 +218,9 @@ func (m *HelloResponse) Validate() error {
 	return nil
 }
 
+
 type HelloFinalize struct {
-	Success *bool `cramberry:"1,required" json:"success"`
+Success *bool `cramberry:"1,required" json:"success"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -259,8 +264,8 @@ func (m *HelloFinalize) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp bool
-			tmp = r.ReadBool()
-			m.Success = &tmp
+		tmp = r.ReadBool()
+		m.Success = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -281,8 +286,9 @@ func (m *HelloFinalize) Validate() error {
 	return nil
 }
 
+
 type AddressRequest struct {
-	LastSeen *int64 `cramberry:"1,required" json:"last_seen"`
+LastSeen *int64 `cramberry:"1,required" json:"last_seen"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -326,8 +332,8 @@ func (m *AddressRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.LastSeen = &tmp
+		tmp = r.ReadInt64()
+		m.LastSeen = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -348,11 +354,12 @@ func (m *AddressRequest) Validate() error {
 	return nil
 }
 
+
 type AddressInfo struct {
-	Multiaddr *string `cramberry:"1,required" json:"multiaddr"`
-	LastSeen  *int64  `cramberry:"2,required" json:"last_seen"`
-	Latency   *int32  `cramberry:"3,required" json:"latency"`
-	NodeId    *string `cramberry:"4,required" json:"node_id"`
+Multiaddr *string `cramberry:"1,required" json:"multiaddr"`
+LastSeen *int64 `cramberry:"2,required" json:"last_seen"`
+Latency *int32 `cramberry:"3,required" json:"latency"`
+NodeId *string `cramberry:"4,required" json:"node_id"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -408,20 +415,20 @@ func (m *AddressInfo) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp string
-			tmp = r.ReadString()
-			m.Multiaddr = &tmp
+		tmp = r.ReadString()
+		m.Multiaddr = &tmp
 		case 2:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.LastSeen = &tmp
+		tmp = r.ReadInt64()
+		m.LastSeen = &tmp
 		case 3:
 			var tmp int32
-			tmp = r.ReadInt32()
-			m.Latency = &tmp
+		tmp = r.ReadInt32()
+		m.Latency = &tmp
 		case 4:
 			var tmp string
-			tmp = r.ReadString()
-			m.NodeId = &tmp
+		tmp = r.ReadString()
+		m.NodeId = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -454,8 +461,9 @@ func (m *AddressInfo) Validate() error {
 	return nil
 }
 
+
 type AddressResponse struct {
-	Peers []AddressInfo `cramberry:"1" json:"peers"`
+Peers []AddressInfo `cramberry:"1" json:"peers"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -502,10 +510,10 @@ func (m *AddressResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			n := int(r.ReadUvarint())
-			m.Peers = make([]AddressInfo, n)
-			for i := 0; i < n; i++ {
-				m.Peers[i].decodeFrom(r)
-			}
+		m.Peers = make([]AddressInfo, n)
+		for i := 0; i < n; i++ {
+			m.Peers[i].decodeFrom(r)
+		}
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -517,8 +525,9 @@ func (m *AddressResponse) decodeFrom(r *cramberry.Reader) {
 	}
 }
 
+
 type TransactionsRequest struct {
-	BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
+BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -562,8 +571,8 @@ func (m *TransactionsRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int32
-			tmp = r.ReadInt32()
-			m.BatchSize = &tmp
+		tmp = r.ReadInt32()
+		m.BatchSize = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -584,8 +593,9 @@ func (m *TransactionsRequest) Validate() error {
 	return nil
 }
 
+
 type TransactionHash struct {
-	Hash []byte `cramberry:"1,required" json:"hash"`
+Hash []byte `cramberry:"1,required" json:"hash"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -649,8 +659,9 @@ func (m *TransactionHash) Validate() error {
 	return nil
 }
 
+
 type TransactionsResponse struct {
-	Transactions []TransactionHash `cramberry:"1" json:"transactions"`
+Transactions []TransactionHash `cramberry:"1" json:"transactions"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -697,10 +708,10 @@ func (m *TransactionsResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			n := int(r.ReadUvarint())
-			m.Transactions = make([]TransactionHash, n)
-			for i := 0; i < n; i++ {
-				m.Transactions[i].decodeFrom(r)
-			}
+		m.Transactions = make([]TransactionHash, n)
+		for i := 0; i < n; i++ {
+			m.Transactions[i].decodeFrom(r)
+		}
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -712,8 +723,9 @@ func (m *TransactionsResponse) decodeFrom(r *cramberry.Reader) {
 	}
 }
 
+
 type TransactionDataRequest struct {
-	Transactions []TransactionHash `cramberry:"1" json:"transactions"`
+Transactions []TransactionHash `cramberry:"1" json:"transactions"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -760,10 +772,10 @@ func (m *TransactionDataRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			n := int(r.ReadUvarint())
-			m.Transactions = make([]TransactionHash, n)
-			for i := 0; i < n; i++ {
-				m.Transactions[i].decodeFrom(r)
-			}
+		m.Transactions = make([]TransactionHash, n)
+		for i := 0; i < n; i++ {
+			m.Transactions[i].decodeFrom(r)
+		}
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -775,9 +787,10 @@ func (m *TransactionDataRequest) decodeFrom(r *cramberry.Reader) {
 	}
 }
 
+
 type TransactionData struct {
-	Hash []byte `cramberry:"1,required" json:"hash"`
-	Data []byte `cramberry:"2,required" json:"data"`
+Hash []byte `cramberry:"1,required" json:"hash"`
+Data []byte `cramberry:"2,required" json:"data"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -851,8 +864,9 @@ func (m *TransactionData) Validate() error {
 	return nil
 }
 
+
 type TransactionDataResponse struct {
-	Transactions []TransactionData `cramberry:"1" json:"transactions"`
+Transactions []TransactionData `cramberry:"1" json:"transactions"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -899,10 +913,10 @@ func (m *TransactionDataResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			n := int(r.ReadUvarint())
-			m.Transactions = make([]TransactionData, n)
-			for i := 0; i < n; i++ {
-				m.Transactions[i].decodeFrom(r)
-			}
+		m.Transactions = make([]TransactionData, n)
+		for i := 0; i < n; i++ {
+			m.Transactions[i].decodeFrom(r)
+		}
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -914,9 +928,10 @@ func (m *TransactionDataResponse) decodeFrom(r *cramberry.Reader) {
 	}
 }
 
+
 type BlocksRequest struct {
-	BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
-	Since     *int64 `cramberry:"2,required" json:"since"`
+BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
+Since *int64 `cramberry:"2,required" json:"since"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -964,12 +979,12 @@ func (m *BlocksRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int32
-			tmp = r.ReadInt32()
-			m.BatchSize = &tmp
+		tmp = r.ReadInt32()
+		m.BatchSize = &tmp
 		case 2:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.Since = &tmp
+		tmp = r.ReadInt64()
+		m.Since = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -994,10 +1009,11 @@ func (m *BlocksRequest) Validate() error {
 	return nil
 }
 
+
 type BlockData struct {
-	Height *int64 `cramberry:"1,required" json:"height"`
-	Hash   []byte `cramberry:"2,required" json:"hash"`
-	Data   []byte `cramberry:"3,required" json:"data"`
+Height *int64 `cramberry:"1,required" json:"height"`
+Hash []byte `cramberry:"2,required" json:"hash"`
+Data []byte `cramberry:"3,required" json:"data"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1049,8 +1065,8 @@ func (m *BlockData) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.Height = &tmp
+		tmp = r.ReadInt64()
+		m.Height = &tmp
 		case 2:
 			m.Hash = r.ReadBytes()
 		case 3:
@@ -1083,8 +1099,9 @@ func (m *BlockData) Validate() error {
 	return nil
 }
 
+
 type BlocksResponse struct {
-	Blocks []BlockData `cramberry:"1" json:"blocks"`
+Blocks []BlockData `cramberry:"1" json:"blocks"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1131,10 +1148,10 @@ func (m *BlocksResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			n := int(r.ReadUvarint())
-			m.Blocks = make([]BlockData, n)
-			for i := 0; i < n; i++ {
-				m.Blocks[i].decodeFrom(r)
-			}
+		m.Blocks = make([]BlockData, n)
+		for i := 0; i < n; i++ {
+			m.Blocks[i].decodeFrom(r)
+		}
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -1146,8 +1163,9 @@ func (m *BlocksResponse) decodeFrom(r *cramberry.Reader) {
 	}
 }
 
+
 type LatencyRequest struct {
-	Timestamp *int64 `cramberry:"1,required" json:"timestamp"`
+Timestamp *int64 `cramberry:"1,required" json:"timestamp"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1191,8 +1209,8 @@ func (m *LatencyRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.Timestamp = &tmp
+		tmp = r.ReadInt64()
+		m.Timestamp = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -1213,8 +1231,9 @@ func (m *LatencyRequest) Validate() error {
 	return nil
 }
 
+
 type LatencyResponse struct {
-	Latency *int64 `cramberry:"1,required" json:"latency"`
+Latency *int64 `cramberry:"1,required" json:"latency"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1258,8 +1277,8 @@ func (m *LatencyResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp int64
-			tmp = r.ReadInt64()
-			m.Latency = &tmp
+		tmp = r.ReadInt64()
+		m.Latency = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -1280,8 +1299,9 @@ func (m *LatencyResponse) Validate() error {
 	return nil
 }
 
+
 type FirewallRequest struct {
-	Endpoint *string `cramberry:"1,required" json:"endpoint"`
+Endpoint *string `cramberry:"1,required" json:"endpoint"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1325,8 +1345,8 @@ func (m *FirewallRequest) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp string
-			tmp = r.ReadString()
-			m.Endpoint = &tmp
+		tmp = r.ReadString()
+		m.Endpoint = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -1347,8 +1367,9 @@ func (m *FirewallRequest) Validate() error {
 	return nil
 }
 
+
 type FirewallResponse struct {
-	Endpoint *string `cramberry:"1,required" json:"endpoint"`
+Endpoint *string `cramberry:"1,required" json:"endpoint"`
 }
 
 // MarshalCramberry encodes the message to binary format using optimized V2 encoding.
@@ -1392,8 +1413,8 @@ func (m *FirewallResponse) decodeFrom(r *cramberry.Reader) {
 		switch fieldNum {
 		case 1:
 			var tmp string
-			tmp = r.ReadString()
-			m.Endpoint = &tmp
+		tmp = r.ReadString()
+		m.Endpoint = &tmp
 		default:
 			// Skip unknown field - read wire type would have been needed
 			// For now, just break as we can't determine how to skip
@@ -1414,16 +1435,20 @@ func (m *FirewallResponse) Validate() error {
 	return nil
 }
 
+
+
 // HandshakeMessage is a polymorphic interface.
 type HandshakeMessage interface {
 	isHandshakeMessage()
 }
+
 
 func (*HelloRequest) isHandshakeMessage() {}
 
 func (*HelloResponse) isHandshakeMessage() {}
 
 func (*HelloFinalize) isHandshakeMessage() {}
+
 
 // HandshakeMessageTypeID returns the type ID for interface implementations.
 func HandshakeMessageTypeID(v HandshakeMessage) cramberry.TypeID {
@@ -1444,9 +1469,11 @@ type PexMessage interface {
 	isPexMessage()
 }
 
+
 func (*AddressRequest) isPexMessage() {}
 
 func (*AddressResponse) isPexMessage() {}
+
 
 // PexMessageTypeID returns the type ID for interface implementations.
 func PexMessageTypeID(v PexMessage) cramberry.TypeID {
@@ -1465,6 +1492,7 @@ type TransactionsMessage interface {
 	isTransactionsMessage()
 }
 
+
 func (*TransactionsRequest) isTransactionsMessage() {}
 
 func (*TransactionsResponse) isTransactionsMessage() {}
@@ -1472,6 +1500,7 @@ func (*TransactionsResponse) isTransactionsMessage() {}
 func (*TransactionDataRequest) isTransactionsMessage() {}
 
 func (*TransactionDataResponse) isTransactionsMessage() {}
+
 
 // TransactionsMessageTypeID returns the type ID for interface implementations.
 func TransactionsMessageTypeID(v TransactionsMessage) cramberry.TypeID {
@@ -1494,9 +1523,11 @@ type BlockSyncMessage interface {
 	isBlockSyncMessage()
 }
 
+
 func (*BlocksRequest) isBlockSyncMessage() {}
 
 func (*BlocksResponse) isBlockSyncMessage() {}
+
 
 // BlockSyncMessageTypeID returns the type ID for interface implementations.
 func BlockSyncMessageTypeID(v BlockSyncMessage) cramberry.TypeID {
@@ -1515,7 +1546,9 @@ type BlockMessage interface {
 	isBlockMessage()
 }
 
+
 func (*BlockData) isBlockMessage() {}
+
 
 // BlockMessageTypeID returns the type ID for interface implementations.
 func BlockMessageTypeID(v BlockMessage) cramberry.TypeID {
@@ -1532,6 +1565,7 @@ type HousekeepingMessages interface {
 	isHousekeepingMessages()
 }
 
+
 func (*LatencyRequest) isHousekeepingMessages() {}
 
 func (*LatencyResponse) isHousekeepingMessages() {}
@@ -1539,6 +1573,7 @@ func (*LatencyResponse) isHousekeepingMessages() {}
 func (*FirewallRequest) isHousekeepingMessages() {}
 
 func (*FirewallResponse) isHousekeepingMessages() {}
+
 
 // HousekeepingMessagesTypeID returns the type ID for interface implementations.
 func HousekeepingMessagesTypeID(v HousekeepingMessages) cramberry.TypeID {
@@ -1555,3 +1590,4 @@ func HousekeepingMessagesTypeID(v HousekeepingMessages) cramberry.TypeID {
 		return 0
 	}
 }
+

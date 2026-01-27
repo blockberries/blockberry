@@ -19,6 +19,7 @@ import (
 	"github.com/blockberries/blockberry/config"
 	"github.com/blockberries/blockberry/handlers"
 	"github.com/blockberries/blockberry/node"
+	bsync "github.com/blockberries/blockberry/sync"
 	"github.com/blockberries/blockberry/types"
 )
 
@@ -33,8 +34,13 @@ func main() {
 	// Create mock consensus handler
 	consensus := NewMockConsensus()
 
-	// Create node with consensus handler
-	n, err := node.NewNode(cfg, node.WithConsensusHandler(consensus))
+	// Create node with consensus handler.
+	// Note: AcceptAllBlockValidator is for demonstration only.
+	// Production code should implement proper block validation.
+	n, err := node.NewNode(cfg,
+		node.WithConsensusHandler(consensus),
+		node.WithBlockValidator(bsync.AcceptAllBlockValidator),
+	)
 	if err != nil {
 		fmt.Printf("Error creating node: %v\n", err)
 		return

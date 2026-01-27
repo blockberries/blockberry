@@ -83,6 +83,9 @@ type PriorityMempool struct {
 	// Priority calculation function
 	priorityFunc PriorityFunc
 
+	// Transaction validation
+	validator TxValidator
+
 	// Current state
 	sizeBytes int64
 }
@@ -114,6 +117,8 @@ func NewPriorityMempool(cfg PriorityMempoolConfig) *PriorityMempool {
 }
 
 // AddTx adds a transaction to the mempool with computed priority.
+// The transaction is validated before being added.
+// If no validator is set, DefaultTxValidator (reject all) is used.
 func (m *PriorityMempool) AddTx(tx []byte) error {
 	if tx == nil {
 		return types.ErrInvalidTx
@@ -129,6 +134,15 @@ func (m *PriorityMempool) AddTx(tx []byte) error {
 	// Check if already exists
 	if _, exists := m.txs[hashKey]; exists {
 		return types.ErrTxAlreadyExists
+	}
+
+	// Validate transaction using validator or default (fail-closed)
+	validator := m.validator
+	if validator == nil {
+		validator = DefaultTxValidator
+	}
+	if err := validator(tx); err != nil {
+		return err
 	}
 
 	// Calculate priority for the new transaction
@@ -363,4 +377,11 @@ func (m *PriorityMempool) SetPriorityFunc(fn PriorityFunc) {
 		fn = DefaultPriorityFunc
 	}
 	m.priorityFunc = fn
+}
+
+// SetTxValidator sets the transaction validation function.
+func (m *PriorityMempool) SetTxValidator(validator TxValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.validator = validator
 }

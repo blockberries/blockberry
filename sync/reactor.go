@@ -31,7 +31,23 @@ const (
 )
 
 // BlockValidator is a callback for validating blocks before storing.
+// This is a required component - blocks will not be accepted without validation.
 type BlockValidator func(height int64, hash, data []byte) error
+
+// DefaultBlockValidator is a fail-closed validator that rejects all blocks.
+// This is used when no validator is explicitly set, ensuring blocks are never
+// accepted without proper validation. Applications MUST provide their own
+// validator to accept blocks.
+var DefaultBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
+	return fmt.Errorf("%w: no block validator configured", types.ErrNoBlockValidator)
+}
+
+// AcceptAllBlockValidator is a validator that accepts all blocks.
+// WARNING: This should ONLY be used for testing purposes.
+// Production systems must use a proper validator that verifies block integrity.
+var AcceptAllBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
+	return nil
+}
 
 // SyncReactor handles block synchronization with peers.
 type SyncReactor struct {
@@ -87,6 +103,11 @@ func NewSyncReactor(
 	}
 }
 
+// Name returns the component name for identification.
+func (r *SyncReactor) Name() string {
+	return "sync-reactor"
+}
+
 // SetValidator sets the block validation callback.
 func (r *SyncReactor) SetValidator(v BlockValidator) {
 	r.mu.Lock()
@@ -102,12 +123,21 @@ func (r *SyncReactor) SetOnSyncComplete(fn func()) {
 }
 
 // Start begins the sync loop.
+// Returns ErrNoBlockValidator if no block validator has been set.
+// This is a safety measure to prevent accepting unvalidated blocks.
 func (r *SyncReactor) Start() error {
 	r.mu.Lock()
 	if r.running {
 		r.mu.Unlock()
 		return nil
 	}
+
+	// Fail-closed: require a block validator to be set
+	if r.validator == nil {
+		r.mu.Unlock()
+		return types.ErrNoBlockValidator
+	}
+
 	r.running = true
 	r.stop = make(chan struct{})
 	r.mu.Unlock()
@@ -412,13 +442,60 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 		return nil
 	}
 
-	for _, block := range resp.Blocks {
+	// Empty response is valid (peer may not have requested blocks)
+	if len(resp.Blocks) == 0 {
+		r.checkSync()
+		return nil
+	}
+
+	// Verify blocks are contiguous and in order.
+	// First, validate all blocks in the response are properly structured
+	// and check for contiguity before storing any.
+	expectedHeight := r.blockStore.Height() + 1
+	for i, block := range resp.Blocks {
 		// Validate block data structure
 		if err := types.ValidateBlockData(block.Height, block.Hash, block.Data); err != nil {
-			// Invalid block data - skip but don't penalize (could be partial response)
-			continue
+			if r.network != nil {
+				_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, err.Error())
+			}
+			return fmt.Errorf("%w: invalid block data at index %d", types.ErrInvalidBlock, i)
 		}
 
+		height := *block.Height
+
+		// First block must start at our expected height (or we already have it)
+		if i == 0 {
+			if height < expectedHeight {
+				// Peer sent blocks we already have, skip to find starting point
+				if r.blockStore.HasBlock(height) {
+					expectedHeight = height + 1
+					continue
+				}
+			}
+			if height > expectedHeight {
+				// Gap detected - peer skipped blocks
+				if r.network != nil {
+					_ = r.network.AddPenalty(peerID, p2p.PenaltyProtocolViolation, p2p.ReasonProtocolViolation,
+						fmt.Sprintf("non-contiguous blocks: expected height %d, got %d", expectedHeight, height))
+				}
+				return fmt.Errorf("%w: expected height %d, got %d", types.ErrNonContiguousBlock, expectedHeight, height)
+			}
+			expectedHeight = height + 1
+		} else {
+			// Subsequent blocks must be contiguous
+			if height != expectedHeight {
+				if r.network != nil {
+					_ = r.network.AddPenalty(peerID, p2p.PenaltyProtocolViolation, p2p.ReasonProtocolViolation,
+						fmt.Sprintf("non-contiguous blocks: expected height %d, got %d", expectedHeight, height))
+				}
+				return fmt.Errorf("%w: expected height %d, got %d", types.ErrNonContiguousBlock, expectedHeight, height)
+			}
+			expectedHeight++
+		}
+	}
+
+	// Now process and store the blocks (we know they're contiguous)
+	for _, block := range resp.Blocks {
 		height := *block.Height
 
 		// Skip if we already have this block
@@ -426,27 +503,30 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 			continue
 		}
 
-		// Verify hash matches content
+		// Verify hash matches content using constant-time comparison to prevent timing attacks
 		computedHash := types.HashBlock(block.Data)
-		if string(computedHash) != string(block.Hash) {
+		if !types.HashEqual(computedHash, block.Hash) {
 			if r.network != nil {
 				_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, "block hash mismatch")
 			}
 			continue
 		}
 
-		// Validate block if validator is set
+		// Validate block using the configured validator or DefaultBlockValidator
+		// This is fail-closed: if no validator is set, blocks are rejected
 		r.mu.RLock()
 		validator := r.validator
 		r.mu.RUnlock()
 
-		if validator != nil {
-			if err := validator(height, block.Hash, block.Data); err != nil {
-				if r.network != nil {
-					_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, err.Error())
-				}
-				continue
+		if validator == nil {
+			validator = DefaultBlockValidator
+		}
+
+		if err := validator(height, block.Hash, block.Data); err != nil {
+			if r.network != nil {
+				_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, err.Error())
 			}
+			continue
 		}
 
 		// Store block

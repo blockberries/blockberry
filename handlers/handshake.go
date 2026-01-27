@@ -20,6 +20,12 @@ const (
 	TypeIDHelloFinalize cramberry.TypeID = 130
 )
 
+// DefaultHandshakeTimeout is the default maximum time allowed for a handshake to complete.
+const DefaultHandshakeTimeout = 30 * time.Second
+
+// DefaultHandshakeCheckInterval is the interval between handshake timeout checks.
+const DefaultHandshakeCheckInterval = 5 * time.Second
+
 // HandshakeState represents the state of a handshake with a peer.
 type HandshakeState int
 
@@ -59,6 +65,8 @@ type HandshakeHandler struct {
 	protocolVersion int32
 	nodeID          string
 	publicKey       []byte
+	timeout         time.Duration // Maximum time allowed for handshake completion
+	checkInterval   time.Duration // Interval for checking stale handshakes
 
 	// Dependencies
 	network     *p2p.Network
@@ -68,6 +76,11 @@ type HandshakeHandler struct {
 	// Per-peer handshake state
 	states map[peer.ID]*PeerHandshakeState
 	mu     sync.RWMutex
+
+	// Lifecycle
+	running bool
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
 }
 
 // NewHandshakeHandler creates a new handshake handler.
@@ -85,10 +98,95 @@ func NewHandshakeHandler(
 		protocolVersion: protocolVersion,
 		nodeID:          nodeID,
 		publicKey:       publicKey,
+		timeout:         DefaultHandshakeTimeout,
+		checkInterval:   DefaultHandshakeCheckInterval,
 		network:         network,
 		peerManager:     peerManager,
 		getHeight:       getHeight,
 		states:          make(map[peer.ID]*PeerHandshakeState),
+		stopCh:          make(chan struct{}),
+	}
+}
+
+// Name returns the component name for identification.
+func (h *HandshakeHandler) Name() string {
+	return "handshake-handler"
+}
+
+// Start begins the handshake timeout monitoring loop.
+func (h *HandshakeHandler) Start() error {
+	h.mu.Lock()
+	if h.running {
+		h.mu.Unlock()
+		return nil
+	}
+	h.running = true
+	h.stopCh = make(chan struct{})
+	h.mu.Unlock()
+
+	h.wg.Add(1)
+	go h.timeoutLoop()
+
+	return nil
+}
+
+// Stop halts the handshake timeout monitoring loop.
+func (h *HandshakeHandler) Stop() error {
+	h.mu.Lock()
+	if !h.running {
+		h.mu.Unlock()
+		return nil
+	}
+	h.running = false
+	close(h.stopCh)
+	h.mu.Unlock()
+
+	h.wg.Wait()
+	return nil
+}
+
+// IsRunning returns whether the handshake handler is running.
+func (h *HandshakeHandler) IsRunning() bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.running
+}
+
+// timeoutLoop periodically checks for and cleans up stale handshakes.
+func (h *HandshakeHandler) timeoutLoop() {
+	defer h.wg.Done()
+
+	ticker := time.NewTicker(h.checkInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-h.stopCh:
+			return
+		case <-ticker.C:
+			h.cleanupStaleHandshakes()
+		}
+	}
+}
+
+// cleanupStaleHandshakes disconnects peers with handshakes that have exceeded the timeout.
+func (h *HandshakeHandler) cleanupStaleHandshakes() {
+	now := time.Now()
+
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	for peerID, state := range h.states {
+		// Only cleanup incomplete handshakes that have exceeded the timeout
+		if state.State != StateComplete && now.Sub(state.StartedAt) > h.timeout {
+			delete(h.states, peerID)
+			// Disconnect peer asynchronously to avoid holding lock
+			if h.network != nil {
+				go func(pid peer.ID) {
+					_ = h.network.Disconnect(pid)
+				}(peerID)
+			}
+		}
 	}
 }
 

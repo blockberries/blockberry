@@ -18,6 +18,7 @@ func TestTTLMempool_Basic(t *testing.T) {
 		CleanupInterval: time.Hour, // Don't auto-cleanup during test
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("test transaction")
@@ -43,6 +44,7 @@ func TestTTLMempool_Expiration(t *testing.T) {
 		CleanupInterval: 10 * time.Millisecond,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("expiring transaction")
@@ -75,6 +77,7 @@ func TestTTLMempool_ReapExcludesExpired(t *testing.T) {
 		CleanupInterval: time.Hour, // Don't auto-cleanup
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	// Add a short-lived transaction
@@ -104,6 +107,7 @@ func TestTTLMempool_GetTTL(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("test transaction")
@@ -125,6 +129,7 @@ func TestTTLMempool_ExtendTTL(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("test transaction")
@@ -149,6 +154,7 @@ func TestTTLMempool_SetTTL(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("test transaction")
@@ -174,6 +180,7 @@ func TestTTLMempool_AddTxWithTTL(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	// Add with custom TTL
@@ -197,6 +204,7 @@ func TestTTLMempool_SizeActive(t *testing.T) {
 		CleanupInterval: time.Hour, // Don't auto-cleanup
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	// Add short-lived transaction
@@ -235,6 +243,7 @@ func TestTTLMempool_PriorityWithTTL(t *testing.T) {
 		PriorityFunc:    priorityFunc,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	txLow := []byte{10, 0, 0}
@@ -261,6 +270,7 @@ func TestTTLMempool_RemoveTxs(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx1 := []byte("tx1")
@@ -287,6 +297,7 @@ func TestTTLMempool_Flush(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	require.NoError(t, m.AddTx([]byte("tx1")))
@@ -307,6 +318,7 @@ func TestTTLMempool_ConcurrentAccess(t *testing.T) {
 		CleanupInterval: 10 * time.Millisecond,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	var wg sync.WaitGroup
@@ -349,6 +361,7 @@ func TestTTLMempool_ManualCleanup(t *testing.T) {
 		CleanupInterval: time.Hour, // Disable auto-cleanup
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("test")
@@ -380,6 +393,7 @@ func TestTTLMempool_GetPriority(t *testing.T) {
 		PriorityFunc:    priorityFunc,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx := []byte("hello") // 5 bytes -> priority 50
@@ -397,6 +411,7 @@ func TestTTLMempool_TxHashes(t *testing.T) {
 		CleanupInterval: time.Hour,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	tx1 := []byte("tx1")
@@ -432,6 +447,7 @@ func TestTTLMempool_Eviction(t *testing.T) {
 		PriorityFunc:    priorityFunc,
 	}
 	m := NewTTLMempool(cfg)
+	m.SetTxValidator(AcceptAllTxValidator)
 	defer m.Stop()
 
 	// Fill mempool

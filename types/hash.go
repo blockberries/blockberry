@@ -2,6 +2,7 @@ package types
 
 import (
 	"crypto/sha256"
+	"crypto/subtle"
 )
 
 const (
@@ -49,4 +50,11 @@ func HashConcat(left, right Hash) Hash {
 func EmptyHash() Hash {
 	h := sha256.Sum256([]byte{})
 	return h[:]
+}
+
+// HashEqual performs a constant-time comparison of two hashes.
+// This prevents timing attacks when comparing secret hash values.
+// Returns true if the hashes are equal, false otherwise.
+func HashEqual(a, b []byte) bool {
+	return subtle.ConstantTimeCompare(a, b) == 1
 }

@@ -23,8 +23,22 @@ func TestNewMempool(t *testing.T) {
 	require.Equal(t, int64(0), mp.SizeBytes())
 }
 
+func TestDefaultTxValidator(t *testing.T) {
+	// DefaultTxValidator should reject all transactions
+	err := DefaultTxValidator([]byte("tx"))
+	require.Error(t, err)
+	require.ErrorIs(t, err, types.ErrNoTxValidator)
+}
+
+func TestAcceptAllTxValidator(t *testing.T) {
+	// AcceptAllTxValidator should accept all transactions
+	err := AcceptAllTxValidator([]byte("tx"))
+	require.NoError(t, err)
+}
+
 func TestSimpleMempool_AddTx(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator) // Set validator for testing
 
 	t.Run("adds transaction", func(t *testing.T) {
 		tx := []byte("transaction 1")
@@ -58,6 +72,7 @@ func TestSimpleMempool_AddTx(t *testing.T) {
 
 func TestSimpleMempool_MaxTxs(t *testing.T) {
 	mp := NewSimpleMempool(5, 0) // Max 5 txs, no byte limit
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	for i := 0; i < 5; i++ {
 		err := mp.AddTx([]byte{byte(i)})
@@ -71,6 +86,7 @@ func TestSimpleMempool_MaxTxs(t *testing.T) {
 
 func TestSimpleMempool_MaxBytes(t *testing.T) {
 	mp := NewSimpleMempool(0, 100) // No tx limit, max 100 bytes
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	// Add 90 bytes
 	err := mp.AddTx(make([]byte, 90))
@@ -88,6 +104,7 @@ func TestSimpleMempool_MaxBytes(t *testing.T) {
 
 func TestSimpleMempool_HasTx(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	tx := []byte("test transaction")
 	hash := types.HashTx(tx)
@@ -103,6 +120,7 @@ func TestSimpleMempool_HasTx(t *testing.T) {
 
 func TestSimpleMempool_GetTx(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	tx := []byte("test transaction")
 	hash := types.HashTx(tx)
@@ -123,6 +141,7 @@ func TestSimpleMempool_GetTx(t *testing.T) {
 
 func TestSimpleMempool_RemoveTxs(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	// Add some transactions
 	txs := make([][]byte, 5)
@@ -160,6 +179,7 @@ func TestSimpleMempool_RemoveTxs(t *testing.T) {
 
 func TestSimpleMempool_ReapTxs(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	// Add transactions in order
 	for i := 0; i < 5; i++ {
@@ -189,6 +209,7 @@ func TestSimpleMempool_ReapTxs(t *testing.T) {
 
 func TestSimpleMempool_Flush(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	for i := 0; i < 10; i++ {
 		require.NoError(t, mp.AddTx([]byte{byte(i)}))
@@ -205,6 +226,7 @@ func TestSimpleMempool_Flush(t *testing.T) {
 
 func TestSimpleMempool_TxHashes(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	// Add transactions
 	expectedHashes := make([][]byte, 5)
@@ -224,6 +246,7 @@ func TestSimpleMempool_TxHashes(t *testing.T) {
 
 func TestSimpleMempool_Concurrent(t *testing.T) {
 	mp := NewSimpleMempool(1000, 10*1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	const numGoroutines = 10
 	const txsPerGoroutine = 50
@@ -275,6 +298,7 @@ func TestSimpleMempool_Concurrent(t *testing.T) {
 
 func TestSimpleMempool_InsertionOrder(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	// Add in specific order
 	order := []string{"first", "second", "third", "fourth", "fifth"}
@@ -296,6 +320,7 @@ func TestSimpleMempool_InsertionOrder(t *testing.T) {
 
 func BenchmarkSimpleMempool_AddTx(b *testing.B) {
 	mp := NewSimpleMempool(b.N+1, int64(b.N*100))
+	mp.SetTxValidator(AcceptAllTxValidator)
 
 	txs := make([][]byte, b.N)
 	for i := 0; i < b.N; i++ {

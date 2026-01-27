@@ -1,11 +1,13 @@
 package node
 
 import (
+	"context"
 	"crypto/ed25519"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/blockberries/glueberry"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/blockberries/blockberry/blockstore"
 	"github.com/blockberries/blockberry/config"
+	"github.com/blockberries/blockberry/container"
 	"github.com/blockberries/blockberry/handlers"
 	"github.com/blockberries/blockberry/mempool"
 	"github.com/blockberries/blockberry/p2p"
@@ -22,6 +25,21 @@ import (
 	bsync "github.com/blockberries/blockberry/sync"
 	"github.com/blockberries/blockberry/types"
 )
+
+// Component names for dependency injection container.
+const (
+	ComponentNetwork      = "network"
+	ComponentHandshake    = "handshake-handler"
+	ComponentPEX          = "pex-reactor"
+	ComponentHousekeeping = "housekeeping-reactor"
+	ComponentTransactions = "transactions-reactor"
+	ComponentBlocks       = "block-reactor"
+	ComponentConsensus    = "consensus-reactor"
+	ComponentSync         = "sync-reactor"
+)
+
+// DefaultShutdownTimeout is the maximum time to wait for the event loop to drain during shutdown.
+const DefaultShutdownTimeout = 5 * time.Second
 
 // Node is the main coordinator for a blockberry node.
 // It aggregates all components and manages their lifecycle.
@@ -49,10 +67,11 @@ type Node struct {
 	syncReactor         *bsync.SyncReactor
 
 	// Lifecycle
-	started bool
-	stopCh  chan struct{}
-	wg      sync.WaitGroup
-	mu      sync.RWMutex
+	started  bool
+	stopping atomic.Bool // true when shutdown is in progress
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
+	mu       sync.RWMutex
 }
 
 // Option is a functional option for configuring a Node.
@@ -77,6 +96,17 @@ func WithConsensusHandler(ch handlers.ConsensusHandler) Option {
 	return func(n *Node) {
 		if n.consensusReactor != nil {
 			n.consensusReactor.SetHandler(ch)
+		}
+	}
+}
+
+// WithBlockValidator sets the block validation function.
+// This is REQUIRED for the node to start - blocks will not be accepted
+// without a validator (fail-closed behavior).
+func WithBlockValidator(v bsync.BlockValidator) Option {
+	return func(n *Node) {
+		if n.syncReactor != nil {
+			n.syncReactor.SetValidator(v)
 		}
 	}
 }
@@ -230,14 +260,22 @@ func (n *Node) Start() error {
 		return fmt.Errorf("starting network: %w", err)
 	}
 
+	// Start handshake handler
+	if err := n.handshakeHandler.Start(); err != nil {
+		_ = n.network.Stop()
+		return fmt.Errorf("starting handshake handler: %w", err)
+	}
+
 	// Start reactors
 	if err := n.pexReactor.Start(); err != nil {
+		_ = n.handshakeHandler.Stop()
 		_ = n.network.Stop()
 		return fmt.Errorf("starting PEX reactor: %w", err)
 	}
 
 	if err := n.housekeepingReactor.Start(); err != nil {
 		_ = n.pexReactor.Stop()
+		_ = n.handshakeHandler.Stop()
 		_ = n.network.Stop()
 		return fmt.Errorf("starting housekeeping reactor: %w", err)
 	}
@@ -245,6 +283,7 @@ func (n *Node) Start() error {
 	if err := n.transactionsReactor.Start(); err != nil {
 		_ = n.housekeepingReactor.Stop()
 		_ = n.pexReactor.Stop()
+		_ = n.handshakeHandler.Stop()
 		_ = n.network.Stop()
 		return fmt.Errorf("starting transactions reactor: %w", err)
 	}
@@ -253,6 +292,7 @@ func (n *Node) Start() error {
 		_ = n.transactionsReactor.Stop()
 		_ = n.housekeepingReactor.Stop()
 		_ = n.pexReactor.Stop()
+		_ = n.handshakeHandler.Stop()
 		_ = n.network.Stop()
 		return fmt.Errorf("starting sync reactor: %w", err)
 	}
@@ -270,6 +310,11 @@ func (n *Node) Start() error {
 }
 
 // Stop stops the node and all its components.
+// It uses a proper shutdown sequence to prevent race conditions:
+// 1. Signal shutdown in progress (prevents new message handling)
+// 2. Signal event loop to stop and wait for it to drain (with timeout)
+// 3. Stop all reactors
+// 4. Stop network and close stores
 func (n *Node) Stop() error {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -278,22 +323,43 @@ func (n *Node) Stop() error {
 		return types.ErrNodeNotStarted
 	}
 
-	// Signal event loop to stop
-	close(n.stopCh)
-	n.wg.Wait()
+	// 1. Signal that shutdown is in progress - event loop will stop dispatching to reactors
+	n.stopping.Store(true)
 
-	// Stop reactors in reverse order
+	// 2. Signal event loop to stop
+	close(n.stopCh)
+
+	// 3. Wait for event loop to drain with timeout to prevent hangs
+	done := make(chan struct{})
+	go func() {
+		n.wg.Wait()
+		close(done)
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), DefaultShutdownTimeout)
+	defer cancel()
+
+	select {
+	case <-done:
+		// Event loop drained cleanly
+	case <-ctx.Done():
+		// Timeout - proceed with shutdown anyway
+		// This is a safety mechanism to prevent indefinite hangs
+	}
+
+	// 4. Now safe to stop reactors and handlers (event loop is either done or timed out)
 	_ = n.syncReactor.Stop()
 	_ = n.transactionsReactor.Stop()
 	_ = n.housekeepingReactor.Stop()
 	_ = n.pexReactor.Stop()
+	_ = n.handshakeHandler.Stop()
 
-	// Stop network
+	// 5. Stop network
 	if err := n.network.Stop(); err != nil {
 		return fmt.Errorf("stopping network: %w", err)
 	}
 
-	// Close stores
+	// 6. Close stores
 	if err := n.blockStore.Close(); err != nil {
 		return fmt.Errorf("closing block store: %w", err)
 	}
@@ -368,6 +434,11 @@ func (n *Node) eventLoop() {
 
 // handleConnectionEvent processes connection state changes.
 func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
+	// Skip processing if shutdown is in progress
+	if n.stopping.Load() {
+		return
+	}
+
 	peerID := event.PeerID
 
 	switch event.State {
@@ -430,6 +501,11 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 
 // handleMessage routes messages to the appropriate handler.
 func (n *Node) handleMessage(msg streams.IncomingMessage) {
+	// Skip processing if shutdown is in progress
+	if n.stopping.Load() {
+		return
+	}
+
 	peerID := msg.PeerID
 	data := msg.Data
 	stream := msg.StreamName
@@ -514,4 +590,105 @@ func parseMultiaddrs(addrs []string) ([]multiaddr.Multiaddr, error) {
 		result = append(result, ma)
 	}
 	return result, nil
+}
+
+// ComponentContainer returns a dependency injection container with all
+// node components registered. This allows users to access components
+// by name and introspect the component graph.
+//
+// The container returned is for inspection purposes - the Node still
+// manages its own lifecycle. To use container-managed lifecycle,
+// create a custom Node setup using the container directly.
+//
+// Component dependencies:
+//   - handshake-handler: depends on network
+//   - pex-reactor: depends on network, handshake-handler
+//   - housekeeping-reactor: depends on network
+//   - transactions-reactor: depends on network
+//   - block-reactor: depends on network
+//   - consensus-reactor: depends on network
+//   - sync-reactor: depends on network, block-reactor
+func (n *Node) ComponentContainer() (*container.Container, error) {
+	c := container.New()
+
+	// Register network (no dependencies)
+	if err := c.Register(ComponentNetwork, n.network); err != nil {
+		return nil, fmt.Errorf("registering network: %w", err)
+	}
+
+	// Register handshake handler (depends on network)
+	if err := c.Register(ComponentHandshake, n.handshakeHandler, ComponentNetwork); err != nil {
+		return nil, fmt.Errorf("registering handshake handler: %w", err)
+	}
+
+	// Register PEX reactor (depends on network, handshake)
+	if err := c.Register(ComponentPEX, n.pexReactor, ComponentNetwork, ComponentHandshake); err != nil {
+		return nil, fmt.Errorf("registering PEX reactor: %w", err)
+	}
+
+	// Register housekeeping reactor (depends on network)
+	if err := c.Register(ComponentHousekeeping, n.housekeepingReactor, ComponentNetwork); err != nil {
+		return nil, fmt.Errorf("registering housekeeping reactor: %w", err)
+	}
+
+	// Register transactions reactor (depends on network)
+	if err := c.Register(ComponentTransactions, n.transactionsReactor, ComponentNetwork); err != nil {
+		return nil, fmt.Errorf("registering transactions reactor: %w", err)
+	}
+
+	// Register blocks reactor (depends on network)
+	if err := c.Register(ComponentBlocks, n.blocksReactor, ComponentNetwork); err != nil {
+		return nil, fmt.Errorf("registering blocks reactor: %w", err)
+	}
+
+	// Register consensus reactor (depends on network)
+	if err := c.Register(ComponentConsensus, n.consensusReactor, ComponentNetwork); err != nil {
+		return nil, fmt.Errorf("registering consensus reactor: %w", err)
+	}
+
+	// Register sync reactor (depends on network, blocks)
+	if err := c.Register(ComponentSync, n.syncReactor, ComponentNetwork, ComponentBlocks); err != nil {
+		return nil, fmt.Errorf("registering sync reactor: %w", err)
+	}
+
+	return c, nil
+}
+
+// GetComponent returns a component by name, allowing type-safe access
+// to node components. Returns an error if the component doesn't exist.
+func (n *Node) GetComponent(name string) (types.Component, error) {
+	switch name {
+	case ComponentNetwork:
+		return n.network, nil
+	case ComponentHandshake:
+		return n.handshakeHandler, nil
+	case ComponentPEX:
+		return n.pexReactor, nil
+	case ComponentHousekeeping:
+		return n.housekeepingReactor, nil
+	case ComponentTransactions:
+		return n.transactionsReactor, nil
+	case ComponentBlocks:
+		return n.blocksReactor, nil
+	case ComponentConsensus:
+		return n.consensusReactor, nil
+	case ComponentSync:
+		return n.syncReactor, nil
+	default:
+		return nil, fmt.Errorf("%w: %s", container.ErrComponentNotFound, name)
+	}
+}
+
+// ComponentNames returns the names of all components in the node.
+func (n *Node) ComponentNames() []string {
+	return []string{
+		ComponentNetwork,
+		ComponentHandshake,
+		ComponentPEX,
+		ComponentHousekeeping,
+		ComponentTransactions,
+		ComponentBlocks,
+		ComponentConsensus,
+		ComponentSync,
+	}
 }

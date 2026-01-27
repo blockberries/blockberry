@@ -37,12 +37,13 @@ func TestPeerScorer_AddPenalty(t *testing.T) {
 		require.Equal(t, int64(PenaltyInvalidMessage+PenaltyInvalidTx), points)
 	})
 
-	t.Run("ignores unknown peer", func(t *testing.T) {
+	t.Run("tracks disconnected peer in history", func(t *testing.T) {
 		unknownPeer := peer.ID("unknown")
-		scorer.AddPenalty(unknownPeer, 10, ReasonInvalidMessage, "should not panic")
+		scorer.AddPenalty(unknownPeer, 10, ReasonInvalidMessage, "should track in history")
 
-		points := scorer.GetPenaltyPoints(unknownPeer)
-		require.Equal(t, int64(0), points)
+		// Disconnected peers are tracked via penalty history
+		points := scorer.GetEffectivePenaltyPoints(unknownPeer)
+		require.Equal(t, int64(10), points)
 	})
 }
 
@@ -216,4 +217,200 @@ func TestPenaltyReasons(t *testing.T) {
 	for _, reason := range reasons {
 		require.NotEmpty(t, string(reason))
 	}
+}
+
+func TestPeerScorer_PenaltyPersistence(t *testing.T) {
+	pm := NewPeerManager()
+	scorer := NewPeerScorer(pm)
+	peerID := peer.ID("test-peer")
+
+	t.Run("tracks penalties without connected peer", func(t *testing.T) {
+		// No peer added to peer manager
+		scorer.AddPenalty(peerID, 50, ReasonProtocolViolation, "test penalty")
+
+		// Should be tracked in penalty history
+		points := scorer.GetEffectivePenaltyPoints(peerID)
+		require.Equal(t, int64(50), points)
+	})
+
+	t.Run("accumulates penalties for disconnected peer", func(t *testing.T) {
+		scorer.AddPenalty(peerID, 25, ReasonInvalidBlock, "another penalty")
+
+		points := scorer.GetEffectivePenaltyPoints(peerID)
+		require.Equal(t, int64(75), points)
+	})
+
+	t.Run("ShouldBan works for disconnected peers", func(t *testing.T) {
+		scorer.AddPenalty(peerID, 25, ReasonTimeout, "push to ban threshold")
+
+		require.True(t, scorer.ShouldBan(peerID))
+	})
+}
+
+func TestPeerScorer_PenaltyRecord(t *testing.T) {
+	pm := NewPeerManager()
+	scorer := NewPeerScorer(pm)
+	peerID := peer.ID("test-peer")
+
+	t.Run("initializes record correctly", func(t *testing.T) {
+		scorer.AddPenalty(peerID, 10, ReasonTimeout, "test")
+
+		scorer.mu.RLock()
+		record := scorer.penaltyHistory[peerID]
+		scorer.mu.RUnlock()
+
+		require.NotNil(t, record)
+		require.Equal(t, int64(10), record.Points)
+		require.NotZero(t, record.LastDecay)
+		require.Equal(t, 0, record.BanCount)
+	})
+
+	t.Run("tracks ban count in record", func(t *testing.T) {
+		scorer.RecordBan(peerID)
+
+		scorer.mu.RLock()
+		record := scorer.penaltyHistory[peerID]
+		scorer.mu.RUnlock()
+
+		require.Equal(t, 1, record.BanCount)
+		require.NotZero(t, record.LastBanEnd)
+	})
+
+	t.Run("reset clears ban tracking", func(t *testing.T) {
+		scorer.ResetBanCount(peerID)
+
+		scorer.mu.RLock()
+		record := scorer.penaltyHistory[peerID]
+		scorer.mu.RUnlock()
+
+		require.Equal(t, 0, record.BanCount)
+		require.True(t, record.LastBanEnd.IsZero())
+	})
+}
+
+func TestPeerScorer_WallClockDecay(t *testing.T) {
+	pm := NewPeerManager()
+	scorer := NewPeerScorer(pm)
+	peerID := peer.ID("test-peer")
+
+	t.Run("decay applies based on time elapsed", func(t *testing.T) {
+		// Add penalty and manually adjust LastDecay to simulate time passing
+		scorer.mu.Lock()
+		record := &PenaltyRecord{
+			Points:    100,
+			LastDecay: time.Now().Add(-3 * time.Hour), // 3 hours ago
+		}
+		scorer.penaltyHistory[peerID] = record
+		scorer.mu.Unlock()
+
+		// Get points - should apply 3 hours of decay (3 * PenaltyDecayRate = 3 points)
+		points := scorer.GetEffectivePenaltyPoints(peerID)
+		require.Equal(t, int64(97), points)
+	})
+
+	t.Run("decay updates LastDecay timestamp", func(t *testing.T) {
+		scorer.mu.RLock()
+		record := scorer.penaltyHistory[peerID]
+		scorer.mu.RUnlock()
+
+		// LastDecay should be updated to now
+		require.WithinDuration(t, time.Now(), record.LastDecay, time.Second)
+	})
+
+	t.Run("decay does not go negative", func(t *testing.T) {
+		// Set up record with low points and old timestamp
+		scorer.mu.Lock()
+		record := &PenaltyRecord{
+			Points:    5,
+			LastDecay: time.Now().Add(-100 * time.Hour), // 100 hours ago
+		}
+		scorer.penaltyHistory[peer.ID("decay-test")] = record
+		scorer.mu.Unlock()
+
+		points := scorer.GetEffectivePenaltyPoints(peer.ID("decay-test"))
+		require.Equal(t, int64(0), points)
+	})
+
+	t.Run("no decay for recent timestamps", func(t *testing.T) {
+		peerID2 := peer.ID("recent-peer")
+		scorer.mu.Lock()
+		record := &PenaltyRecord{
+			Points:    50,
+			LastDecay: time.Now().Add(-30 * time.Minute), // 30 minutes ago (< 1 hour)
+		}
+		scorer.penaltyHistory[peerID2] = record
+		scorer.mu.Unlock()
+
+		points := scorer.GetEffectivePenaltyPoints(peerID2)
+		require.Equal(t, int64(50), points) // No decay yet
+	})
+
+	t.Run("decay applies before adding new penalty", func(t *testing.T) {
+		peerID3 := peer.ID("accumulate-peer")
+		scorer.mu.Lock()
+		record := &PenaltyRecord{
+			Points:    50,
+			LastDecay: time.Now().Add(-2 * time.Hour),
+		}
+		scorer.penaltyHistory[peerID3] = record
+		scorer.mu.Unlock()
+
+		// Add new penalty - should decay first (50 - 2 = 48), then add 10
+		scorer.AddPenalty(peerID3, 10, ReasonTimeout, "test")
+
+		points := scorer.GetEffectivePenaltyPoints(peerID3)
+		require.Equal(t, int64(58), points)
+	})
+}
+
+func TestPeerScorer_GetPenaltyPointsFallback(t *testing.T) {
+	pm := NewPeerManager()
+	scorer := NewPeerScorer(pm)
+	peerID := peer.ID("test-peer")
+
+	t.Run("uses connected peer state when available", func(t *testing.T) {
+		pm.AddPeer(peerID, true)
+		scorer.AddPenalty(peerID, 25, ReasonInvalidMessage, "test")
+
+		// GetPenaltyPoints should return connected peer's state
+		points := scorer.GetPenaltyPoints(peerID)
+		require.Equal(t, int64(25), points)
+	})
+
+	t.Run("falls back to history for disconnected peer", func(t *testing.T) {
+		disconnectedPeer := peer.ID("disconnected")
+		scorer.AddPenalty(disconnectedPeer, 30, ReasonInvalidBlock, "test")
+
+		// No connected state, should use history
+		points := scorer.GetPenaltyPoints(disconnectedPeer)
+		require.Equal(t, int64(30), points)
+	})
+
+	t.Run("returns zero for unknown peer", func(t *testing.T) {
+		points := scorer.GetPenaltyPoints(peer.ID("totally-unknown"))
+		require.Equal(t, int64(0), points)
+	})
+}
+
+func TestPeerScorer_NilPeerManager(t *testing.T) {
+	// Test with nil peer manager
+	scorer := NewPeerScorer(nil)
+	peerID := peer.ID("test-peer")
+
+	t.Run("AddPenalty works without peer manager", func(t *testing.T) {
+		scorer.AddPenalty(peerID, 25, ReasonTimeout, "test")
+
+		points := scorer.GetEffectivePenaltyPoints(peerID)
+		require.Equal(t, int64(25), points)
+	})
+
+	t.Run("GetPenaltyPoints falls back to history", func(t *testing.T) {
+		points := scorer.GetPenaltyPoints(peerID)
+		require.Equal(t, int64(25), points)
+	})
+
+	t.Run("ShouldBan works", func(t *testing.T) {
+		scorer.AddPenalty(peerID, 75, ReasonChainMismatch, "push to ban")
+		require.True(t, scorer.ShouldBan(peerID))
+	})
 }

@@ -65,6 +65,11 @@ func NewReactor(
 	}
 }
 
+// Name returns the component name for identification.
+func (r *Reactor) Name() string {
+	return "pex-reactor"
+}
+
 // Start starts the PEX reactor.
 func (r *Reactor) Start() error {
 	r.mu.Lock()

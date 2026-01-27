@@ -144,6 +144,18 @@ var (
 
 	// ErrSyncFailed is returned when synchronization fails.
 	ErrSyncFailed = errors.New("sync failed")
+
+	// ErrNoBlockValidator is returned when attempting to start sync without a block validator.
+	// This is a critical safety measure to prevent accepting unvalidated blocks.
+	ErrNoBlockValidator = errors.New("block validator is required")
+
+	// ErrNoTxValidator is returned when attempting to add transactions without a validator.
+	// This is a critical safety measure to prevent accepting unvalidated transactions.
+	ErrNoTxValidator = errors.New("transaction validator is required")
+
+	// ErrNonContiguousBlock is returned when received blocks are not contiguous.
+	// This prevents gaps in the block chain and detects misbehaving peers.
+	ErrNonContiguousBlock = errors.New("non-contiguous block")
 )
 
 // Node lifecycle errors.

@@ -26,6 +26,9 @@ type ConsensusReactor struct {
 	// Application handler
 	handler ConsensusHandler
 
+	// Lifecycle
+	running bool
+
 	mu sync.RWMutex
 }
 
@@ -38,6 +41,35 @@ func NewConsensusReactor(
 		network:     network,
 		peerManager: peerManager,
 	}
+}
+
+// Name returns the component name for identification.
+func (r *ConsensusReactor) Name() string {
+	return "consensus-reactor"
+}
+
+// Start starts the consensus reactor.
+// ConsensusReactor is stateless (no background goroutines), so this just marks it as running.
+func (r *ConsensusReactor) Start() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.running = true
+	return nil
+}
+
+// Stop stops the consensus reactor.
+func (r *ConsensusReactor) Stop() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.running = false
+	return nil
+}
+
+// IsRunning returns whether the reactor is running.
+func (r *ConsensusReactor) IsRunning() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.running
 }
 
 // SetHandler sets the consensus handler for incoming messages.

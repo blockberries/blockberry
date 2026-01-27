@@ -5,8 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/blockberries/blockberry/types"
 )
 
 func TestLoadOrGenerateKey_Generate(t *testing.T) {
@@ -119,4 +122,65 @@ func TestOption_WithBlockStore(t *testing.T) {
 	opt := WithBlockStore(nil)
 	opt(n)
 	require.Nil(t, n.blockStore)
+}
+
+func TestNode_StopNotStarted(t *testing.T) {
+	n := &Node{
+		started: false,
+		stopCh:  make(chan struct{}),
+	}
+
+	err := n.Stop()
+	require.ErrorIs(t, err, types.ErrNodeNotStarted)
+}
+
+func TestNode_StoppingFlag(t *testing.T) {
+	n := &Node{}
+
+	// Initially stopping should be false
+	require.False(t, n.stopping.Load())
+
+	// Setting it should work
+	n.stopping.Store(true)
+	require.True(t, n.stopping.Load())
+}
+
+func TestDefaultShutdownTimeout(t *testing.T) {
+	// Verify the default shutdown timeout is reasonable
+	require.Equal(t, 5*time.Second, DefaultShutdownTimeout)
+}
+
+func TestComponentNameConstants(t *testing.T) {
+	// Verify component name constants are defined
+	require.Equal(t, "network", ComponentNetwork)
+	require.Equal(t, "handshake-handler", ComponentHandshake)
+	require.Equal(t, "pex-reactor", ComponentPEX)
+	require.Equal(t, "housekeeping-reactor", ComponentHousekeeping)
+	require.Equal(t, "transactions-reactor", ComponentTransactions)
+	require.Equal(t, "block-reactor", ComponentBlocks)
+	require.Equal(t, "consensus-reactor", ComponentConsensus)
+	require.Equal(t, "sync-reactor", ComponentSync)
+}
+
+func TestComponentNames(t *testing.T) {
+	n := &Node{}
+	names := n.ComponentNames()
+
+	require.Len(t, names, 8)
+	require.Contains(t, names, ComponentNetwork)
+	require.Contains(t, names, ComponentHandshake)
+	require.Contains(t, names, ComponentPEX)
+	require.Contains(t, names, ComponentHousekeeping)
+	require.Contains(t, names, ComponentTransactions)
+	require.Contains(t, names, ComponentBlocks)
+	require.Contains(t, names, ComponentConsensus)
+	require.Contains(t, names, ComponentSync)
+}
+
+func TestGetComponent_Unknown(t *testing.T) {
+	n := &Node{}
+
+	_, err := n.GetComponent("unknown-component")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "component not found")
 }

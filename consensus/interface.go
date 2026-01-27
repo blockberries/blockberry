@@ -28,6 +28,7 @@ package consensus
 import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
+	"github.com/blockberries/blockberry/abi"
 	"github.com/blockberries/blockberry/blockstore"
 	"github.com/blockberries/blockberry/mempool"
 	"github.com/blockberries/blockberry/statestore"
@@ -84,8 +85,8 @@ type ConsensusDependencies struct {
 	// Mempool provides transaction management.
 	Mempool mempool.Mempool
 
-	// Application is the application-specific logic.
-	Application Application
+	// Application is the application-specific logic (ABI v2.0).
+	Application abi.Application
 
 	// Callbacks allow consensus to notify the node of events.
 	Callbacks *ConsensusCallbacks
@@ -150,22 +151,6 @@ type Network interface {
 
 	// Broadcast sends a message to all connected peers.
 	Broadcast(stream string, data []byte) error
-}
-
-// Application represents the application-specific logic.
-// This is called by consensus to execute transactions and commit state.
-type Application interface {
-	// CheckTx validates a transaction before it's added to the mempool.
-	CheckTx(tx []byte) error
-
-	// DeliverTx executes a transaction and updates application state.
-	DeliverTx(tx []byte) error
-
-	// Commit finalizes the block and returns the app hash.
-	Commit() ([]byte, error)
-
-	// Query queries application state.
-	Query(path string, data []byte) ([]byte, error)
 }
 
 // BlockProducer is implemented by engines that can create blocks.

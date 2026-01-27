@@ -1436,6 +1436,428 @@ func (m *FirewallResponse) Validate() error {
 }
 
 
+type SnapshotsRequest struct {
+MinHeight *int64 `cramberry:"1,required" json:"min_height"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotsRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SnapshotsRequest) encodeTo(w *cramberry.Writer) {
+	if m.MinHeight != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.MinHeight)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotsRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SnapshotsRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.MinHeight = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *SnapshotsRequest) Validate() error {
+	// Field min_height is required
+	if m.MinHeight == nil {
+		return cramberry.NewValidationError("SnapshotsRequest", "min_height", "required field is missing")
+	}
+	return nil
+}
+
+
+type SnapshotMetadata struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+Hash []byte `cramberry:"2,required" json:"hash"`
+Chunks *int32 `cramberry:"3,required" json:"chunks"`
+AppHash []byte `cramberry:"4,required" json:"app_hash"`
+CreatedAt int64 `cramberry:"5" json:"created_at"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotMetadata) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SnapshotMetadata) encodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	if m.Chunks != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Chunks)
+	}
+	if len(m.AppHash) > 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.AppHash)
+	}
+	if m.CreatedAt != 0 {
+		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(m.CreatedAt)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotMetadata) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SnapshotMetadata) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		case 2:
+			m.Hash = r.ReadBytes()
+		case 3:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Chunks = &tmp
+		case 4:
+			m.AppHash = r.ReadBytes()
+		case 5:
+			m.CreatedAt = r.ReadInt64()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *SnapshotMetadata) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("SnapshotMetadata", "height", "required field is missing")
+	}
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("SnapshotMetadata", "hash", "required field is missing")
+	}
+	// Field chunks is required
+	if m.Chunks == nil {
+		return cramberry.NewValidationError("SnapshotMetadata", "chunks", "required field is missing")
+	}
+	// Field app_hash is required
+	if m.AppHash == nil {
+		return cramberry.NewValidationError("SnapshotMetadata", "app_hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type SnapshotsResponse struct {
+Snapshots []SnapshotMetadata `cramberry:"1" json:"snapshots"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotsResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SnapshotsResponse) encodeTo(w *cramberry.Writer) {
+	if len(m.Snapshots) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Snapshots)))
+		for _, v := range m.Snapshots {
+			v.encodeTo(w)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotsResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SnapshotsResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			n := int(r.ReadUvarint())
+		m.Snapshots = make([]SnapshotMetadata, n)
+		for i := 0; i < n; i++ {
+			m.Snapshots[i].decodeFrom(r)
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type SnapshotChunkRequest struct {
+SnapshotHash []byte `cramberry:"1,required" json:"snapshot_hash"`
+ChunkIndex *int32 `cramberry:"2,required" json:"chunk_index"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotChunkRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SnapshotChunkRequest) encodeTo(w *cramberry.Writer) {
+	if len(m.SnapshotHash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.SnapshotHash)
+	}
+	if m.ChunkIndex != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.ChunkIndex)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotChunkRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SnapshotChunkRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.SnapshotHash = r.ReadBytes()
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.ChunkIndex = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *SnapshotChunkRequest) Validate() error {
+	// Field snapshot_hash is required
+	if m.SnapshotHash == nil {
+		return cramberry.NewValidationError("SnapshotChunkRequest", "snapshot_hash", "required field is missing")
+	}
+	// Field chunk_index is required
+	if m.ChunkIndex == nil {
+		return cramberry.NewValidationError("SnapshotChunkRequest", "chunk_index", "required field is missing")
+	}
+	return nil
+}
+
+
+type SnapshotChunkResponse struct {
+SnapshotHash []byte `cramberry:"1,required" json:"snapshot_hash"`
+ChunkIndex *int32 `cramberry:"2,required" json:"chunk_index"`
+Data []byte `cramberry:"3,required" json:"data"`
+ChunkHash []byte `cramberry:"4,required" json:"chunk_hash"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotChunkResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SnapshotChunkResponse) encodeTo(w *cramberry.Writer) {
+	if len(m.SnapshotHash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.SnapshotHash)
+	}
+	if m.ChunkIndex != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.ChunkIndex)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	if len(m.ChunkHash) > 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.ChunkHash)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SnapshotChunkResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SnapshotChunkResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.SnapshotHash = r.ReadBytes()
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.ChunkIndex = &tmp
+		case 3:
+			m.Data = r.ReadBytes()
+		case 4:
+			m.ChunkHash = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *SnapshotChunkResponse) Validate() error {
+	// Field snapshot_hash is required
+	if m.SnapshotHash == nil {
+		return cramberry.NewValidationError("SnapshotChunkResponse", "snapshot_hash", "required field is missing")
+	}
+	// Field chunk_index is required
+	if m.ChunkIndex == nil {
+		return cramberry.NewValidationError("SnapshotChunkResponse", "chunk_index", "required field is missing")
+	}
+	// Field data is required
+	if m.Data == nil {
+		return cramberry.NewValidationError("SnapshotChunkResponse", "data", "required field is missing")
+	}
+	// Field chunk_hash is required
+	if m.ChunkHash == nil {
+		return cramberry.NewValidationError("SnapshotChunkResponse", "chunk_hash", "required field is missing")
+	}
+	return nil
+}
+
+
 
 // HandshakeMessage is a polymorphic interface.
 type HandshakeMessage interface {
@@ -1586,6 +2008,37 @@ func HousekeepingMessagesTypeID(v HousekeepingMessages) cramberry.TypeID {
 		return 142
 	case *FirewallResponse:
 		return 143
+	default:
+		return 0
+	}
+}
+
+// StateSyncMessage is a polymorphic interface.
+type StateSyncMessage interface {
+	isStateSyncMessage()
+}
+
+
+func (*SnapshotsRequest) isStateSyncMessage() {}
+
+func (*SnapshotsResponse) isStateSyncMessage() {}
+
+func (*SnapshotChunkRequest) isStateSyncMessage() {}
+
+func (*SnapshotChunkResponse) isStateSyncMessage() {}
+
+
+// StateSyncMessageTypeID returns the type ID for interface implementations.
+func StateSyncMessageTypeID(v StateSyncMessage) cramberry.TypeID {
+	switch v.(type) {
+	case *SnapshotsRequest:
+		return 144
+	case *SnapshotsResponse:
+		return 145
+	case *SnapshotChunkRequest:
+		return 146
+	case *SnapshotChunkResponse:
+		return 147
 	default:
 		return 0
 	}

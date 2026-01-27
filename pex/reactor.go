@@ -173,7 +173,18 @@ func (r *Reactor) handleAddressResponse(peerID peer.ID, data []byte) error {
 		return fmt.Errorf("decoding AddressResponse: %w", err)
 	}
 
+	// Limit how many addresses we accept per response to prevent flooding
+	maxToAccept := r.maxAddresses
+	if maxToAccept <= 0 {
+		maxToAccept = 100 // Sensible default
+	}
+
+	added := 0
 	for _, info := range resp.Peers {
+		if added >= maxToAccept {
+			break
+		}
+
 		if info.NodeId == nil || info.Multiaddr == nil {
 			continue
 		}
@@ -189,6 +200,7 @@ func (r *Reactor) handleAddressResponse(peerID peer.ID, data []byte) error {
 		}
 
 		r.addressBook.AddPeer(newPeerID, *info.Multiaddr, *info.NodeId, latency)
+		added++
 	}
 
 	return nil

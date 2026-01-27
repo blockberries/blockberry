@@ -389,3 +389,149 @@ func TestAddressBook_Concurrency(t *testing.T) {
 		<-done
 	}
 }
+
+func TestNewAddressBookWithLimit(t *testing.T) {
+	ab := NewAddressBookWithLimit("test.json", 100)
+	require.NotNil(t, ab)
+	require.Equal(t, 100, ab.MaxAddresses())
+}
+
+func TestAddressBook_MaxAddresses_Unlimited(t *testing.T) {
+	ab := NewAddressBook("")
+	require.Equal(t, 0, ab.MaxAddresses())
+
+	// Should accept unlimited addresses
+	for i := range 1000 {
+		peerID := peer.ID(string(rune('A' + (i % 26))) + string(rune('0'+(i/26))))
+		ab.AddPeer(peerID, "/ip4/127.0.0.1/tcp/26656", peerID.String(), int32(i))
+	}
+	require.Equal(t, 1000, ab.Size())
+}
+
+func TestAddressBook_MaxAddresses_Enforced(t *testing.T) {
+	ab := NewAddressBookWithLimit("", 5)
+	now := time.Now().Unix()
+
+	// Add 5 peers
+	for i := range 5 {
+		peerID := peer.ID(string(rune('A' + i)))
+		ab.mu.Lock()
+		ab.peers[peerID] = &AddressEntry{
+			NodeID:   peerID.String(),
+			Multiaddr: "/ip4/127.0.0.1/tcp/26656",
+			LastSeen: now - int64(i*100), // Older as i increases
+		}
+		ab.mu.Unlock()
+	}
+	require.Equal(t, 5, ab.Size())
+
+	// Add one more - should evict oldest
+	newPeerID := peer.ID("F")
+	ab.AddPeer(newPeerID, "/ip4/127.0.0.1/tcp/26656", newPeerID.String(), 0)
+
+	require.Equal(t, 5, ab.Size())
+	require.True(t, ab.HasPeer(newPeerID))
+	// Peer E was oldest (lastSeen = now - 400), should be evicted
+	require.False(t, ab.HasPeer(peer.ID("E")))
+}
+
+func TestAddressBook_MaxAddresses_UpdateExistingDoesNotEvict(t *testing.T) {
+	ab := NewAddressBookWithLimit("", 3)
+
+	// Add 3 peers
+	ab.AddPeer(peer.ID("A"), "/ip4/127.0.0.1/tcp/26656", "A", 0)
+	ab.AddPeer(peer.ID("B"), "/ip4/127.0.0.2/tcp/26656", "B", 0)
+	ab.AddPeer(peer.ID("C"), "/ip4/127.0.0.3/tcp/26656", "C", 0)
+
+	require.Equal(t, 3, ab.Size())
+
+	// Update existing peer - should not evict
+	ab.AddPeer(peer.ID("A"), "/ip4/192.168.1.1/tcp/26656", "A", 100)
+
+	require.Equal(t, 3, ab.Size())
+	require.True(t, ab.HasPeer(peer.ID("A")))
+	require.True(t, ab.HasPeer(peer.ID("B")))
+	require.True(t, ab.HasPeer(peer.ID("C")))
+
+	entry, _ := ab.GetPeer(peer.ID("A"))
+	require.Equal(t, "/ip4/192.168.1.1/tcp/26656", entry.Multiaddr)
+}
+
+func TestAddressBook_MaxAddresses_SeedsNotEvicted(t *testing.T) {
+	ab := NewAddressBookWithLimit("", 3)
+	now := time.Now().Unix()
+
+	// Add 2 regular peers and 1 seed (oldest)
+	ab.mu.Lock()
+	ab.peers[peer.ID("seed")] = &AddressEntry{
+		NodeID:   "seed",
+		Multiaddr: "/ip4/127.0.0.1/tcp/26656",
+		LastSeen: now - 1000, // Oldest
+		IsSeed:   true,
+	}
+	ab.peers[peer.ID("peer1")] = &AddressEntry{
+		NodeID:   "peer1",
+		Multiaddr: "/ip4/127.0.0.2/tcp/26656",
+		LastSeen: now - 500,
+	}
+	ab.peers[peer.ID("peer2")] = &AddressEntry{
+		NodeID:   "peer2",
+		Multiaddr: "/ip4/127.0.0.3/tcp/26656",
+		LastSeen: now - 100,
+	}
+	ab.mu.Unlock()
+
+	require.Equal(t, 3, ab.Size())
+
+	// Add new peer - should evict peer1 (oldest non-seed), not seed
+	ab.AddPeer(peer.ID("peer3"), "/ip4/127.0.0.4/tcp/26656", "peer3", 0)
+
+	require.Equal(t, 3, ab.Size())
+	require.True(t, ab.HasPeer(peer.ID("seed"))) // Seed preserved
+	require.False(t, ab.HasPeer(peer.ID("peer1"))) // Oldest non-seed evicted
+	require.True(t, ab.HasPeer(peer.ID("peer2")))
+	require.True(t, ab.HasPeer(peer.ID("peer3")))
+}
+
+func TestAddressBook_SetMaxAddresses(t *testing.T) {
+	ab := NewAddressBook("")
+
+	// Add 10 peers
+	for i := range 10 {
+		peerID := peer.ID(string(rune('A' + i)))
+		ab.AddPeer(peerID, "/ip4/127.0.0.1/tcp/26656", peerID.String(), int32(i))
+	}
+	require.Equal(t, 10, ab.Size())
+
+	// Set limit lower than current size
+	ab.SetMaxAddresses(5)
+	require.Equal(t, 5, ab.MaxAddresses())
+	require.Equal(t, 5, ab.Size())
+
+	// Increasing limit doesn't change current size
+	ab.SetMaxAddresses(20)
+	require.Equal(t, 20, ab.MaxAddresses())
+	require.Equal(t, 5, ab.Size())
+}
+
+func TestAddressBook_SetMaxAddresses_Zero(t *testing.T) {
+	ab := NewAddressBookWithLimit("", 5)
+
+	// Add 3 peers
+	for i := range 3 {
+		peerID := peer.ID(string(rune('A' + i)))
+		ab.AddPeer(peerID, "/ip4/127.0.0.1/tcp/26656", peerID.String(), int32(i))
+	}
+
+	// Set to unlimited
+	ab.SetMaxAddresses(0)
+	require.Equal(t, 0, ab.MaxAddresses())
+	require.Equal(t, 3, ab.Size())
+
+	// Can now add unlimited
+	for i := 3; i < 100; i++ {
+		peerID := peer.ID(string(rune('A' + (i % 26))) + string(rune('0'+(i/26))))
+		ab.AddPeer(peerID, "/ip4/127.0.0.1/tcp/26656", peerID.String(), int32(i))
+	}
+	require.Equal(t, 100, ab.Size())
+}

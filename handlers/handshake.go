@@ -26,6 +26,15 @@ const DefaultHandshakeTimeout = 30 * time.Second
 // DefaultHandshakeCheckInterval is the interval between handshake timeout checks.
 const DefaultHandshakeCheckInterval = 5 * time.Second
 
+// TempBanDurationChainMismatch is the temporary ban duration for chain ID mismatch.
+// This is softer than permanent blacklisting since the peer might be on a different
+// network temporarily (e.g., during upgrades) or might fix their configuration.
+const TempBanDurationChainMismatch = 1 * time.Hour
+
+// TempBanDurationVersionMismatch is the temporary ban duration for protocol version mismatch.
+// This is softer than permanent blacklisting since the peer might upgrade their software.
+const TempBanDurationVersionMismatch = 30 * time.Minute
+
 // HandshakeState represents the state of a handshake with a peer.
 type HandshakeState int
 
@@ -312,7 +321,10 @@ func (h *HandshakeHandler) handleHelloRequest(peerID peer.ID, data []byte) error
 	// Validate chain ID
 	if *req.ChainId != h.chainID {
 		if h.network != nil {
-			_ = h.network.BlacklistPeer(peerID)
+			// Use temporary ban instead of permanent blacklist - peer might be
+			// on a different network temporarily or fix their configuration
+			reason := fmt.Sprintf("chain ID mismatch: expected %s, got %s", h.chainID, *req.ChainId)
+			_ = h.network.TempBanPeer(peerID, TempBanDurationChainMismatch, reason)
 		}
 		return fmt.Errorf("%w: expected %s, got %s", types.ErrChainIDMismatch, h.chainID, *req.ChainId)
 	}
@@ -320,7 +332,9 @@ func (h *HandshakeHandler) handleHelloRequest(peerID peer.ID, data []byte) error
 	// Validate protocol version
 	if *req.Version != h.protocolVersion {
 		if h.network != nil {
-			_ = h.network.BlacklistPeer(peerID)
+			// Use temporary ban instead of permanent blacklist - peer might upgrade
+			reason := fmt.Sprintf("version mismatch: expected %d, got %d", h.protocolVersion, *req.Version)
+			_ = h.network.TempBanPeer(peerID, TempBanDurationVersionMismatch, reason)
 		}
 		return fmt.Errorf("%w: expected %d, got %d", types.ErrVersionMismatch, h.protocolVersion, *req.Version)
 	}

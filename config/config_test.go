@@ -33,6 +33,7 @@ func TestDefaultConfig(t *testing.T) {
 	require.True(t, cfg.PEX.Enabled)
 	require.Equal(t, 30*time.Second, cfg.PEX.RequestInterval.Duration())
 	require.Equal(t, 100, cfg.PEX.MaxAddressesPerResponse)
+	require.Equal(t, 1000, cfg.PEX.MaxTotalAddresses)
 
 	// Mempool defaults
 	require.Equal(t, 5000, cfg.Mempool.MaxTxs)
@@ -363,6 +364,7 @@ func TestPEXConfigValidation(t *testing.T) {
 				Enabled:                 true,
 				RequestInterval:         Duration(30 * time.Second),
 				MaxAddressesPerResponse: 100,
+				MaxTotalAddresses:       1000,
 			},
 			wantErr: nil,
 		},
@@ -372,6 +374,7 @@ func TestPEXConfigValidation(t *testing.T) {
 				Enabled:                 false,
 				RequestInterval:         Duration(0),
 				MaxAddressesPerResponse: 0,
+				MaxTotalAddresses:       0,
 			},
 			wantErr: nil,
 		},
@@ -381,17 +384,29 @@ func TestPEXConfigValidation(t *testing.T) {
 				Enabled:                 true,
 				RequestInterval:         Duration(0),
 				MaxAddressesPerResponse: 100,
+				MaxTotalAddresses:       1000,
 			},
 			wantErr: ErrInvalidRequestInterval,
 		},
 		{
-			name: "enabled with zero max addresses",
+			name: "enabled with zero max addresses per response",
 			cfg: PEXConfig{
 				Enabled:                 true,
 				RequestInterval:         Duration(30 * time.Second),
 				MaxAddressesPerResponse: 0,
+				MaxTotalAddresses:       1000,
 			},
 			wantErr: ErrInvalidMaxAddresses,
+		},
+		{
+			name: "enabled with zero max total addresses",
+			cfg: PEXConfig{
+				Enabled:                 true,
+				RequestInterval:         Duration(30 * time.Second),
+				MaxAddressesPerResponse: 100,
+				MaxTotalAddresses:       0,
+			},
+			wantErr: ErrInvalidMaxTotalAddresses,
 		},
 	}
 

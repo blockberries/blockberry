@@ -2092,4 +2092,1603 @@ The dynamic stream registry enables:
 
 ---
 
+## Phase 6: Storage Enhancements
+
+### Phase 6.1: Block Pruning
+
+**Status:** Complete
+
+**Files Created:**
+- `blockstore/pruning.go` - Pruning types, interfaces, and background pruner
+- `blockstore/pruning_test.go` - Comprehensive pruning tests (20+ tests)
+
+**Files Modified:**
+- `blockstore/leveldb.go` - Added Prune() and related methods
+- `blockstore/memory.go` - Added Prune() and related methods
+
+**Key Changes:**
+
+1. **PruneStrategy Enum**:
+   ```go
+   const (
+       PruneNothing    PruneStrategy = "nothing"     // Archive mode - keep everything
+       PruneEverything PruneStrategy = "everything"  // Aggressive - keep only recent
+       PruneDefault    PruneStrategy = "default"     // Keep recent + checkpoints
+       PruneCustom     PruneStrategy = "custom"      // Custom configuration
+   )
+   ```
+
+2. **PruneConfig Structure**:
+   ```go
+   type PruneConfig struct {
+       Strategy   PruneStrategy
+       KeepRecent int64          // Keep last N blocks
+       KeepEvery  int64          // Keep every Nth block (checkpoints)
+       Interval   time.Duration  // Background pruning interval
+   }
+   ```
+
+3. **PrunableBlockStore Interface**:
+   ```go
+   type PrunableBlockStore interface {
+       BlockStore
+       Prune(beforeHeight int64) (*PruneResult, error)
+       PruneConfig() *PruneConfig
+       SetPruneConfig(cfg *PruneConfig)
+   }
+   ```
+
+4. **BackgroundPruner**: Automatic background pruning with configurable interval and callbacks.
+
+5. **LevelDB and Memory Implementations**: Both block stores now implement PrunableBlockStore with checkpoint preservation.
+
+**Test Coverage:**
+- Strategy constants and validation
+- Default, archive, and aggressive configs
+- ShouldKeep logic (recent, checkpoint, pruned)
+- Prune operations with various configurations
+- Invalid/high height handling
+- Background pruner lifecycle and callbacks
+
+---
+
+### Phase 6.2: State Pruning
+
+**Status:** Complete
+
+**Files Created:**
+- `statestore/pruning.go` - State pruning configuration and background pruner
+- `statestore/pruning_test.go` - State pruning tests (15+ tests)
+
+**Files Modified:**
+- `statestore/iavl.go` - Added PruneVersions() and related methods
+
+**Key Changes:**
+
+1. **StatePruneConfig Structure**:
+   ```go
+   type StatePruneConfig struct {
+       KeepRecent int64          // Keep last N versions
+       KeepEvery  int64          // Keep every Nth version (checkpoints)
+       Interval   time.Duration  // Background pruning interval
+       Enabled    bool           // Enable/disable pruning
+   }
+   ```
+
+2. **PrunableStateStore Interface**:
+   ```go
+   type PrunableStateStore interface {
+       StateStore
+       PruneVersions(beforeVersion int64) (*StatePruneResult, error)
+       AvailableVersions() (oldest, newest int64)
+       StatePruneConfig() *StatePruneConfig
+       SetStatePruneConfig(cfg *StatePruneConfig)
+   }
+   ```
+
+3. **IAVLStore Updates**:
+   - PruneVersions() - Prunes old tree versions
+   - AvailableVersions() - Returns version range
+   - AllVersions() - Returns all available versions
+   - Uses IAVL's DeleteVersionsTo() for efficient pruning
+
+4. **BackgroundStatePruner**: Automatic version pruning with callbacks.
+
+**Test Coverage:**
+- Default and archive configurations
+- Validation for negative values
+- ShouldKeep logic for versions
+- CalculatePruneTarget calculations
+- IAVLStore pruning operations
+- Background pruner lifecycle
+
+---
+
+### Phase 6.3: State Snapshots
+
+**Status:** Complete
+
+**Files Created:**
+- `statestore/snapshot.go` - Snapshot store interface and file-based implementation
+- `statestore/snapshot_test.go` - Snapshot tests (20+ tests)
+
+**Key Changes:**
+
+1. **Snapshot Structure**:
+   ```go
+   type Snapshot struct {
+       Version   uint32
+       Height    int64
+       Hash      []byte
+       ChunkSize int
+       Chunks    int
+       Metadata  []byte
+       AppHash   []byte
+       CreatedAt time.Time
+   }
+   ```
+
+2. **SnapshotStore Interface**:
+   ```go
+   type SnapshotStore interface {
+       Create(height int64) (*Snapshot, error)
+       List() ([]*SnapshotInfo, error)
+       Load(hash []byte) (*Snapshot, error)
+       LoadChunk(hash []byte, index int) (*SnapshotChunk, error)
+       Delete(hash []byte) error
+       Prune(keepRecent int) error
+       Has(hash []byte) bool
+       Import(snapshot *Snapshot, chunkProvider ChunkProvider) error
+   }
+   ```
+
+3. **FileSnapshotStore Implementation**:
+   - Creates snapshots using IAVL tree export
+   - Gzip compression for storage efficiency
+   - Chunked storage for large snapshots
+   - Import support for state sync
+
+4. **ChunkProvider Interface**:
+   ```go
+   type ChunkProvider interface {
+       GetChunk(index int) ([]byte, error)
+       ChunkCount() int
+   }
+   ```
+
+5. **MemoryChunkProvider**: For testing and import operations.
+
+**Test Coverage:**
+- Snapshot creation and listing
+- Load/delete operations
+- Chunk loading
+- Pruning (keep recent)
+- Import/export round-trip
+- Metadata encoding/decoding
+
+---
+
+### Phase 6.4: BadgerDB Backend
+
+**Status:** Complete
+
+**Files Created:**
+- `blockstore/badgerdb.go` - BadgerDB block store implementation
+- `blockstore/badgerdb_test.go` - BadgerDB tests (20+ tests)
+
+**Files Modified:**
+- `go.mod` - Added BadgerDB v4 dependency
+
+**Key Changes:**
+
+1. **BadgerDBOptions Configuration**:
+   ```go
+   type BadgerDBOptions struct {
+       SyncWrites              bool
+       Compression             bool
+       ValueLogFileSize        int64
+       MemTableSize            int64
+       NumMemtables            int
+       NumLevelZeroTables      int
+       NumLevelZeroTablesStall int
+       Logger                  badger.Logger
+   }
+   ```
+
+2. **BadgerDBBlockStore**:
+   - Implements BlockStore and PrunableBlockStore interfaces
+   - SSD-optimized with configurable compression (Snappy)
+   - Value log garbage collection via Compact()
+   - Sync() and Size() methods for management
+   - Block iterator support
+
+3. **Constructors**:
+   ```go
+   func NewBadgerDBBlockStore(path string) (*BadgerDBBlockStore, error)
+   func NewBadgerDBBlockStoreWithOptions(path string, opts *BadgerDBOptions) (*BadgerDBBlockStore, error)
+   ```
+
+4. **Additional Methods**:
+   - Compact() - Runs value log GC
+   - Sync() - Ensures data is flushed
+   - Size() - Returns LSM and value log sizes
+   - NewBlockIterator() - Creates block iterator
+
+**Test Coverage:**
+- Default options and custom options
+- Save/load operations
+- Duplicate detection
+- Height/base tracking
+- Persistence across restarts
+- Pruning with configurations
+- Compaction and sync
+- Size reporting
+- Block iteration
+
+---
+
+## Phase 6 Complete
+
+All Phase 6 tasks completed:
+- 6.1 Block Pruning - PrunableBlockStore interface and implementations
+- 6.2 State Pruning - PrunableStateStore interface and IAVL integration
+- 6.3 State Snapshots - SnapshotStore interface and FileSnapshotStore
+- 6.4 BadgerDB Backend - Alternative block storage with SSD optimization
+
+The storage enhancements enable:
+1. **Disk space management** - Automatic pruning of old blocks and state versions
+2. **Checkpoint preservation** - Keep periodic checkpoints for state sync
+3. **Fast sync** - State snapshots for quick node bootstrapping
+4. **Storage flexibility** - BadgerDB alternative for SSD-optimized workloads
+5. **Background operations** - Non-blocking pruning via background goroutines
+
+---
+
 *Last Updated: January 2025*
+
+---
+
+## Phase 1: ABI Core Types - COMPLETE (January 27, 2026)
+
+Created the new `abi/` package with all ABI v2.0 core types as specified in ABI_DESIGN.md.
+
+### Files Created
+
+1. **abi/codes.go** - Result codes
+   - `ResultCode` enum (CodeOK, CodeInvalidTx, CodeNotAuthorized, etc.)
+   - Helper methods: IsOK(), IsError(), IsAppError(), String()
+   - Reserved ranges: 0 = OK, 1-99 = framework, 100+ = application
+
+2. **abi/transaction.go** - Transaction types
+   - `Transaction` struct with Hash, Data, Sender, Nonce, GasLimit, GasPrice, Priority
+   - `CheckTxMode` enum (New, Recheck, Recovery)
+   - `TxCheckResult` with Code, Error, GasWanted, Priority, Sender, Nonce, ExpireAfter
+   - `TxExecResult` with Code, Error, GasUsed, Events, Data
+
+3. **abi/block.go** - Block types
+   - `BlockHeader` with Height, Time, PrevHash, ProposerAddress, Evidence, LastValidators
+   - `Evidence` and `EvidenceType` for misbehavior tracking
+   - `EndBlockResult` with ValidatorUpdates, ConsensusParams, Events
+   - `CommitResult` with AppHash, RetainHeight
+   - `ConsensusParams`, `BlockParams`, `EvidenceParams`, `ValidatorParams`
+   - `Block`, `Commit`, `CommitSig`, `BlockIDFlag`
+
+4. **abi/event.go** - Event types
+   - `Event` with Type and Attributes
+   - `Attribute` with Key, Value, Index
+   - Fluent builders: NewEvent(), AddAttribute(), AddStringAttribute(), AddIndexedAttribute()
+   - Standard event type constants (EventNewBlock, EventTx, EventCommit, etc.)
+   - Standard attribute key constants (AttributeKeyHeight, AttributeKeyHash, etc.)
+
+5. **abi/query.go** - Query types
+   - `QueryRequest` with Path, Data, Height, Prove
+   - `QueryResponse` with Code, Error, Key, Value, Proof, Height
+   - `Proof` and `ProofOp` for Merkle proofs
+   - Helper methods: IsOK(), Exists()
+
+6. **abi/genesis.go** - Genesis types
+   - `Genesis` with ChainID, GenesisTime, ConsensusParams, Validators, AppState, InitialHeight
+   - `ApplicationInfo` with Name, Version, AppHash, Height, LastBlockTime, ProtocolVersion
+
+7. **abi/validator.go** - Validator types
+   - `Validator` with Address, PublicKey, VotingPower, Index
+   - `ValidatorUpdate` with PublicKey, Power (0 = removal)
+   - `ValidatorSet` interface with full validator set operations
+   - `SimpleValidatorSet` implementation with round-robin proposer selection
+
+8. **abi/application.go** - Application interface
+   - Core `Application` interface with:
+     - Info() ApplicationInfo
+     - InitChain(*Genesis) error
+     - CheckTx(ctx, *Transaction) *TxCheckResult
+     - BeginBlock(ctx, *BlockHeader) error
+     - ExecuteTx(ctx, *Transaction) *TxExecResult
+     - EndBlock(ctx) *EndBlockResult
+     - Commit(ctx) *CommitResult
+     - Query(ctx, *QueryRequest) *QueryResponse
+
+9. **abi/base_application.go** - Default implementations
+   - `BaseApplication` with fail-closed defaults (rejects all operations)
+   - `AcceptAllApplication` for testing (accepts all operations)
+
+10. **abi/abi_test.go** - Comprehensive tests
+    - Tests for all types and methods
+    - Verifies fail-closed behavior
+    - Validates ValidatorSet operations
+
+### Key Design Decisions
+
+1. **Fail-Closed Security**: BaseApplication rejects all operations by default. Applications must explicitly enable functionality.
+
+2. **Context Support**: All block execution methods accept context.Context for cancellation and deadlines.
+
+3. **Structured Results**: All results use typed structs (TxCheckResult, TxExecResult) instead of raw error returns.
+
+4. **Event System**: Events have a fluent builder API for easy construction.
+
+5. **Simple ValidatorSet**: Included a basic implementation using round-robin proposer selection.
+
+### Test Results
+
+All 17 test cases pass:
+- ResultCode operations
+- Transaction validation and hashing
+- TxCheckResult/TxExecResult behavior
+- Event construction
+- QueryResponse helpers
+- ValidatorSet operations
+- BaseApplication fail-closed behavior
+- AcceptAllApplication test helper
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 2: Application Interface - ABI-Only Refactor
+
+**Status:** Complete
+**Date:** January 27, 2026
+
+### Summary
+
+Refactored the codebase to use ABI as the ONLY application interface, removing backward compatibility and legacy adapter code. All applications must now implement `abi.Application` directly.
+
+### Files Modified
+
+1. **abi/adapter.go** - DELETED
+   - Removed `LegacyAdapter` that wrapped old-style applications
+   - Removed `WrapLegacyApplication` function
+   - ABI is now the only interface - no adapters needed
+
+2. **types/application.go** - Simplified
+   - Removed old Application interface
+   - Kept only `TxValidator` and `BlockValidator` function types for compatibility
+   - Added deprecation notice pointing to `abi.TxCheckResult`-based validation
+
+3. **types/null_app.go** - Updated
+   - `NullApplication` now implements `abi.Application` directly
+   - All methods use ABI types (`abi.Transaction`, `abi.TxCheckResult`, etc.)
+   - Added `var _ abi.Application = (*NullApplication)(nil)` compile-time check
+
+4. **types/application_test.go** - Rewritten
+   - All tests updated to use ABI types
+   - Tests verify NullApplication implements abi.Application
+   - Tests verify correct behavior with ABI-based method signatures
+
+5. **testing/helpers.go** - Updated
+   - `MockApplication` now implements `abi.Application`
+   - Also implements `handlers.ConsensusHandler` for integration tests
+   - Updated all methods to use ABI types
+   - Added compile-time interface check
+
+6. **consensus/interface.go** - Updated
+   - `ConsensusDependencies.Application` now uses `abi.Application`
+   - Removed duplicate Application interface definition
+
+7. **MASTER_PLAN.md** - Updated
+   - Added explicit statement that ABI is the ONLY interface
+   - Clarified Phase 14 ABCI compatibility is for external interoperability only
+   - Added "No backward compatibility" rule to Contributing section
+
+### Key Design Decisions
+
+1. **No Backward Compatibility**: The user explicitly requested removing the LegacyAdapter. Applications MUST implement `abi.Application` directly.
+
+2. **Simplified Codebase**: Removing adapters reduces complexity and ensures all applications benefit from ABI v2.0's improved design.
+
+3. **Dual Interface for MockApplication**: MockApplication implements both `abi.Application` and `handlers.ConsensusHandler` since it's used in integration tests that need both capabilities.
+
+4. **Deprecation Notices**: Old types like `TxValidator` are kept but marked deprecated to guide users toward ABI types.
+
+### Test Results
+
+All tests pass:
+```
+go test -race -short ./...
+ok  github.com/blockberries/blockberry/abi
+ok  github.com/blockberries/blockberry/blockstore
+ok  github.com/blockberries/blockberry/config
+ok  github.com/blockberries/blockberry/consensus
+ok  github.com/blockberries/blockberry/consensus/bft
+ok  github.com/blockberries/blockberry/container
+ok  github.com/blockberries/blockberry/handlers
+ok  github.com/blockberries/blockberry/logging
+ok  github.com/blockberries/blockberry/mempool
+ok  github.com/blockberries/blockberry/mempool/looseberry
+ok  github.com/blockberries/blockberry/metrics
+ok  github.com/blockberries/blockberry/node
+ok  github.com/blockberries/blockberry/p2p
+ok  github.com/blockberries/blockberry/pex
+ok  github.com/blockberries/blockberry/statestore
+ok  github.com/blockberries/blockberry/sync
+ok  github.com/blockberries/blockberry/testing
+ok  github.com/blockberries/blockberry/types
+```
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 9: Event System
+
+**Status:** Complete
+**Date:** January 27, 2026
+
+### Summary
+
+Implemented the EventBus pub/sub system for event handling throughout blockberry. This allows components to publish events and subscribers to filter and receive events matching their queries.
+
+### Files Created
+
+1. **abi/component.go** - Component interface for ABI
+   - `Component` interface with Start/Stop/IsRunning
+   - `Named`, `HealthChecker`, `Dependent`, `LifecycleAware`, `Resettable` interfaces
+   - `HealthStatus` and `Health` types
+
+2. **abi/eventbus.go** - EventBus interface and query types
+   - `EventBus` interface with Subscribe/Unsubscribe/Publish methods
+   - `Query` interface for event filtering
+   - Query implementations:
+     - `QueryAll` - matches all events
+     - `QueryEventType` - matches by event type
+     - `QueryEventTypes` - matches multiple event types
+     - `QueryAttribute` - matches by attribute key-value
+     - `QueryAttributeExists` - matches by attribute key existence
+     - `QueryAnd` - AND logic for multiple queries
+     - `QueryOr` - OR logic for multiple queries
+     - `QueryFunc` - custom function-based matching
+   - `Subscription` type for internal use
+   - `EventBusConfig` with sensible defaults
+
+3. **events/bus.go** - In-memory EventBus implementation
+   - Thread-safe subscription management
+   - Non-blocking publish with optional timeout
+   - Context cancellation support
+   - Configurable buffer sizes and limits
+   - Automatic channel cleanup on Stop
+
+4. **events/bus_test.go** - Comprehensive tests
+   - 27 test cases covering all functionality
+   - Tests for all query types
+   - Concurrency tests
+   - Context cancellation tests
+   - Resource limit tests
+
+### Key Design Decisions
+
+1. **Non-blocking by default**: `Publish` drops events if subscriber channels are full, preventing slow subscribers from blocking publishers.
+
+2. **Optional timeout**: `PublishWithTimeout` allows waiting for slow subscribers up to a configurable timeout.
+
+3. **Context cancellation**: Subscriptions can be automatically cancelled when their context is cancelled.
+
+4. **Query composition**: `QueryAnd` and `QueryOr` allow composing complex queries from simple ones.
+
+5. **Subscriber limits**: Configurable limits on total subscribers and subscribers per query prevent resource exhaustion.
+
+### Test Results
+
+All 27 tests pass with race detection:
+- Bus lifecycle (Start/Stop)
+- Subscribe/Unsubscribe operations
+- Query matching (all query types)
+- Concurrent publish
+- Context cancellation
+- Resource limits
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 10: Extended Application Interfaces
+
+**Status:** Complete
+**Date:** January 27, 2026
+
+### Summary
+
+Implemented three extended application interfaces that provide advanced functionality for state sync, block proposals, and finality with vote extensions.
+
+### Files Created
+
+1. **abi/errors.go** - Common ABI errors
+   - `ErrNotImplemented`, `ErrSnapshotNotFound`, `ErrChunkNotFound`
+   - `ErrInvalidSnapshot`, `ErrInvalidChunk`, `ErrStateSyncInProgress`
+   - `ErrProposalRejected`, `ErrVoteExtensionInvalid`
+
+2. **abi/application_snapshot.go** - State sync via snapshots
+   - `SnapshotApplication` interface extending `Application`
+   - `Snapshot` type with Height, Format, Chunks, Hash, Metadata
+   - `OfferResult` enum (Accept, Abort, Reject, RejectFormat, RejectSender)
+   - `ApplyResult` enum (Accept, Abort, Retry, RetrySnapshot, RejectSnapshot)
+   - `BaseSnapshotApplication` with fail-closed defaults
+
+3. **abi/application_proposer.go** - Block proposal customization
+   - `ProposerApplication` interface extending `Application`
+   - `PrepareRequest` and `PrepareResponse` for PrepareProposal
+   - `ProcessRequest` and `ProcessResponse` for ProcessProposal
+   - `ProcessStatus` enum (Accept, Reject)
+   - `CommitInfo` and `VoteInfo` types for commit information
+   - `Misbehavior` and `MisbehaviorType` for validator misbehavior
+   - `BaseProposerApplication` with pass-through defaults
+
+4. **abi/application_finality.go** - Vote extensions and finality
+   - `FinalityApplication` interface extending `Application`
+   - `ExtendVoteRequest` and `ExtendVoteResponse` for vote extensions
+   - `VerifyVoteExtRequest` and `VerifyVoteExtResponse` for verification
+   - `VerifyStatus` enum (Accept, Reject)
+   - `FinalizeBlockRequest` and `FinalizeBlockResponse` for block finalization
+   - `ExtendedCommitInfo` and `ExtendedVoteInfo` with vote extensions
+   - `BaseFinalityApplication` with accepting defaults
+
+5. **abi/application_extended_test.go** - Comprehensive tests
+   - Tests for all three extended interfaces
+   - Tests for all types and enums
+   - Tests for base implementations
+   - Tests for error definitions
+
+### Key Design Decisions
+
+1. **Interface Composition**: Each extended interface embeds the base `Application` interface, allowing applications to implement only the features they need.
+
+2. **Base Implementations**: Each interface has a corresponding base implementation:
+   - `BaseSnapshotApplication` - fail-closed (rejects all snapshots)
+   - `BaseProposerApplication` - pass-through (accepts all proposals)
+   - `BaseFinalityApplication` - accepting (accepts all vote extensions)
+
+3. **Deferred Reactor Integration**: The actual reactor implementations (snapshot sync reactor, consensus engine integration) are deferred to future phases to keep the ABI layer clean.
+
+4. **Comprehensive Types**: All request/response types are fully defined with proper documentation, enabling clear contracts between the framework and applications.
+
+### Test Results
+
+All tests pass with race detection:
+- SnapshotApplication tests (5 subtests)
+- ProposerApplication tests (8 subtests)
+- FinalityApplication tests (7 subtests)
+- Error definition tests
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 11: Developer Experience (Partial)
+
+**Status:** In Progress
+**Date:** January 27, 2026
+
+### Summary
+
+Implemented the RPC server interface and JSON-RPC 2.0 transport layer, along with the TxIndexer interface for transaction indexing. CLI tooling and gRPC transport are deferred to future work.
+
+### Files Created
+
+1. **rpc/types.go** - RPC response types
+   - `NodeStatus`, `NodeInfo`, `SyncInfo`, `ValidatorInfo` - Node status types
+   - `HealthStatus`, `HealthCheck` - Health monitoring types
+   - `BroadcastMode`, `BroadcastResult` - Transaction broadcast types
+   - `PeerInfo`, `BlockResult`, `BlockID`, `PartSetHeader` - Block types
+   - `TxResult`, `ConsensusState`, `NetInfo` - Query result types
+
+2. **rpc/server.go** - RPC Server interface
+   - `Server` interface extending `types.Component`
+   - Full method set: Health, Status, NetInfo, BroadcastTx, Query, Block, BlockByHash, Tx, TxSearch, Peers, ConsensusState, Subscribe, Unsubscribe, UnsubscribeAll
+   - `Handler` interface for transport-agnostic RPC handling
+   - `ServerConfig` with configurable limits and TLS support
+   - `RPCError` type with standard JSON-RPC error codes
+
+3. **rpc/jsonrpc/types.go** - JSON-RPC 2.0 types
+   - `Request`, `Response`, `Error` types per JSON-RPC 2.0 spec
+   - Standard error codes (ParseError, InvalidRequest, MethodNotFound, InvalidParams, InternalError)
+   - `BatchRequest`, `BatchResponse` for batch operations
+   - Helper functions: `NewResponse`, `NewErrorResponse`, `NewErrorWithData`
+
+4. **rpc/jsonrpc/server.go** - JSON-RPC server implementation
+   - `Server` struct wrapping `rpc.Server` interface
+   - HTTP handler with POST method enforcement
+   - Batch request support
+   - Method handlers for all RPC methods:
+     - Health/status: health, status, net_info
+     - Transaction: broadcast_tx_sync, broadcast_tx_async, broadcast_tx_commit
+     - Query: abci_query, block, block_by_hash, tx, tx_search
+     - Consensus: consensus_state, peers
+     - Subscription: subscribe, unsubscribe, unsubscribe_all
+   - Query parsing for subscription filters (parseQuery)
+
+5. **abi/indexer.go** - Transaction indexer interface
+   - `TxIndexer` interface: Index, Get, Search, Delete, Has, Batch
+   - `TxIndexResult` containing hash, height, index, and execution result
+   - `TxIndexBatch` for batched operations
+   - `BlockIndexer` interface for block event indexing
+   - `IndexerConfig` for configurable indexer settings
+   - `NullTxIndexer` no-op implementation
+   - Indexer errors: ErrTxNotFound, ErrInvalidQuery, ErrIndexFull, ErrIndexCorrupted
+
+6. **abi/indexer_test.go** - Indexer tests
+   - Tests for NullTxIndexer (Index, Get, Search, Delete, Has, Batch)
+   - Tests for IndexError error messages
+   - Tests for IndexerConfig defaults
+   - Tests for TxIndexResult fields
+
+7. **rpc/jsonrpc/server_test.go** - JSON-RPC server tests
+   - Mock RPC server implementation
+   - Server lifecycle tests (Start/Stop)
+   - Method handler tests (28 tests covering all methods)
+   - HTTP handler tests (POST, batch, invalid JSON)
+   - Error handling tests (method not found, invalid version, invalid params)
+   - Query parsing tests
+
+### Key Design Decisions
+
+1. **ABI Type Integration**: All RPC methods use ABI types directly (e.g., `abi.QueryResponse`, `abi.Event`, `abi.Query`).
+
+2. **Interface-based Design**: The `rpc.Server` interface allows different transport implementations (JSON-RPC, gRPC) to share the same business logic.
+
+3. **JSON-RPC 2.0 Compliance**: Full compliance with JSON-RPC 2.0 specification including batch requests and standard error codes.
+
+4. **Pluggable Indexing**: The `TxIndexer` interface allows different storage backends (LevelDB, PostgreSQL) with a no-op NullTxIndexer for nodes that don't need indexing.
+
+5. **Query Parsing**: Simple query string parsing for subscriptions supporting "type=", "key=value", and "all" patterns.
+
+### Test Results
+
+All tests pass with race detection:
+- NullTxIndexer tests (7 tests)
+- IndexError tests (4 subtests)
+- IndexerConfig tests
+- JSON-RPC server tests (28 tests)
+- HTTP handler tests
+- Query parsing tests (6 subtests)
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+### Deferred Work
+
+- gRPC transport implementation
+- CLI tooling (cobra-based)
+- LevelDB-based TxIndexer implementation
+- Search query language for indexer
+
+---
+
+## Phase 12: Security Hardening (Partial)
+
+**Status:** In Progress
+**Date:** January 27, 2026
+
+### Summary
+
+Implemented resource limits, rate limiting, connection tracking, and eclipse attack mitigation. Private key encryption and full limit enforcement are deferred to future work.
+
+### Files Created
+
+1. **abi/limits.go** - Resource limits and security interfaces
+   - `ResourceLimits` struct with transaction, block, message, connection, subscription, and rate limits
+   - `DefaultResourceLimits()` with sensible defaults
+   - `RateLimiter` interface for rate limiting implementations
+   - `RateLimiterConfig` with rate, interval, burst, cleanup settings
+   - `ConnectionLimiter` interface for connection tracking
+   - `EclipseMitigation` interface for eclipse attack protection
+   - `EclipseMitigationConfig` with subnet limits, source limits, outbound requirements
+   - `BandwidthLimiter` interface for bandwidth limiting
+   - Security errors: ErrRateLimited, ErrConnectionLimit, ErrEclipseRisk, etc.
+
+2. **abi/limits_test.go** - Tests for limits
+   - Tests for DefaultResourceLimits
+   - Tests for ResourceLimits.Validate()
+   - Tests for all config defaults
+   - Tests for all security errors
+
+3. **security/ratelimit.go** - Rate limiting implementations
+   - `TokenBucketLimiter` - Token bucket algorithm implementation
+   - `SlidingWindowLimiter` - Sliding window rate limiter
+   - `ConnectionTracker` - Connection count tracking and enforcement
+   - All implement their respective ABI interfaces
+
+4. **security/ratelimit_test.go** - Rate limiter tests
+   - Tests for TokenBucketLimiter (Allow, AllowN, Refill, Reset, MultipleKeys, Concurrent, Size)
+   - Tests for SlidingWindowLimiter (Allow, Window, Reset, Size)
+   - Tests for ConnectionTracker (Basic, InboundLimit, OutboundLimit, TotalLimit, Disconnect, Concurrent)
+
+5. **security/eclipse.go** - Eclipse attack mitigation
+   - `EclipseProtector` implementing `abi.EclipseMitigation`
+   - Subnet-based peer limiting
+   - Source-based peer tracking
+   - Outbound connection requirements
+   - Trusted peer management
+   - Peer diversity scoring
+   - Misbehavior tracking
+
+6. **security/eclipse_test.go** - Eclipse protection tests
+   - Tests for Basic functionality
+   - Tests for SubnetLimit enforcement
+   - Tests for OutboundRequirement
+   - Tests for TrustedPeers
+   - Tests for Misbehavior handling
+   - Tests for Disconnect cleanup
+   - Tests for Diversity scoring
+   - Tests for extractSubnet helper
+
+### Key Design Decisions
+
+1. **Interface-based Design**: All security components implement ABI interfaces, allowing easy replacement with custom implementations.
+
+2. **Token Bucket Algorithm**: Primary rate limiter uses token bucket for smooth rate limiting with burst support.
+
+3. **Sliding Window Alternative**: SlidingWindowLimiter provides an alternative for stricter rate limiting without burst behavior.
+
+4. **Eclipse Mitigation Strategy**:
+   - Limit peers from same /24 subnet
+   - Limit peers learned from same source
+   - Require minimum outbound connections
+   - Track and penalize misbehaving peers
+   - Trust well-behaved peers over time
+
+5. **Diversity Scoring**: Composite score (0-100) based on subnet diversity, source diversity, and inbound/outbound balance.
+
+### Test Results
+
+All 38 security tests pass with race detection:
+- TokenBucketLimiter tests (7 tests)
+- SlidingWindowLimiter tests (4 tests)
+- ConnectionTracker tests (6 tests)
+- EclipseProtector tests (10 tests)
+- Limits tests (11 tests)
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+### Deferred Work
+
+- Private key encryption
+- Full limit enforcement throughout codebase
+- Bandwidth limiting implementation
+- Performance optimization (Phase 13)
+- Observability/Metrics (Phase 13)
+
+---
+
+## Phase 13: Performance & Observability
+
+### Status: IN PROGRESS (January 27, 2026)
+
+### Completed Tasks
+
+1. **abi/metrics.go** - ABI Metrics interface
+   - `Metrics` interface with comprehensive metric methods
+   - Consensus metrics (height, round, step, block committed, block size)
+   - Mempool metrics (size, tx added/removed/rejected)
+   - Application metrics (BeginBlock, ExecuteTx, EndBlock, Commit, Query, CheckTx)
+   - Network metrics (peers, bytes sent/received, messages, errors)
+   - Storage metrics (block store height/size, state store operations)
+   - Sync metrics (progress, blocks received, duration)
+   - `NullMetrics` no-op implementation
+   - `MetricsConfig` configuration struct
+   - `HistogramBuckets` for histogram configuration
+   - Metric name constants for standardization
+   - Label name constants
+   - Tx removal/rejection reason constants
+
+2. **abi/metrics_test.go** - Metrics tests
+   - Tests for NullMetrics (Consensus, Mempool, App, Network, Storage, Sync)
+   - Tests for DefaultMetricsConfig and HistogramBuckets
+   - Tests for metric and label name constants
+   - Tests for tx removal/rejection reason uniqueness
+
+3. **abi/tracer.go** - Distributed tracing interface
+   - `Tracer` interface for distributed tracing
+   - `Span` interface for individual trace spans
+   - `SpanContext` for trace propagation with TraceID, SpanID, TraceFlags
+   - `SpanAttribute` for span attributes
+   - `Carrier` interface for context injection/extraction
+   - `MapCarrier` implementation
+   - `NullTracer` no-op implementation
+   - `nullSpan` no-op span implementation
+   - `StatusCode` enum (Unset, OK, Error)
+   - `SpanKind` enum (Internal, Server, Client, Producer, Consumer)
+   - `SpanOption` and `spanConfig` for configuration
+   - `Link` for cross-trace linking
+   - `TracerConfig` configuration struct
+   - Standard span name constants (CheckTx, BeginBlock, ExecuteTx, etc.)
+   - Standard attribute key constants
+
+4. **abi/tracer_test.go** - Tracer tests
+   - Tests for NullTracer (StartSpan, SpanFromContext, Extract, Inject)
+   - Tests for nullSpan operations
+   - Tests for SpanContext (IsValid, IsSampled)
+   - Tests for MapCarrier
+   - Tests for SpanAttribute helpers
+   - Tests for StatusCode and SpanKind string methods
+   - Tests for DefaultTracerConfig
+   - Tests for span name and attribute key constants
+
+5. **metrics/abi_adapter.go** - Prometheus adapter for ABI Metrics
+   - `ABIMetricsAdapter` wrapping PrometheusMetrics
+   - Implements full `abi.Metrics` interface
+   - Bridges existing Prometheus metrics to new ABI interface
+   - `NewABIMetricsAdapter` factory function
+   - `NewABIMetricsAdapterFrom` for wrapping existing instances
+   - `Handler()` for HTTP metrics endpoint
+   - `Prometheus()` for direct access to underlying implementation
+
+6. **metrics/abi_adapter_test.go** - Adapter tests
+   - Tests for adapter creation
+   - Tests for all metric categories (Consensus, Mempool, App, Network, Storage, Sync)
+   - Tests for edge cases (zero target sync)
+   - Tests for interface compliance
+
+### Key Design Decisions
+
+1. **ABI-Centric Metrics**: The `abi.Metrics` interface is the primary contract. Existing implementations are adapted via `ABIMetricsAdapter`.
+
+2. **No-Op Implementations**: Both `NullMetrics` and `NullTracer` provide no-op implementations for testing and when observability is disabled.
+
+3. **OpenTelemetry-Compatible Tracing**: The `Tracer` and `Span` interfaces follow OpenTelemetry conventions for easy integration.
+
+4. **SpanAttribute vs Attribute**: Used `SpanAttribute` to avoid conflict with existing `Attribute` type in `abi/event.go`.
+
+5. **Standard Constants**: Defined standard span names and attribute keys for consistency across the codebase.
+
+### Test Results
+
+All metrics and tracer tests pass with race detection:
+- abi/metrics_test.go: 13 tests
+- abi/tracer_test.go: 17 tests
+- metrics/abi_adapter_test.go: 12 tests
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+### Deferred Work
+
+- OpenTelemetry integration
+- Jaeger/Zipkin export
+- Parallel block sync
+- Memory optimization
+
+---
+
+## KV Transaction Indexer
+
+### Status: COMPLETE (January 27, 2026)
+
+### Completed Tasks
+
+1. **indexer/kv/indexer.go** - LevelDB-based transaction indexer
+   - `TxIndexer` implementing `abi.TxIndexer` interface
+   - Primary index: transaction hash -> TxIndexResult (JSON)
+   - Secondary index: block height -> transaction hashes
+   - Secondary index: event attributes -> transaction hashes
+   - Search support:
+     - Height queries: `tx.height=100`, `tx.height>100`, etc.
+     - Event queries: `transfer.sender='alice'`
+   - Pagination with configurable page size
+   - Batch operations for efficient bulk indexing
+   - Configurable `indexAllEvents` option
+   - Thread-safe with mutex protection
+   - Proper cleanup of secondary indexes on delete
+
+2. **indexer/kv/indexer_test.go** - Comprehensive tests
+   - Basic CRUD operations (Index, Get, Has, Delete)
+   - Search by height (exact, >, >=, <, <=)
+   - Search by event attributes
+   - Pagination
+   - Invalid query handling
+   - Batch operations (Add, Delete, Commit, Discard)
+   - Close behavior
+   - Edge cases (nil input, empty hash)
+   - IndexAllEvents configuration
+
+### Key Design Decisions
+
+1. **JSON Serialization**: Transaction results are stored as JSON for simplicity and debuggability. Binary encoding could be used for better performance if needed.
+
+2. **Key Prefixes**: Different key prefixes (`th/`, `ht/`, `ev/`) separate the primary index from secondary indexes for efficient range scans.
+
+3. **Height Encoding**: Block heights are encoded as big-endian uint64 for proper lexicographic ordering in range queries.
+
+4. **Event Index Format**: Event indexes use the format `ev/<event_type>/<attr_key>/<attr_value>/<tx_hash>` for efficient prefix-based lookups.
+
+5. **Batch Processing**: Batch operations accumulate changes in memory and write atomically on commit for efficiency and consistency.
+
+### Test Results
+
+All 16 tests pass:
+- TestTxIndexer_IndexAndGet
+- TestTxIndexer_Get_NotFound
+- TestTxIndexer_Has
+- TestTxIndexer_Delete
+- TestTxIndexer_SearchByHeight (6 subtests)
+- TestTxIndexer_SearchByEvent
+- TestTxIndexer_SearchPagination
+- TestTxIndexer_SearchInvalidQuery (4 subtests)
+- TestTxIndexer_Batch
+- TestTxIndexer_BatchDelete
+- TestTxIndexer_BatchDiscard
+- TestTxIndexer_Close
+- TestTxIndexer_IndexNilResult
+- TestTxIndexer_IndexAllEvents
+- TestKeyConstruction (4 subtests)
+
+**Build Status**: Clean build, all tests pass.
+
+---
+
+## OpenTelemetry Integration
+
+### Status: COMPLETE (January 27, 2026)
+
+### Completed Tasks
+
+1. **tracing/otel/tracer.go** - OpenTelemetry Tracer implementation
+   - `Tracer` struct implementing `abi.Tracer` interface
+   - Wraps OpenTelemetry SDK's `trace.Tracer`
+   - `Span` struct implementing `abi.Span` interface
+   - `NewTracer(serviceName)` - Creates tracer using global provider
+   - `NewTracerWithProvider(serviceName, provider)` - Creates tracer with specific provider
+   - Methods: StartSpan, SpanFromContext, Extract, Inject
+   - Span methods: End, SetName, SetAttribute, SetAttributes, AddEvent, RecordError, SetStatus, IsRecording, SpanContext
+   - `carrierAdapter` for propagation context
+   - `convertAttribute` for ABI to OTel attribute conversion
+   - `convertSpanOptions` for span option conversion
+   - Support for all attribute types: string, int, int64, float64, bool, []byte, slices
+
+2. **tracing/otel/provider.go** - TracerProvider factory
+   - `ProviderConfig` with service name, version, environment, exporter settings
+   - `DefaultProviderConfig()` with sensible defaults
+   - `NewProvider(cfg)` - Creates TracerProvider with configured exporter
+   - `ProviderFromConfig(abi.TracerConfig)` - Creates provider from ABI config
+   - `SetupGlobalTracer(cfg)` - Sets up global tracer with shutdown function
+   - Exporter types:
+     - "otlp-grpc" / "otlp" - OTLP gRPC exporter
+     - "otlp-http" - OTLP HTTP exporter
+     - "stdout" - Pretty-printed stdout exporter
+     - "none" - No exporter (for testing)
+   - Sampler configuration: NeverSample, AlwaysSample, TraceIDRatioBased
+   - Propagation format: W3C TraceContext (default), B3 (fallback to W3C)
+
+3. **tracing/otel/tracer_test.go** - Tracer tests
+   - `createTestTracer` helper with in-memory exporter
+   - TestTracer_StartSpan - Span creation and recording
+   - TestTracer_SpanFromContext - Context-based span retrieval
+   - TestSpan_SetAttribute - Single attribute setting
+   - TestSpan_SetAttributes - Multiple attributes with ABI helpers
+   - TestSpan_AddEvent - Event addition with attributes
+   - TestSpan_RecordError - Error recording
+   - TestSpan_SetStatus - Status setting (OK, Error, Unset)
+   - TestSpan_SetName - Span name updates
+   - TestSpan_SpanContext - TraceID/SpanID validity
+   - TestCarrierAdapter - Get/Set/Keys operations
+   - TestTracer_ExtractInject - Context propagation round-trip
+   - TestConvertAttribute - All attribute type conversions
+   - TestNewTracer - Basic constructor
+   - TestInterfaceCompliance - Compile-time interface checks
+
+4. **tracing/otel/provider_test.go** - Provider tests
+   - TestDefaultProviderConfig - Default values verification
+   - TestNewProvider_None - No-exporter provider
+   - TestNewProvider_Stdout - Stdout exporter
+   - TestNewProvider_InvalidExporter - Error handling
+   - TestNewProvider_SampleRates - All sampling scenarios
+   - TestProviderFromConfig - ABI config conversion
+   - TestSetupGlobalTracer_Disabled - Disabled tracing
+   - TestSetupGlobalTracer_Enabled - Full tracing with span test
+   - TestSetupGlobalTracer_PropagationFormats - W3C, B3, unknown, empty
+
+### Key Design Decisions
+
+1. **Interface Compliance**: Both `Tracer` and `Span` implement their respective ABI interfaces, verified at compile time.
+
+2. **Carrier Adapter**: The `carrierAdapter` bridges ABI's `Carrier` interface to OTel's `propagation.TextMapCarrier`.
+
+3. **Attribute Conversion**: The `convertAttribute` function handles all common Go types with a fallback to string representation.
+
+4. **Schema URL Handling**: Resource creation avoids merging with `resource.Default()` to prevent schema URL conflicts between semconv versions.
+
+5. **Propagation**: W3C TraceContext is used by default with Baggage support.
+
+### Dependencies Added
+
+```
+go.opentelemetry.io/otel v1.37.0
+go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.37.0
+go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.37.0
+go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.37.0
+go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.37.0
+go.opentelemetry.io/otel/sdk v1.37.0
+go.opentelemetry.io/otel/sdk/trace v1.37.0
+```
+
+### Test Results
+
+All 26 tests pass:
+- tracing/otel/tracer_test.go: 14 tests
+- tracing/otel/provider_test.go: 12 tests (including subtests)
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## WebSocket Transport for EventBus
+
+### Status: COMPLETE (January 27, 2026)
+
+### Completed Tasks
+
+1. **rpc/websocket/server.go** - WebSocket server for event subscriptions
+   - `Server` struct implementing WebSocket connection management
+   - `Client` struct for individual client connection handling
+   - `Config` with customizable settings:
+     - ReadBufferSize, WriteBufferSize (default: 1024)
+     - MaxClients (default: 100)
+     - MaxSubscriptionsPerClient (default: 10)
+     - PingInterval (default: 30s)
+     - PongTimeout, WriteTimeout, ReadTimeout
+     - AllowedOrigins for CORS control
+   - Methods:
+     - `NewServer(eventBus, cfg)` - Creates WebSocket server
+     - `Start()/Stop()/IsRunning()` - Lifecycle management
+     - `Handler()` - Returns http.Handler for mounting
+     - `ClientCount()` - Returns connected client count
+   - Client message handling:
+     - `subscribe` - Subscribe to events with query
+     - `unsubscribe` - Unsubscribe from specific query
+     - `unsubscribe_all` - Unsubscribe from all queries
+   - Query parsing support:
+     - "all" or "*" -> QueryAll
+     - "type=EventType" -> QueryEventType
+     - "key=value" -> QueryAttribute
+     - Plain string -> QueryEventType
+
+2. **rpc/websocket/server_test.go** - Comprehensive tests (20 tests)
+   - TestDefaultConfig - Configuration defaults
+   - TestNewServer - Server creation
+   - TestServer_StartStop - Lifecycle (including double start/stop)
+   - TestServer_Handler - HTTP handler generation
+   - TestServer_ClientConnection - Client connection handling
+   - TestServer_MaxClients - Client limit enforcement
+   - TestServer_Subscribe - Subscription creation
+   - TestServer_ReceiveEvents - Event delivery to clients
+   - TestServer_Unsubscribe - Single subscription removal
+   - TestServer_UnsubscribeAll - All subscriptions removal
+   - TestServer_MaxSubscriptionsPerClient - Subscription limit
+   - TestServer_InvalidMessage - Invalid JSON handling
+   - TestServer_UnknownMethod - Unknown method error
+   - TestServer_ClientDisconnect - Client cleanup
+   - TestServer_StopDisconnectsClients - Server stop cleanup
+   - TestServer_ConcurrentSubscriptions - Multiple subscriptions
+   - TestParseQuery - Query string parsing (6 subtests)
+   - TestServer_AllowedOrigins - Origin restriction
+   - TestServer_AllowAllOrigins - Wildcard origin
+   - TestServer_NotRunning - Reject when stopped
+
+### Message Protocol (JSON-RPC 2.0)
+
+**Subscribe Request:**
+```json
+{"jsonrpc": "2.0", "id": 1, "method": "subscribe", "query": "type=NewBlock"}
+```
+
+**Subscribe Response:**
+```json
+{"jsonrpc": "2.0", "id": 1, "result": {"subscribed": true, "query": "type=NewBlock"}}
+```
+
+**Event Notification:**
+```json
+{"jsonrpc": "2.0", "result": {"query": "type=NewBlock", "event": {"type": "NewBlock", "attributes": [...]}}}
+```
+
+**Unsubscribe Request:**
+```json
+{"jsonrpc": "2.0", "id": 2, "method": "unsubscribe", "query": "type=NewBlock"}
+```
+
+### Key Design Decisions
+
+1. **JSON-RPC 2.0 Protocol**: Uses standard JSON-RPC 2.0 for consistency with the JSON-RPC HTTP transport.
+
+2. **Non-blocking Event Delivery**: Events are sent through a buffered channel. If the channel is full, events are dropped to prevent slow clients from blocking the system.
+
+3. **Automatic Ping/Pong**: The server sends periodic pings to detect dead connections and clients must respond with pongs.
+
+4. **Origin Checking**: Configurable allowed origins for WebSocket connections with support for wildcard ("*").
+
+5. **Resource Limits**: Configurable limits on max clients and max subscriptions per client prevent resource exhaustion.
+
+6. **Graceful Cleanup**: On client disconnect or server stop, all subscriptions are properly cleaned up from the EventBus.
+
+### Usage Example
+
+```go
+// Create EventBus
+bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+bus.Start()
+
+// Create WebSocket server
+wsCfg := websocket.DefaultConfig()
+wsServer := websocket.NewServer(bus, wsCfg)
+wsServer.Start()
+
+// Mount on HTTP server
+http.Handle("/websocket", wsServer.Handler())
+http.ListenAndServe(":8080", nil)
+```
+
+### Test Results
+
+All 20 tests pass with race detection.
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## WebSocket Implementation Update: gobwas/ws Migration
+
+**Status:** Complete (January 27, 2026)
+
+### Summary
+
+Migrated the WebSocket server from `github.com/gorilla/websocket` to `github.com/gobwas/ws` for improved performance and zero-allocation upgrades.
+
+### Files Modified
+
+- `rpc/websocket/server.go` - Migrated from gorilla/websocket to gobwas/ws
+- `rpc/websocket/server_test.go` - Updated tests to use gobwas/ws client
+- `go.mod` - Added gobwas/ws and gobwas/pool dependencies
+
+### Key Changes
+
+1. **Connection Type**: Changed from `*websocket.Conn` to `net.Conn` for the underlying connection.
+
+2. **Upgrade Handler**:
+   ```go
+   // Before (gorilla)
+   upgrader := websocket.Upgrader{...}
+   conn, err := upgrader.Upgrade(w, r, nil)
+
+   // After (gobwas)
+   upgrader := ws.HTTPUpgrader{...}
+   conn, _, _, err := upgrader.Upgrade(r, w)
+   ```
+
+3. **Message Reading/Writing**:
+   ```go
+   // Before (gorilla)
+   _, data, err := conn.ReadMessage()
+   conn.WriteMessage(websocket.TextMessage, data)
+
+   // After (gobwas)
+   data, op, err := wsutil.ReadClientData(conn)
+   wsutil.WriteServerMessage(conn, ws.OpText, data)
+   ```
+
+4. **Control Frames**: The gobwas/ws `wsutil.ReadClientData` automatically handles control frames internally, simplifying the read loop.
+
+5. **Test Client Updates**: Tests now use `ws.Dialer` for connecting and `wsutil.ReadServerData`/`wsutil.WriteClientMessage` for communication.
+
+### Benefits of gobwas/ws
+
+1. **Zero-allocation upgrades**: HTTP upgrade process doesn't allocate memory
+2. **Lower-level control**: Direct access to `net.Conn` for fine-grained management
+3. **Better performance**: Designed for high-concurrency WebSocket servers
+4. **Minimal memory overhead**: Ideal for high-throughput scenarios
+
+### Test Results
+
+All 20 tests pass with race detection:
+- TestDefaultConfig
+- TestNewServer
+- TestServer_StartStop
+- TestServer_Handler
+- TestServer_ClientConnection
+- TestServer_MaxClients
+- TestServer_Subscribe
+- TestServer_ReceiveEvents
+- TestServer_Unsubscribe
+- TestServer_UnsubscribeAll
+- TestServer_MaxSubscriptionsPerClient
+- TestServer_InvalidMessage
+- TestServer_UnknownMethod
+- TestServer_ClientDisconnect
+- TestServer_StopDisconnectsClients
+- TestServer_ConcurrentSubscriptions
+- TestParseQuery (6 subtests)
+- TestServer_AllowedOrigins
+- TestServer_AllowAllOrigins
+- TestServer_NotRunning
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## PEX Total Address Limit Implementation
+
+**Status:** Complete (January 27, 2026)
+
+### Summary
+
+Added a configurable maximum address limit to the PEX address book to prevent memory exhaustion attacks from malicious peers sending excessive address responses.
+
+### Files Modified
+
+- `config/config.go` - Added `MaxTotalAddresses` to `PEXConfig`
+- `config/config_test.go` - Added tests for new config field
+- `pex/address_book.go` - Added address limit enforcement with eviction
+- `pex/address_book_test.go` - Added comprehensive tests for limit enforcement
+- `pex/reactor.go` - Added per-response limit to `handleAddressResponse`
+
+### Key Changes
+
+1. **Config (`config/config.go`)**:
+   ```go
+   type PEXConfig struct {
+       // ... existing fields ...
+       MaxTotalAddresses int `toml:"max_total_addresses"`
+   }
+   ```
+   - Default: 1000 addresses
+   - Validation ensures positive value when PEX is enabled
+
+2. **AddressBook (`pex/address_book.go`)**:
+   - Added `NewAddressBookWithLimit(path, maxAddresses)` constructor
+   - `AddPeer()` now evicts oldest non-seed peer when at capacity
+   - `SetMaxAddresses()` allows runtime limit adjustment
+   - `MaxAddresses()` returns current limit (0 = unlimited)
+   - `evictOldestLocked()` finds and removes the oldest non-seed entry
+
+3. **Reactor (`pex/reactor.go`)**:
+   - `handleAddressResponse()` now limits how many addresses are accepted per response
+   - Prevents a single malicious peer from filling the address book
+
+### Eviction Policy
+
+When the address book is at capacity:
+1. Seed nodes are never evicted
+2. The oldest non-seed peer (by `LastSeen` timestamp) is removed
+3. New peer is then added
+
+### Test Coverage
+
+New tests added:
+- `TestNewAddressBookWithLimit` - Constructor with limit
+- `TestAddressBook_MaxAddresses_Unlimited` - Zero means no limit
+- `TestAddressBook_MaxAddresses_Enforced` - Eviction when at capacity
+- `TestAddressBook_MaxAddresses_UpdateExistingDoesNotEvict` - Updates don't trigger eviction
+- `TestAddressBook_MaxAddresses_SeedsNotEvicted` - Seeds are protected
+- `TestAddressBook_SetMaxAddresses` - Runtime limit changes
+- `TestAddressBook_SetMaxAddresses_Zero` - Switching to unlimited
+- `TestPEXConfigValidation/enabled_with_zero_max_total_addresses` - Config validation
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## CLI Tooling Implementation
+
+**Status:** Complete (January 27, 2026)
+
+### Summary
+
+Implemented a comprehensive command-line interface using the Cobra library for managing Blockberry nodes.
+
+### Files Created
+
+- `cmd/blockberry/main.go` - Entry point
+- `cmd/blockberry/root.go` - Root command and global flags
+- `cmd/blockberry/init.go` - Node initialization command
+- `cmd/blockberry/start.go` - Node startup command
+- `cmd/blockberry/status.go` - Status query command
+- `cmd/blockberry/keys.go` - Key management commands
+
+### Commands
+
+1. **`blockberry init`** - Initialize a new node
+   ```bash
+   blockberry init --chain-id mychain --moniker mynode --role full --data-dir ./node
+   ```
+   - Creates `config.toml` with default configuration
+   - Generates `node_key.json` Ed25519 keypair
+   - Creates data directories for blockstore and state
+   - Supports `--force` to override existing configuration
+
+2. **`blockberry start`** - Start the node
+   ```bash
+   blockberry start --config config.toml
+   ```
+   - Loads configuration from file
+   - Initializes logger based on config
+   - Creates and starts the node
+   - Handles graceful shutdown on SIGINT/SIGTERM
+
+3. **`blockberry status`** - Query node status
+   ```bash
+   blockberry status --rpc http://localhost:26657
+   blockberry status --json
+   ```
+   - Queries running node via JSON-RPC
+   - Displays chain info, sync status, peer counts
+   - Supports JSON output format
+
+4. **`blockberry keys`** - Key management
+   ```bash
+   blockberry keys generate [output-file]
+   blockberry keys show <key-file>
+   ```
+   - Generate new Ed25519 keypairs
+   - Display public key and node ID from key files
+
+5. **`blockberry version`** - Version information
+   ```bash
+   blockberry version
+   ```
+   - Displays version, git commit, and build time
+   - Version info can be set at build time via ldflags
+
+### Global Flags
+
+- `--config, -c` - Config file path (default: "config.toml")
+- `--verbose, -v` - Enable verbose output
+- `--help, -h` - Help for any command
+
+### Key Features
+
+1. **Cobra Framework**: Industry-standard CLI library with automatic help generation, shell completion, and subcommand support.
+
+2. **Graceful Shutdown**: The `start` command handles SIGINT/SIGTERM signals for clean node shutdown.
+
+3. **Configurable Logging**: Logger is initialized based on config file settings (level, format, output).
+
+4. **Secure Key Generation**: Node keys are generated with crypto/rand and stored with 0600 permissions.
+
+5. **Build-time Version**: Version info can be injected at build time:
+   ```bash
+   go build -ldflags "-X main.Version=1.0.0 -X main.GitCommit=$(git rev-parse HEAD)" ./cmd/blockberry
+   ```
+
+### Example Workflow
+
+```bash
+# Initialize a new full node
+blockberry init --chain-id mainnet --moniker my-node --data-dir ./node
+
+# View the generated key
+blockberry keys show ./node/node_key.json
+
+# Start the node
+blockberry start --config ./node/config.toml
+
+# In another terminal, check status
+blockberry status --rpc http://localhost:26657
+```
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 9 (Continued): Softer Blacklist Policy for PEX
+
+**Status:** Complete (January 27, 2026)
+
+### Summary
+
+Implemented a temporary ban system as an alternative to permanent blacklisting for recoverable peer violations such as chain ID or version mismatches.
+
+### Files Modified
+
+- `p2p/network.go` - Added temp ban data structures and methods
+- `p2p/network_test.go` - Added tests for temp ban functionality
+- `handlers/handshake.go` - Updated to use temp bans for chain/version mismatch
+
+### Implementation Details
+
+1. **TempBanEntry Structure**
+   ```go
+   type TempBanEntry struct {
+       ExpiresAt time.Time
+       Reason    string
+   }
+   ```
+
+2. **Network Methods**
+   - `TempBanPeer(peerID, duration, reason)` - Temporarily ban a peer with automatic disconnect
+   - `IsTempBanned(peerID)` - Check if a peer is currently temp banned
+   - `GetTempBanReason(peerID)` - Get the reason for a temp ban
+   - `CleanupExpiredTempBans()` - Remove expired bans from memory
+
+3. **Ban Durations**
+   - Chain ID mismatch: 1 hour temp ban (node may have reconnected to wrong chain)
+   - Version mismatch: 30 minute temp ban (node may upgrade and retry)
+
+4. **Behavior Changes**
+   - Previously: Chain/version mismatches resulted in permanent blacklist
+   - Now: These violations result in temporary bans allowing reconnection after expiry
+   - Peer is still disconnected immediately and recorded in scoring system
+
+### Test Coverage
+
+- Direct temp bans map testing
+- Cleanup logic for expired bans
+- IsTempBanned logic verification
+- All tests pass with race detection
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---
+
+## Phase 10: Snapshot Sync Reactor
+
+**Status:** Complete (January 27, 2026)
+
+### Summary
+
+Implemented a state sync reactor that enables nodes to bootstrap from snapshots instead of replaying all blocks from genesis. This significantly reduces the time required to bring new nodes online.
+
+### Files Created
+
+- `sync/statesync.go` - State sync reactor implementation
+- `sync/statesync_test.go` - Comprehensive tests for state sync reactor
+
+### Files Modified
+
+- `blockberry.cram` - Added state sync message definitions
+- `schema/blockberry.go` - Regenerated cramberry code with new messages
+- `p2p/network.go` - Added `StreamStateSync` constant and updated `AllStreams()`
+- `p2p/network_test.go` - Updated tests for new stream constant
+- `config/config.go` - Added `StateSyncConfig` struct and validation
+
+### Schema Messages
+
+Added new cramberry messages for state sync protocol:
+
+```
+message SnapshotsRequest {
+  required int64 min_height = 1;
+}
+
+message SnapshotMetadata {
+  required int64 height = 1;
+  required bytes hash = 2;
+  required int32 chunks = 3;
+  required bytes app_hash = 4;
+  int64 created_at = 5;
+}
+
+message SnapshotsResponse {
+  repeated SnapshotMetadata snapshots = 1;
+}
+
+message SnapshotChunkRequest {
+  required bytes snapshot_hash = 1;
+  required int32 chunk_index = 2;
+}
+
+message SnapshotChunkResponse {
+  required bytes snapshot_hash = 1;
+  required int32 chunk_index = 2;
+  required bytes data = 3;
+  required bytes chunk_hash = 4;
+}
+
+interface StateSyncMessage {
+  144 = SnapshotsRequest;
+  145 = SnapshotsResponse;
+  146 = SnapshotChunkRequest;
+  147 = SnapshotChunkResponse;
+}
+```
+
+### Configuration
+
+Added `StateSyncConfig` with the following options:
+
+```go
+type StateSyncConfig struct {
+    Enabled             bool     // Enable state sync
+    TrustHeight         int64    // Block height to trust
+    TrustHash           string   // Block hash at trust height
+    DiscoveryInterval   Duration // Time between snapshot discovery requests
+    ChunkRequestTimeout Duration // Timeout for chunk requests
+    MaxChunkRetries     int      // Max retries per chunk
+    SnapshotPath        string   // Directory for downloaded snapshots
+}
+```
+
+### State Sync Reactor Features
+
+1. **Snapshot Discovery**
+   - Queries connected peers for available snapshots
+   - Filters snapshots by minimum height (trust height)
+   - Selects best snapshot (highest height, matching trust hash if specified)
+
+2. **State Machine**
+   - `StateSyncIdle` - Not active
+   - `StateSyncDiscovering` - Discovering available snapshots
+   - `StateSyncDownloading` - Downloading snapshot chunks
+   - `StateSyncApplying` - Applying snapshot to state store
+   - `StateSyncComplete` - Successfully completed
+   - `StateSyncFailed` - Failed with error
+
+3. **Chunk Management**
+   - Parallel chunk downloads from multiple peers
+   - Automatic retry with configurable limits
+   - Timeout handling for stalled requests
+   - SHA256 verification of chunk integrity
+
+4. **Peer Integration**
+   - `OnPeerConnected` - Request snapshots from new peers during discovery
+   - `OnPeerDisconnected` - Clean up pending requests from disconnected peers
+
+5. **Callbacks**
+   - `SetOnComplete(fn)` - Called when state sync completes successfully
+   - `SetOnFailed(fn)` - Called when state sync fails
+
+### Type IDs
+
+```go
+TypeIDSnapshotsRequest      = 144
+TypeIDSnapshotsResponse     = 145
+TypeIDSnapshotChunkRequest  = 146
+TypeIDSnapshotChunkResponse = 147
+```
+
+### Test Coverage
+
+- Reactor lifecycle (start/stop)
+- Progress tracking
+- Message encoding/decoding
+- Snapshot discovery and selection
+- Trust height/hash validation
+- Peer disconnect handling
+- Callback invocation
+- Invalid message handling
+
+### Example Usage
+
+```go
+// Create state sync reactor
+reactor := sync.NewStateSyncReactor(
+    network,
+    peerManager,
+    snapshotStore,
+    trustHeight,      // e.g., 100000
+    trustHash,        // e.g., []byte("...")
+    10*time.Second,   // discovery interval
+    30*time.Second,   // chunk timeout
+    3,                // max retries
+)
+
+// Set completion callback
+reactor.SetOnComplete(func(height int64, appHash []byte) {
+    log.Info("State sync complete", "height", height)
+    // Start normal block sync from this height
+})
+
+// Start state sync
+reactor.Start()
+
+// Check progress
+progress := reactor.Progress() // 0-100
+```
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---

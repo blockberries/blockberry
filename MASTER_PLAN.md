@@ -1,427 +1,724 @@
 # Blockberry Master Plan
 
-This document supersedes `ROADMAP.md` and provides a comprehensive plan to transform blockberry into a fully pluggable blockchain node framework. The goal is to enable combining **cramberry** (serialization), **glueberry** (networking), **looseberry** (DAG mempool), **blockberry** (node framework), and a **pluggable consensus engine** to build production blockchain applications.
+This document supersedes `ROADMAP.md` and provides a comprehensive plan to transform blockberry into a fully pluggable blockchain node framework built around the **Application Blockchain Interface (ABI) v2.0**. The ABI is the central contract between the blockchain framework and application logic, providing clean separation of concerns and maximum flexibility.
+
+See **ABI_DESIGN.md** for the complete ABI v2.0 specification.
 
 ---
 
 ## Vision
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                         Blockchain Application                           │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────────────┐  │
-│  │ Pluggable       │  │ Pluggable       │  │ Application Logic       │  │
-│  │ Consensus       │  │ Mempool         │  │ (State Machine)         │  │
-│  │ (BFT, PoS, etc) │  │ (Looseberry,    │  │                         │  │
-│  │                 │  │  Simple, etc)   │  │                         │  │
-│  └────────┬────────┘  └────────┬────────┘  └────────────┬────────────┘  │
-│           │                    │                        │               │
-│  ┌────────┴────────────────────┴────────────────────────┴────────────┐  │
-│  │                         BLOCKBERRY                                 │  │
-│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐   │  │
-│  │  │ P2P      │  │ Block    │  │ State    │  │ Stream Registry  │   │  │
-│  │  │ Manager  │  │ Store    │  │ Store    │  │ (Dynamic Streams)│   │  │
-│  │  └────┬─────┘  └──────────┘  └──────────┘  └──────────────────┘   │  │
-│  └───────┼───────────────────────────────────────────────────────────┘  │
-│          │                                                               │
-│  ┌───────┴───────────────────────────────────────────────────────────┐  │
-│  │                         GLUEBERRY                                  │  │
-│  │              (Encrypted P2P with Dynamic Streams)                  │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-│                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │                         CRAMBERRY                                  │  │
-│  │              (Binary Serialization with Polymorphism)              │  │
-│  └───────────────────────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         Blockchain Application                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                     APPLICATION INTERFACE (ABI)                         ││
+│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────────┐   ││
+│  │  │ CheckTx     │ │ BeginBlock  │ │ ExecuteTx   │ │ Query           │   ││
+│  │  │ Commit      │ │ EndBlock    │ │ InitChain   │ │ Info            │   ││
+│  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────────┘   ││
+│  │  ┌─────────────────────────────────────────────────────────────────┐   ││
+│  │  │              Extended Interfaces (Optional)                      │   ││
+│  │  │  Snapshot · Proposer · Finality · VoteExtension                  │   ││
+│  │  └─────────────────────────────────────────────────────────────────┘   ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                         BLOCKBERRY CORE                                 ││
+│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐   ││
+│  │  │ MempoolEngine │  │ConsensusEngine│  │ Component Lifecycle       │   ││
+│  │  │ (Pluggable)   │  │ (Pluggable)   │  │ (Start/Stop/IsRunning)    │   ││
+│  │  └───────────────┘  └───────────────┘  └───────────────────────────┘   ││
+│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐   ││
+│  │  │ BlockStore    │  │ StateStore    │  │ EventBus                  │   ││
+│  │  │ (Pluggable)   │  │ (IAVL)        │  │ (Pub/Sub Events)          │   ││
+│  │  └───────────────┘  └───────────────┘  └───────────────────────────┘   ││
+│  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────────────────┐   ││
+│  │  │ Network       │  │ PeerScorer    │  │ CallbackRegistry          │   ││
+│  │  │ (Glueberry)   │  │ (Reputation)  │  │ (Extension Points)        │   ││
+│  │  └───────────────┘  └───────────────┘  └───────────────────────────┘   ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                         GLUEBERRY (P2P Layer)                           ││
+│  │              Encrypted Streams · Peer Discovery · Handshake             ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │                         CRAMBERRY (Serialization)                       ││
+│  │              Binary Protocol · Polymorphic Messages · Code Gen          ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
+
+---
+
+## ABI-Centric Architecture
+
+The ABI (Application Blockchain Interface) v2.0 is the **central contract** between the blockchain framework and applications. All major components implement ABI interfaces.
+
+**Important: ABI is the ONLY interface.** There is no backward compatibility with legacy interfaces. Applications MUST implement `abi.Application` directly. This simplifies the codebase, eliminates adapter complexity, and ensures all applications benefit from ABI v2.0's improved design.
+
+| Layer | ABI Interface | Purpose |
+|-------|---------------|---------|
+| Application | `Application` | Core app logic (CheckTx, ExecuteTx, Commit, Query) |
+| Application | `SnapshotApplication` | State sync via snapshots |
+| Application | `ProposerApplication` | Block proposal customization |
+| Application | `FinalityApplication` | Vote extensions and finality |
+| Mempool | `MempoolEngine` | Transaction pool management |
+| Mempool | `DAGMempoolEngine` | DAG-based ordering (Looseberry) |
+| Consensus | `ConsensusEngine` | Consensus algorithm plugin |
+| Consensus | `BFTConsensusEngine` | BFT-specific consensus |
+| Storage | `BlockStore` | Block persistence |
+| Storage | `StateStore` | Application state |
+| Events | `EventBus` | Pub/sub event system |
+| Lifecycle | `Component` | Start/Stop/IsRunning lifecycle |
 
 ---
 
 ## Table of Contents
 
 1. [Critical Fixes (Phase 0)](#phase-0-critical-fixes)
-2. [Pluggable Architecture Foundation (Phase 1)](#phase-1-pluggable-architecture-foundation)
-3. [Mempool Plugin System (Phase 2)](#phase-2-mempool-plugin-system)
-4. [Consensus Engine Framework (Phase 3)](#phase-3-consensus-engine-framework)
-5. [Node Role System (Phase 4)](#phase-4-node-role-system)
-6. [Dynamic Stream Registry (Phase 5)](#phase-5-dynamic-stream-registry)
-7. [Storage Enhancements (Phase 6)](#phase-6-storage-enhancements)
-8. [Developer Experience (Phase 7)](#phase-7-developer-experience)
-9. [Security Hardening (Phase 8)](#phase-8-security-hardening)
-10. [Performance & Observability (Phase 9)](#phase-9-performance--observability)
-11. [Ecosystem Integration (Phase 10)](#phase-10-ecosystem-integration)
-12. [Version Milestones](#version-milestones)
+2. [ABI Core Types (Phase 1)](#phase-1-abi-core-types)
+3. [Application Interface (Phase 2)](#phase-2-application-interface)
+4. [Pluggable Architecture (Phase 3)](#phase-3-pluggable-architecture)
+5. [MempoolEngine System (Phase 4)](#phase-4-mempoolengine-system)
+6. [ConsensusEngine Framework (Phase 5)](#phase-5-consensusengine-framework)
+7. [Node Role System (Phase 6)](#phase-6-node-role-system)
+8. [Dynamic Stream Registry (Phase 7)](#phase-7-dynamic-stream-registry)
+9. [Storage Enhancements (Phase 8)](#phase-8-storage-enhancements)
+10. [Event System (Phase 9)](#phase-9-event-system)
+11. [Extended Application Interfaces (Phase 10)](#phase-10-extended-application-interfaces)
+12. [Developer Experience (Phase 11)](#phase-11-developer-experience)
+13. [Security Hardening (Phase 12)](#phase-12-security-hardening)
+14. [Performance & Observability (Phase 13)](#phase-13-performance--observability)
+15. [Ecosystem Integration (Phase 14)](#phase-14-ecosystem-integration)
+16. [Version Milestones](#version-milestones)
 
 ---
 
 ## Phase 0: Critical Fixes
 
 **Priority: CRITICAL**
-**Effort: 1-2 weeks**
+**Status: ✅ COMPLETE (January 27, 2026)**
 
 These issues must be fixed before any other work. They represent security vulnerabilities, reliability issues, or design flaws that could cause production failures.
 
-### 0.1 Mandatory Block Validation
+### Progress Summary - ALL ITEMS COMPLETE
 
-**Issue:** Blocks are accepted without validation unless an external `BlockValidator` is set (sync/reactor.go:443). This is fail-open, not fail-closed.
+| Item | Status | Verification |
+|------|--------|--------------|
+| 0.1 Block Validation | ✅ **COMPLETE** | `sync/reactor.go:41-43, 125-149` - Fail-closed DefaultBlockValidator |
+| 0.2 Transaction Validation | ✅ **COMPLETE** | `mempool/ttl_mempool.go:198-205` - Fail-closed TxValidator |
+| 0.3 Block Height Continuity | ✅ **COMPLETE** | `sync/reactor.go` - Contiguity validation with peer penalties |
+| 0.4 Pending Requests Cleanup | ✅ **COMPLETE** | `handlers/transactions.go:167-170` - Timeout cleanup |
+| 0.5 Node Shutdown Race | ✅ **COMPLETE** | `node/node.go` - Atomic stopping flag + shutdown timeout |
+| 0.6 Handshake Timeout | ✅ **COMPLETE** | `handlers/handshake.go:155-191` - Timeout loop |
+| 0.7 Constant-Time Hash | ✅ **COMPLETE** | `types/hash.go:55-60` - `crypto/subtle.ConstantTimeCompare()` |
+| 0.8 Penalty Persistence | ✅ **COMPLETE** | `p2p/scoring.go:63-70, 238-250` - Wall-clock decay |
 
-**Fix:**
-```go
-// BlockValidator MUST be set, or use DefaultBlockValidator that rejects all
-type SyncReactorConfig struct {
-    BlockValidator BlockValidator // Required, no nil default
-}
+### Additional Critical Fixes from Code Review - ALL FIXED
 
-// DefaultBlockValidator rejects all blocks (fail-closed)
-var DefaultBlockValidator = func(height int64, hash, data []byte) error {
-    return errors.New("no block validator configured")
-}
-```
+| Issue | Status | Notes |
+|-------|--------|-------|
+| O(n²) bubble sort in ReapTxs | ✅ **FIXED** | `mempool/ttl_mempool.go:293-313` - Heap-based sorting |
+| Handshake state race condition | ✅ **FIXED** | `handlers/handshake.go:77-78` - Mutex protection |
+| Block hash collision detection | ✅ **FIXED** | `blockstore/leveldb.go:84-92` - Collision check |
 
-**Tasks:**
-- [ ] Make `BlockValidator` a required field in `SyncReactorConfig`
-- [ ] Add `DefaultBlockValidator` that rejects all blocks
-- [ ] Panic on `Start()` if validator is nil
-- [ ] Update all examples and tests to explicitly set validators
+### Remaining Operational Improvements (MEDIUM Priority)
 
-### 0.2 Mandatory Transaction Validation
+These are NOT blocking issues - they are operational conveniences:
 
-**Issue:** Mempool accepts transactions without semantic validation. The `Application.CheckTx()` interface exists but is never called.
-
-**Fix:**
-```go
-// Mempool requires a TxValidator
-type Mempool interface {
-    // SetTxValidator MUST be called before AddTx
-    SetTxValidator(validator TxValidator)
-    AddTx(tx []byte) error
-    // ...
-}
-
-type TxValidator func(tx []byte) error
-```
-
-**Tasks:**
-- [ ] Add `SetTxValidator()` to `Mempool` interface
-- [ ] Call validator in `AddTx()` before accepting
-- [ ] Default to reject-all validator if not set
-- [ ] Add `CheckTx` routing from `TransactionsReactor` through validator
-
-### 0.3 Block Height Continuity Check
-
-**Issue:** Blocks are stored at arbitrary heights without checking continuity (sync/reactor.go:424-427).
-
-**Fix:**
-```go
-func (r *SyncReactor) handleBlocksResponse(...) error {
-    // Blocks must be in order and contiguous
-    expectedHeight := r.blockStore.Height() + 1
-    for _, block := range resp.Blocks {
-        if *block.Height != expectedHeight {
-            return fmt.Errorf("non-contiguous block: expected %d, got %d",
-                expectedHeight, *block.Height)
-        }
-        // ... validate and store
-        expectedHeight++
-    }
-}
-```
-
-**Tasks:**
-- [ ] Add contiguity validation in `handleBlocksResponse`
-- [ ] Penalize peers who send non-contiguous blocks
-- [ ] Add gap detection and repair logic
-
-### 0.4 Unbounded Pending Requests Cleanup
-
-**Issue:** The `pendingRequests` map in `TransactionsReactor` grows unbounded (handlers/transactions.go:37).
-
-**Fix:**
-```go
-type TransactionsReactor struct {
-    pendingRequests map[peer.ID]map[string]time.Time
-    maxPendingAge   time.Duration // Default 60s
-}
-
-// In gossipLoop, periodically clean stale requests
-func (r *TransactionsReactor) cleanupStaleRequests() {
-    now := time.Now()
-    r.mu.Lock()
-    defer r.mu.Unlock()
-
-    for peerID, pending := range r.pendingRequests {
-        for txHash, requestTime := range pending {
-            if now.Sub(requestTime) > r.maxPendingAge {
-                delete(pending, txHash)
-            }
-        }
-        if len(pending) == 0 {
-            delete(r.pendingRequests, peerID)
-        }
-    }
-}
-```
-
-**Tasks:**
-- [ ] Add `maxPendingAge` configuration
-- [ ] Add periodic cleanup in gossip loop
-- [ ] Add metric for stale request count
-
-### 0.5 Race Condition in Node Shutdown
-
-**Issue:** The event loop may be processing messages when reactors are stopped (node/node.go:281-302).
-
-**Fix:**
-```go
-func (n *Node) Stop() error {
-    // 1. Stop accepting new connections
-    n.network.StopAcceptingConnections()
-
-    // 2. Signal event loop to stop
-    close(n.stopCh)
-    n.wg.Wait()  // Wait for event loop to drain
-
-    // 3. Now safe to stop reactors
-    _ = n.syncReactor.Stop()
-    // ...
-}
-```
-
-**Tasks:**
-- [ ] Add `StopAcceptingConnections()` to network
-- [ ] Ensure event loop drains before reactor shutdown
-- [ ] Add shutdown timeout to prevent hangs
-
-### 0.6 Handshake Timeout Enforcement
-
-**Issue:** `PeerHandshakeState.StartedAt` is never used for timeout cleanup (handlers/handshake.go).
-
-**Fix:**
-```go
-// Add handshake timeout goroutine
-func (h *HandshakeHandler) Start() error {
-    go h.timeoutLoop()
-    return nil
-}
-
-func (h *HandshakeHandler) timeoutLoop() {
-    ticker := time.NewTicker(5 * time.Second)
-    defer ticker.Stop()
-
-    for {
-        select {
-        case <-h.stopCh:
-            return
-        case <-ticker.C:
-            h.cleanupStaleHandshakes()
-        }
-    }
-}
-
-func (h *HandshakeHandler) cleanupStaleHandshakes() {
-    h.mu.Lock()
-    defer h.mu.Unlock()
-
-    now := time.Now()
-    for peerID, state := range h.states {
-        if state.State != StateComplete && now.Sub(state.StartedAt) > h.timeout {
-            delete(h.states, peerID)
-            _ = h.network.Disconnect(peerID)
-        }
-    }
-}
-```
-
-**Tasks:**
-- [ ] Add `Start()`/`Stop()` lifecycle to `HandshakeHandler`
-- [ ] Implement timeout cleanup loop
-- [ ] Disconnect peers with stale handshakes
-
-### 0.7 Constant-Time Hash Comparison
-
-**Issue:** Hash comparisons use string conversion which is timing-vulnerable (sync/reactor.go:431).
-
-**Fix:**
-```go
-import "crypto/subtle"
-
-// Replace:
-// if string(computedHash) != string(block.Hash) {
-
-// With:
-if subtle.ConstantTimeCompare(computedHash, block.Hash) != 1 {
-    // Hash mismatch
-}
-```
-
-**Tasks:**
-- [ ] Replace all `string(hash)` comparisons with `subtle.ConstantTimeCompare`
-- [ ] Add `types.HashEqual()` helper function
-- [ ] Audit all hash comparison sites
-
-### 0.8 Penalty Persistence and Decay Fix
-
-**Issue:** Penalties only decay for connected peers; disconnected peers never decay (p2p/scoring.go:162).
-
-**Fix:**
-```go
-type PeerScorer struct {
-    // Persist penalty history
-    penaltyHistory map[peer.ID]PenaltyRecord
-    persistPath    string
-}
-
-type PenaltyRecord struct {
-    Points       int64
-    LastDecay    time.Time
-    BanCount     int
-    LastBanEnd   time.Time
-}
-
-func (ps *PeerScorer) GetPenaltyPoints(peerID peer.ID) int64 {
-    // Calculate decayed points based on time since last decay
-    record := ps.penaltyHistory[peerID]
-    elapsed := time.Since(record.LastDecay)
-    decayedPoints := record.Points - int64(elapsed.Hours()) * PenaltyDecayRate
-    if decayedPoints < 0 {
-        decayedPoints = 0
-    }
-    return decayedPoints
-}
-```
-
-**Tasks:**
-- [ ] Persist penalty history to address book
-- [ ] Calculate decay based on wall-clock time
-- [ ] Load penalty history on startup
-- [ ] Add configurable decay rate
+| Issue | Priority | Notes |
+|-------|----------|-------|
+| PEX total address limit | MEDIUM | Has `MaxAddressesPerResponse` but no total limit. Low risk. |
+| Softer blacklist policy | MEDIUM | Uses permanent blacklist for chain/version mismatch. Operational issue only. |
 
 ---
 
-## Phase 1: Pluggable Architecture Foundation
+## Phase 1: ABI Core Types
 
-**Priority: HIGH**
-**Effort: 2-3 weeks**
+**Priority: CRITICAL**
+**Status: ✅ COMPLETE (January 2026)**
 
-Establish the foundational patterns for pluggable components. This phase sets up the dependency injection framework and lifecycle management that all plugins will use.
+Implement all core ABI types that form the foundation of the interface contract. These types are used throughout the system by all components.
 
-### 1.1 Component Interface Pattern
-
-Define the standard interface pattern all pluggable components must follow:
+### 1.1 Result Codes and Errors
 
 ```go
-// Component is the base interface for all pluggable components.
+// abi/codes.go
+
+// ResultCode for transaction processing.
+type ResultCode uint32
+
+const (
+    CodeOK                  ResultCode = 0
+    CodeUnknownError        ResultCode = 1
+    CodeInvalidTx           ResultCode = 2
+    CodeInsufficientFunds   ResultCode = 3
+    CodeInvalidNonce        ResultCode = 4
+    CodeInsufficientGas     ResultCode = 5
+    CodeNotAuthorized       ResultCode = 6
+    CodeInvalidState        ResultCode = 7
+    // 100-999: App-specific codes
+)
+
+func (c ResultCode) IsOK() bool { return c == CodeOK }
+func (c ResultCode) String() string
+```
+
+**Tasks:**
+- [x] Create `abi/codes.go` with ResultCode enum
+- [x] Add helper methods (IsOK, String)
+- [x] Document error code ranges for applications
+
+### 1.2 Transaction Types
+
+```go
+// abi/transaction.go
+
+// Transaction represents a blockchain transaction.
+type Transaction struct {
+    Hash      []byte            // SHA-256 hash
+    Data      []byte            // Raw transaction bytes (opaque to framework)
+    Sender    []byte            // Optional: extracted sender (for dedup)
+    Nonce     uint64            // Optional: sequence number (for ordering)
+    GasLimit  uint64            // Optional: max computation units
+    GasPrice  uint64            // Optional: price per unit
+    Priority  int64             // Derived priority (higher = more important)
+    Metadata  map[string]any    // App-populated metadata
+}
+
+// CheckTxMode indicates the context of transaction validation.
+type CheckTxMode int
+
+const (
+    CheckTxNew       CheckTxMode = iota  // New transaction from client/peer
+    CheckTxRecheck                        // Re-validate after block commit
+    CheckTxRecovery                       // Recovery from crash/restart
+)
+
+// TxCheckResult is returned from CheckTx.
+type TxCheckResult struct {
+    Code         ResultCode
+    Error        error
+    GasWanted    uint64
+    Priority     int64
+    Sender       []byte
+    Nonce        uint64
+    Data         []byte           // Optional: modified transaction
+    RecheckAfter uint64           // Suggest re-check after this height
+    ExpireAfter  time.Duration    // Suggest expiration time
+}
+
+// TxExecResult is returned from ExecuteTx during block execution.
+type TxExecResult struct {
+    Code         ResultCode
+    Error        error
+    GasUsed      uint64
+    Events       []Event
+    Data         []byte           // Return data
+    StateChanges []StateChange    // For indexing
+}
+```
+
+**Tasks:**
+- [x] Create `abi/transaction.go`
+- [x] Implement Transaction struct with all fields
+- [x] Implement TxCheckResult and TxExecResult
+- [x] Add validation methods
+
+### 1.3 Block Types
+
+```go
+// abi/block.go
+
+// BlockHeader contains block metadata passed to BeginBlock.
+type BlockHeader struct {
+    Height          uint64
+    Time            time.Time
+    PrevHash        []byte
+    ProposerAddress []byte
+    ConsensusData   []byte      // Opaque to application
+    Evidence        []Evidence  // Misbehavior evidence
+    LastValidators  []Validator
+}
+
+// EndBlockResult contains application responses to block finalization.
+type EndBlockResult struct {
+    ValidatorUpdates []ValidatorUpdate
+    ConsensusParams  *ConsensusParams
+    Events           []Event
+}
+
+// CommitResult contains the result of committing state.
+type CommitResult struct {
+    AppHash      []byte
+    RetainHeight uint64   // Suggested minimum height to retain
+}
+```
+
+**Tasks:**
+- [x] Create `abi/block.go`
+- [x] Implement BlockHeader, EndBlockResult, CommitResult
+- [x] Add Evidence and ValidatorUpdate types
+
+### 1.4 Event Types
+
+```go
+// abi/event.go
+
+// Event represents an application event.
+type Event struct {
+    Type       string
+    Attributes []Attribute
+}
+
+type Attribute struct {
+    Key   string
+    Value []byte
+    Index bool   // Should this be indexed?
+}
+
+// Common event types
+const (
+    EventNewBlock             = "NewBlock"
+    EventNewBlockHeader       = "NewBlockHeader"
+    EventTx                   = "Tx"
+    EventVote                 = "Vote"
+    EventCommit               = "Commit"
+    EventValidatorSetUpdates  = "ValidatorSetUpdates"
+    EventEvidence             = "Evidence"
+    EventTxAdded              = "TxAdded"
+    EventTxRemoved            = "TxRemoved"
+    EventTxRejected           = "TxRejected"
+    EventPeerConnected        = "PeerConnected"
+    EventPeerDisconnected     = "PeerDisconnected"
+    EventSyncStarted          = "SyncStarted"
+    EventSyncProgress         = "SyncProgress"
+    EventSyncCompleted        = "SyncCompleted"
+)
+```
+
+**Tasks:**
+- [x] Create `abi/event.go`
+- [x] Define Event and Attribute types
+- [x] Define standard event type constants
+
+### 1.5 Query Types
+
+```go
+// abi/query.go
+
+// QueryRequest for reading application state.
+type QueryRequest struct {
+    Path    string    // Query path (e.g., "/accounts/{address}")
+    Data    []byte    // Query-specific data
+    Height  uint64    // Historical height (0 = latest)
+    Prove   bool      // Include Merkle proof
+}
+
+// QueryResponse from Query.
+type QueryResponse struct {
+    Code    ResultCode
+    Error   error
+    Key     []byte
+    Value   []byte
+    Proof   *Proof    // Merkle proof (if requested)
+    Height  uint64    // Height at which query was executed
+}
+
+// Proof represents a Merkle proof.
+type Proof struct {
+    Ops []ProofOp
+}
+
+type ProofOp struct {
+    Type string
+    Key  []byte
+    Data []byte
+}
+```
+
+**Tasks:**
+- [x] Create `abi/query.go`
+- [x] Implement QueryRequest and QueryResponse
+- [x] Implement Proof types for Merkle proofs
+
+### 1.6 Genesis and Initialization Types
+
+```go
+// abi/genesis.go
+
+// Genesis contains chain initialization data.
+type Genesis struct {
+    ChainID         string
+    GenesisTime     time.Time
+    ConsensusParams *ConsensusParams
+    Validators      []Validator
+    AppState        []byte   // App-specific genesis state (opaque)
+}
+
+// ApplicationInfo provides metadata about the application.
+type ApplicationInfo struct {
+    Name     string
+    Version  string
+    AppHash  []byte
+    Height   uint64
+    Metadata map[string]any
+}
+```
+
+**Tasks:**
+- [x] Create `abi/genesis.go`
+- [x] Implement Genesis and ApplicationInfo types
+
+### 1.7 Validator Types
+
+```go
+// abi/validator.go
+
+// Validator represents a consensus validator.
+type Validator struct {
+    Address     []byte
+    PublicKey   []byte
+    VotingPower int64
+    Index       uint16
+}
+
+// ValidatorUpdate represents a change to the validator set.
+type ValidatorUpdate struct {
+    PublicKey   []byte
+    Power       int64   // 0 = remove validator
+}
+
+// ValidatorSet represents the set of validators.
+type ValidatorSet interface {
+    Validators() []*Validator
+    GetByIndex(index uint16) *Validator
+    GetByAddress(addr []byte) *Validator
+    Count() int
+    TotalVotingPower() int64
+    Proposer(height uint64, round uint32) *Validator
+    VerifySignature(validatorIdx uint16, digest, sig []byte) bool
+    Quorum() int64   // 2f+1
+    F() int          // Max Byzantine validators
+    Epoch() uint64
+    Copy() ValidatorSet
+}
+```
+
+**Tasks:**
+- [x] Create `abi/validator.go`
+- [x] Implement Validator and ValidatorUpdate types
+- [x] Define ValidatorSet interface
+
+---
+
+## Phase 2: Application Interface
+
+**Priority: CRITICAL**
+**Status: ✅ COMPLETE (January 2026)**
+
+Implement the core Application interface - the primary contract between the blockchain framework and application logic.
+
+### 2.1 Core Application Interface
+
+```go
+// abi/application.go
+
+// Application is the main interface applications must implement.
+// All methods are invoked by the framework; applications respond.
+type Application interface {
+    // Lifecycle
+    Info() ApplicationInfo
+    InitChain(genesis *Genesis) error
+
+    // Transaction Processing
+    CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
+
+    // Block Execution (strict ordering)
+    BeginBlock(ctx context.Context, block *BlockHeader) error
+    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
+    EndBlock(ctx context.Context) *EndBlockResult
+    Commit(ctx context.Context) *CommitResult
+
+    // State Access
+    Query(ctx context.Context, req *QueryRequest) *QueryResponse
+}
+```
+
+**Tasks:**
+- [x] Create `abi/application.go`
+- [x] Define Application interface
+- [x] Document method contracts and ordering guarantees
+
+### 2.2 Default Application Implementation
+
+```go
+// abi/base_application.go
+
+// BaseApplication provides default implementations that reject all operations.
+// This follows the fail-closed security principle.
+type BaseApplication struct{}
+
+func (app *BaseApplication) Info() ApplicationInfo {
+    return ApplicationInfo{Name: "base", Version: "0.0.0"}
+}
+
+func (app *BaseApplication) InitChain(genesis *Genesis) error {
+    return nil
+}
+
+func (app *BaseApplication) CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult {
+    return &TxCheckResult{
+        Code:  CodeNotAuthorized,
+        Error: errors.New("CheckTx not implemented"),
+    }
+}
+
+// ... other methods with fail-closed defaults
+```
+
+**Tasks:**
+- [x] Create `abi/base_application.go`
+- [x] Implement fail-closed defaults for all methods
+- [x] Add documentation about fail-closed principle
+
+### 2.3 Application Wrapper
+
+```go
+// abi/wrapper.go
+
+// ApplicationWrapper adds metrics, logging, and validation to any Application.
+type ApplicationWrapper struct {
+    app     Application
+    metrics Metrics
+    logger  Logger
+}
+
+func WrapApplication(app Application, opts ...WrapperOption) *ApplicationWrapper
+
+func (w *ApplicationWrapper) CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult {
+    start := time.Now()
+    defer func() {
+        w.metrics.AppCheckTx(time.Since(start), result.Code == CodeOK)
+    }()
+
+    // Validate transaction basic structure
+    if err := tx.ValidateBasic(); err != nil {
+        return &TxCheckResult{Code: CodeInvalidTx, Error: err}
+    }
+
+    return w.app.CheckTx(ctx, tx)
+}
+```
+
+**Tasks:**
+- [x] Create `abi/wrapper.go`
+- [x] Implement ApplicationWrapper with metrics
+- [x] Add logging for all methods
+- [x] Add basic validation before delegation
+
+### 2.4 Node-Application Integration
+
+```go
+// node/app_executor.go
+
+// AppExecutor manages the application lifecycle and execution.
+type AppExecutor struct {
+    app         Application
+    blockStore  BlockStore
+    stateStore  StateStore
+    eventBus    EventBus
+    mu          sync.RWMutex
+}
+
+// ExecuteBlock runs the full block execution cycle.
+func (e *AppExecutor) ExecuteBlock(ctx context.Context, block *Block) (*BlockResult, error) {
+    e.mu.Lock()
+    defer e.mu.Unlock()
+
+    // BeginBlock
+    if err := e.app.BeginBlock(ctx, &block.Header); err != nil {
+        return nil, fmt.Errorf("BeginBlock failed: %w", err)
+    }
+
+    // Execute transactions
+    var txResults []*TxExecResult
+    for _, tx := range block.Txs {
+        result := e.app.ExecuteTx(ctx, tx)
+        txResults = append(txResults, result)
+        e.eventBus.Publish(ctx, Event{Type: EventTx, Attributes: txToAttrs(tx, result)})
+    }
+
+    // EndBlock
+    endResult := e.app.EndBlock(ctx)
+
+    // Commit
+    commitResult := e.app.Commit(ctx)
+
+    return &BlockResult{
+        TxResults:        txResults,
+        ValidatorUpdates: endResult.ValidatorUpdates,
+        AppHash:          commitResult.AppHash,
+    }, nil
+}
+```
+
+**Tasks:**
+- [x] Create `node/app_executor.go`
+- [x] Implement ExecuteBlock with proper ordering
+- [x] Add event publishing for all operations
+- [x] Add crash recovery via WAL
+
+---
+
+## Phase 3: Pluggable Architecture
+
+**Priority: HIGH**
+**Status: ✅ COMPLETE (January 2026)**
+
+Establish the foundational patterns for pluggable components using ABI's Component interface.
+
+### 3.1 Component Interface (from ABI)
+
+```go
+// abi/component.go
+
+// Component is the base interface for all manageable components.
 type Component interface {
-    // Start initializes and starts the component.
-    // Must be idempotent (safe to call multiple times).
     Start() error
-
-    // Stop gracefully shuts down the component.
-    // Must be idempotent and safe to call even if not started.
     Stop() error
-
-    // IsRunning returns true if the component is running.
     IsRunning() bool
 }
 
-// ConfigurableComponent can be configured before starting.
-type ConfigurableComponent interface {
-    Component
-
-    // Validate checks the component's configuration.
-    Validate() error
+// Named components can report their name.
+type Named interface {
+    Name() string
 }
 
-// LifecycleAware components receive lifecycle events.
-type LifecycleAware interface {
-    // OnStart is called after all components are created but before Start().
-    OnStart() error
+// HealthChecker components can report health status.
+type HealthChecker interface {
+    Health() HealthStatus
+}
 
-    // OnStop is called before Stop() to prepare for shutdown.
+type HealthStatus struct {
+    Status    Health
+    Message   string
+    Details   map[string]any
+    Timestamp time.Time
+}
+
+type Health int
+const (
+    HealthUnknown Health = iota
+    HealthHealthy
+    HealthDegraded
+    HealthUnhealthy
+)
+
+// Dependent components declare their dependencies.
+type Dependent interface {
+    Dependencies() []string
+}
+
+// LifecycleAware components receive lifecycle notifications.
+type LifecycleAware interface {
+    OnStart() error
     OnStop() error
 }
-```
 
-**Tasks:**
-- [ ] Create `types/component.go` with base interfaces
-- [ ] Refactor all reactors to implement `Component`
-- [ ] Add lifecycle hooks for startup/shutdown coordination
-- [ ] Add component dependency graph for ordered startup
-
-### 1.2 Dependency Injection Container
-
-Create a simple DI container for component wiring:
-
-```go
-// Container manages component lifecycle and dependencies.
-type Container struct {
-    components map[string]Component
-    order      []string  // Startup order
-    started    bool
-    mu         sync.RWMutex
+// Resettable components can be reset to initial state.
+type Resettable interface {
+    Reset() error
 }
-
-// Register adds a component with its dependencies.
-func (c *Container) Register(name string, component Component, deps ...string) error
-
-// Get retrieves a component by name.
-func (c *Container) Get(name string) (Component, error)
-
-// StartAll starts all components in dependency order.
-func (c *Container) StartAll() error
-
-// StopAll stops all components in reverse dependency order.
-func (c *Container) StopAll() error
 ```
 
 **Tasks:**
-- [ ] Create `container/container.go`
-- [ ] Implement topological sort for dependency ordering
-- [ ] Add circular dependency detection
-- [ ] Integrate with Node startup/shutdown
+- [x] Create `abi/component.go` with ABI component interfaces
+- [x] Refactor all reactors to implement `Component`
+- [x] Add lifecycle hooks for startup/shutdown coordination
 
-### 1.3 Callback-Based Extensibility
-
-Adopt looseberry's callback pattern for component communication:
+### 3.2 Service Registry (from ABI)
 
 ```go
-// Callbacks allow components to communicate without tight coupling.
-type NodeCallbacks struct {
+// abi/registry.go
+
+// ServiceRegistry manages component lifecycle and dependencies.
+type ServiceRegistry interface {
+    Register(name string, component Component) error
+    Get(name string) (Component, error)
+    MustGet(name string) Component
+    StartAll() error
+    StopAll() error
+    Health() map[string]HealthStatus
+}
+```
+
+**Tasks:**
+- [x] Create `abi/registry.go` with ServiceRegistry interface
+- [x] Implement topological sort for dependency ordering
+- [x] Add circular dependency detection
+- [x] Integrate with Node startup/shutdown
+
+### 3.3 Callback Registry (from ABI)
+
+```go
+// abi/callbacks.go
+
+// CallbackRegistry manages application callbacks.
+type CallbackRegistry struct {
     // Transaction callbacks
-    OnTxReceived     func(peerID peer.ID, tx []byte)
-    OnTxValidated    func(tx []byte, err error)
-    OnTxBroadcast    func(tx []byte, peers []peer.ID)
+    OnTxReceived   func(peerID []byte, tx *Transaction)
+    OnTxValidated  func(tx *Transaction, result *TxCheckResult)
+    OnTxAdded      func(tx *Transaction)
+    OnTxRemoved    func(hash []byte, reason TxRemovalReason)
+    OnTxBroadcast  func(tx *Transaction, peerCount int)
 
     // Block callbacks
-    OnBlockReceived  func(peerID peer.ID, height int64, hash, data []byte)
-    OnBlockValidated func(height int64, hash []byte, err error)
-    OnBlockCommitted func(height int64, hash []byte)
+    OnBlockProposed    func(height uint64, hash []byte, txCount int)
+    OnBlockReceived    func(peerID []byte, height uint64, hash []byte)
+    OnBlockValidated   func(height uint64, hash []byte, err error)
+    OnBlockCommitted   func(height uint64, hash []byte, appHash []byte)
 
-    // Peer callbacks
-    OnPeerConnected    func(peerID peer.ID, isOutbound bool)
-    OnPeerHandshaked   func(peerID peer.ID, info *PeerInfo)
-    OnPeerDisconnected func(peerID peer.ID)
+    // Consensus callbacks
+    OnConsensusStateChange func(oldState, newState ConsensusState)
+    OnRoundChange          func(height uint64, round uint32)
+    OnVoteReceived         func(vote *Vote)
+    OnProposalReceived     func(proposal *Proposal)
 
-    // Consensus callbacks (set by consensus engine)
-    OnConsensusMessage func(peerID peer.ID, data []byte)
-    OnProposalReady    func(height int64) ([]byte, error)
-    OnVoteReady        func(height int64, round int32, voteType VoteType) ([]byte, error)
+    // Validator callbacks
+    OnValidatorSetChange func(height uint64, validators []Validator)
+    OnSlashingEvent      func(validator []byte, reason string, amount uint64)
+
+    // Network callbacks
+    OnPeerConnected    func(peerID []byte, isOutbound bool)
+    OnPeerDisconnected func(peerID []byte)
+    OnPeerScoreChanged func(peerID []byte, oldScore, newScore int)
 }
+
+type TxRemovalReason int
+const (
+    TxRemovalCommitted TxRemovalReason = iota
+    TxRemovalExpired
+    TxRemovalReplaced
+    TxRemovalInvalid
+    TxRemovalEvicted
+)
 ```
 
 **Tasks:**
-- [ ] Define callback types in `types/callbacks.go`
-- [ ] Add `SetCallbacks()` method to Node
-- [ ] Replace direct handler calls with callback invocations
-- [ ] Add callback nil-checks with no-op defaults
+- [x] Create `abi/callbacks.go`
+- [x] Implement CallbackRegistry with all callback types
+- [x] Add nil-check wrappers for safe invocation
+- [x] Replace direct handler calls with callback invocations
 
-### 1.4 Configuration Overhaul
-
-Restructure configuration for pluggable components:
+### 3.4 Configuration Overhaul
 
 ```go
+// config/config.go
+
 type Config struct {
     // Core configuration
     Node     NodeConfig     `toml:"node"`
@@ -430,9 +727,9 @@ type Config struct {
     // Role-specific configuration
     Role     NodeRole       `toml:"role"`  // validator, full, seed, light
 
-    // Pluggable component configuration
-    Mempool   MempoolConfig   `toml:"mempool"`
-    Consensus ConsensusConfig `toml:"consensus"`
+    // Pluggable component configuration (ABI-aligned)
+    Mempool   MempoolEngineConfig   `toml:"mempool"`
+    Consensus ConsensusEngineConfig `toml:"consensus"`
 
     // Storage configuration
     BlockStore BlockStoreConfig `toml:"blockstore"`
@@ -442,718 +739,542 @@ type Config struct {
     Streams  []StreamConfig  `toml:"streams"`
 }
 
-type MempoolConfig struct {
-    // Type selects the mempool implementation
-    Type string `toml:"type"`  // "simple", "priority", "ttl", "looseberry", "custom"
-
-    // Type-specific configuration (parsed based on Type)
-    Simple      *SimpleMempoolConfig      `toml:"simple,omitempty"`
-    Priority    *PriorityMempoolConfig    `toml:"priority,omitempty"`
-    TTL         *TTLMempoolConfig         `toml:"ttl,omitempty"`
-    Looseberry  *LooseberryConfig         `toml:"looseberry,omitempty"`
-}
-
-type ConsensusConfig struct {
-    // Type selects the consensus engine
-    Type string `toml:"type"`  // "none", "bft", "raft", "poa", "custom"
-
+type MempoolEngineConfig struct {
+    Type string `toml:"type"`  // "simple", "priority", "ttl", "dag", "custom"
     // Type-specific configuration
+    Simple     *SimpleMempoolConfig     `toml:"simple,omitempty"`
+    Priority   *PriorityMempoolConfig   `toml:"priority,omitempty"`
+    TTL        *TTLMempoolConfig        `toml:"ttl,omitempty"`
+    DAG        *DAGMempoolConfig        `toml:"dag,omitempty"`
+}
+
+type ConsensusEngineConfig struct {
+    Type string `toml:"type"`  // "none", "bft", "dag", "custom"
     BFT  *BFTConsensusConfig  `toml:"bft,omitempty"`
-    Raft *RaftConsensusConfig `toml:"raft,omitempty"`
-    PoA  *PoAConsensusConfig  `toml:"poa,omitempty"`
+    DAG  *DAGConsensusConfig  `toml:"dag,omitempty"`
 }
 ```
 
 **Tasks:**
-- [ ] Restructure `config/config.go` with new schema
-- [ ] Add `NodeRole` enum with validation
-- [ ] Add per-plugin configuration sections
-- [ ] Add `StreamConfig` for dynamic stream registration
-- [ ] Update all examples with new configuration
-
-### 1.5 Remove Hardcoded Values
-
-**Issue:** Critical timing values are hardcoded (node/node.go:171-172).
-
-**Fix:**
-```go
-type HandlersConfig struct {
-    Transactions TransactionsConfig `toml:"transactions"`
-    Blocks       BlocksConfig       `toml:"blocks"`
-    Sync         SyncConfig         `toml:"sync"`
-}
-
-type TransactionsConfig struct {
-    RequestInterval time.Duration `toml:"request_interval"`
-    BatchSize       int32         `toml:"batch_size"`
-    MaxPending      int           `toml:"max_pending"`
-}
-```
-
-**Tasks:**
-- [ ] Move all hardcoded values to configuration
-- [ ] Add sensible defaults for all configurable values
-- [ ] Document tuning guidelines
-
-### 1.6 Fix Options Pattern
-
-**Issue:** Options are applied twice (node/node.go:143-146, 211-214).
-
-**Fix:**
-```go
-// Use builder pattern instead of double-apply
-type NodeBuilder struct {
-    cfg         *Config
-    mempool     Mempool
-    blockStore  BlockStore
-    consensus   ConsensusEngine
-    // ...
-}
-
-func NewNodeBuilder(cfg *Config) *NodeBuilder {
-    return &NodeBuilder{cfg: cfg}
-}
-
-func (b *NodeBuilder) WithMempool(mp Mempool) *NodeBuilder {
-    b.mempool = mp
-    return b
-}
-
-func (b *NodeBuilder) Build() (*Node, error) {
-    // Create node with all options set
-    // Reactors can reference components set in builder
-}
-```
-
-**Tasks:**
-- [ ] Replace `Option` pattern with `NodeBuilder`
-- [ ] Ensure single-pass component initialization
-- [ ] Add validation in `Build()` before creation
+- [x] Restructure `config/config.go` with ABI-aligned schema
+- [x] Add `NodeRole` enum with validation
+- [x] Add per-plugin configuration sections
+- [x] Update all examples with new configuration
 
 ---
 
-## Phase 2: Mempool Plugin System
+## Phase 4: MempoolEngine System
 
 **Priority: HIGH**
-**Effort: 2-3 weeks**
+**Status: ✅ COMPLETE (January 2026)**
 
-Create a fully pluggable mempool system that supports simple mempools, looseberry DAG mempools, and custom implementations.
+Implement ABI's MempoolEngine interface system for pluggable transaction pools.
 
-### 2.1 Extended Mempool Interface
+### 4.1 MempoolEngine Interface (from ABI)
 
 ```go
-// Mempool is the base interface for transaction storage.
-type Mempool interface {
+// abi/mempool.go
+
+// MempoolEngine is the interface for transaction pool implementations.
+type MempoolEngine interface {
     Component
 
-    // Core operations
-    AddTx(tx []byte) error
+    // AddTx adds a transaction to the mempool.
+    AddTx(tx *Transaction, callback TxCallback) error
+
+    // RemoveTxs removes transactions (after commit).
     RemoveTxs(hashes [][]byte)
+
+    // ReapTxs returns transactions for block proposal.
+    ReapTxs(opts ReapOptions) []*Transaction
+
+    // Size returns current mempool state.
+    Size() MempoolSize
+
+    // HasTx checks if transaction exists.
     HasTx(hash []byte) bool
-    GetTx(hash []byte) ([]byte, error)
 
-    // Size information
-    Size() int
-    SizeBytes() int64
-
-    // Reaping for block production
-    ReapTxs(maxBytes int64) [][]byte
-
-    // Maintenance
+    // Flush removes all transactions.
     Flush()
-    TxHashes() [][]byte
-}
 
-// ValidatingMempool adds transaction validation.
-type ValidatingMempool interface {
-    Mempool
+    // Update is called after a block is committed.
+    Update(height uint64, txs []*Transaction) error
 
     // SetTxValidator sets the transaction validation function.
     SetTxValidator(validator TxValidator)
 }
 
-// DAGMempool is for DAG-based mempools like looseberry.
-type DAGMempool interface {
-    ValidatingMempool
+type TxCallback func(result *TxCheckResult)
 
-    // ReapCertifiedBatches returns certified transaction batches.
-    ReapCertifiedBatches(maxBytes int64) []CertifiedBatch
+type TxValidator func(ctx context.Context, tx *Transaction) *TxCheckResult
 
-    // NotifyCommitted notifies that consensus has committed a round.
+type ReapOptions struct {
+    MaxBytes    int64
+    MaxTxs      int
+    MinPriority int64
+}
+
+type MempoolSize struct {
+    TxCount   int
+    ByteCount int64
+}
+```
+
+**Tasks:**
+- [x] Create `abi/mempool.go` with MempoolEngine interface
+- [x] Add TxCallback, TxValidator types
+- [x] Add ReapOptions and MempoolSize types
+
+### 4.2 DAGMempoolEngine Interface (from ABI)
+
+```go
+// abi/mempool_dag.go
+
+// DAGMempoolEngine extends MempoolEngine for DAG-based ordering (Looseberry).
+type DAGMempoolEngine interface {
+    MempoolEngine
+
+    // ReapCertifiedBatches returns ordered, certified transaction batches.
+    ReapCertifiedBatches(maxBytes int64) []*CertifiedBatch
+
+    // NotifyCommitted informs the DAG of committed rounds.
     NotifyCommitted(round uint64)
 
-    // UpdateValidatorSet updates the validator set on epoch change.
-    UpdateValidatorSet(validators ValidatorSet)
+    // UpdateValidatorSet updates the set of validators for certification.
+    UpdateValidatorSet(validators []Validator)
 
     // CurrentRound returns the current DAG round.
     CurrentRound() uint64
 
-    // Metrics returns DAG-specific metrics.
-    DAGMetrics() *DAGMempoolMetrics
+    // DAGMetrics returns DAG-specific metrics.
+    DAGMetrics() *DAGMetrics
 }
 
-// NetworkAwareMempool can register additional streams.
-type NetworkAwareMempool interface {
-    Mempool
-
-    // StreamConfigs returns stream configurations this mempool needs.
-    StreamConfigs() []StreamConfig
-
-    // SetNetwork provides the network layer for custom protocols.
-    SetNetwork(network Network)
-}
-
-// CertifiedBatch represents a batch that has been certified.
+// CertifiedBatch represents an ordered batch with quorum certification.
 type CertifiedBatch struct {
-    Batch       []byte
-    Certificate []byte
     Round       uint64
-    Validator   uint16
+    Validator   []byte
+    Txs         []*Transaction
+    Certificate *Certificate
+}
+
+// Certificate proves batch ordering via quorum signatures.
+type Certificate struct {
+    Round      uint64
+    BatchHash  []byte
+    Signatures []ValidatorSig
+}
+
+type DAGMetrics struct {
+    CurrentRound     uint64
+    CommittedRound   uint64
+    PendingBatches   int
+    CertifiedBatches int
+    ValidatorCount   int
 }
 ```
 
 **Tasks:**
-- [ ] Create `mempool/interface.go` with extended interfaces
-- [ ] Add `DAGMempool` interface for looseberry compatibility
-- [ ] Add `NetworkAwareMempool` for mempools with custom streams
-- [ ] Update existing mempools to implement `ValidatingMempool`
+- [x] Create `abi/mempool_dag.go` with DAGMempoolEngine interface
+- [x] Add CertifiedBatch, Certificate types
+- [x] Add DAGMetrics type
 
-### 2.2 Mempool Factory
+### 4.3 NetworkAwareMempoolEngine Interface (from ABI)
 
 ```go
-// MempoolFactory creates mempool instances from configuration.
+// abi/mempool_network.go
+
+// NetworkAwareMempoolEngine can declare custom network streams.
+type NetworkAwareMempoolEngine interface {
+    MempoolEngine
+
+    // StreamConfigs returns stream configurations for the network layer.
+    StreamConfigs() []StreamConfig
+
+    // SetNetwork provides the network interface.
+    SetNetwork(network MempoolNetwork)
+
+    // HandleStreamMessage processes messages from custom streams.
+    HandleStreamMessage(stream string, peerID []byte, data []byte) error
+}
+
+// MempoolNetwork provides network operations to the mempool.
+type MempoolNetwork interface {
+    Broadcast(stream string, data []byte) error
+    Send(peerID []byte, stream string, data []byte) error
+    PeerCount() int
+    ValidatorPeers() [][]byte
+}
+```
+
+**Tasks:**
+- [x] Create `abi/mempool_network.go`
+- [x] Implement NetworkAwareMempoolEngine interface
+- [x] Implement MempoolNetwork interface
+
+### 4.4 Mempool Factory
+
+```go
+// mempool/factory.go
+
 type MempoolFactory struct {
     registry map[string]MempoolConstructor
 }
 
-type MempoolConstructor func(cfg *MempoolConfig) (Mempool, error)
+type MempoolConstructor func(cfg *MempoolEngineConfig) (MempoolEngine, error)
 
 func NewMempoolFactory() *MempoolFactory {
-    f := &MempoolFactory{
-        registry: make(map[string]MempoolConstructor),
-    }
-
-    // Register built-in mempools
-    f.Register("simple", NewSimpleMempoolFromConfig)
-    f.Register("priority", NewPriorityMempoolFromConfig)
-    f.Register("ttl", NewTTLMempoolFromConfig)
-
+    f := &MempoolFactory{registry: make(map[string]MempoolConstructor)}
+    f.Register("simple", NewSimpleMempoolEngine)
+    f.Register("priority", NewPriorityMempoolEngine)
+    f.Register("ttl", NewTTLMempoolEngine)
     return f
 }
 
-func (f *MempoolFactory) Register(name string, constructor MempoolConstructor) {
-    f.registry[name] = constructor
-}
-
-func (f *MempoolFactory) Create(cfg *MempoolConfig) (Mempool, error) {
-    constructor, ok := f.registry[cfg.Type]
-    if !ok {
-        return nil, fmt.Errorf("unknown mempool type: %s", cfg.Type)
-    }
-    return constructor(cfg)
-}
+func (f *MempoolFactory) Register(name string, constructor MempoolConstructor)
+func (f *MempoolFactory) Create(cfg *MempoolEngineConfig) (MempoolEngine, error)
 ```
 
 **Tasks:**
-- [ ] Create `mempool/factory.go`
-- [ ] Register all built-in mempools
-- [ ] Add external mempool registration API
-- [ ] Integrate factory with Node builder
+- [x] Create `mempool/factory.go`
+- [x] Register all built-in mempools
+- [x] Add external mempool registration API
+- [x] Integrate factory with Node builder
 
-### 2.3 Looseberry Integration
-
-Create the adapter layer for looseberry integration:
+### 4.5 Looseberry Adapter
 
 ```go
-// LooseberryAdapter adapts looseberry to blockberry's mempool interface.
+// mempool/looseberry/adapter.go
+
+// LooseberryAdapter adapts looseberry to ABI's DAGMempoolEngine interface.
 type LooseberryAdapter struct {
     lb          *looseberry.Looseberry
-    network     *LooseberryNetworkAdapter
+    network     MempoolNetwork
     txValidator TxValidator
     running     atomic.Bool
 }
 
-func NewLooseberryAdapter(cfg *LooseberryConfig) (*LooseberryAdapter, error) {
-    lbCfg := looseberry.Config{
-        ValidatorIndex: cfg.ValidatorIndex,
-        Signer:         cfg.Signer,
-        Worker:         convertWorkerConfig(cfg.Worker),
-        Primary:        convertPrimaryConfig(cfg.Primary),
-        // ...
-    }
-
-    lb, err := looseberry.New(&lbCfg)
-    if err != nil {
-        return nil, err
-    }
-
-    return &LooseberryAdapter{lb: lb}, nil
-}
-
-// Implement Mempool interface by delegating to looseberry
-func (a *LooseberryAdapter) AddTx(tx []byte) error {
-    return a.lb.AddTx(tx)
-}
-
-func (a *LooseberryAdapter) ReapTxs(maxBytes int64) [][]byte {
-    // For non-DAG consumers, extract transactions from certified batches
-    batches := a.lb.ReapCertifiedBatches(maxBytes)
-    var txs [][]byte
-    for _, batch := range batches {
-        txs = append(txs, batch.Transactions()...)
-    }
-    return txs
-}
-
-// Implement DAGMempool interface
-func (a *LooseberryAdapter) ReapCertifiedBatches(maxBytes int64) []CertifiedBatch {
-    return a.lb.ReapCertifiedBatches(maxBytes)
-}
-
-// Implement NetworkAwareMempool interface
-func (a *LooseberryAdapter) StreamConfigs() []StreamConfig {
-    return []StreamConfig{
-        {Name: "looseberry-batches", Encrypted: true},
-        {Name: "looseberry-headers", Encrypted: true},
-        {Name: "looseberry-sync", Encrypted: true},
-    }
-}
-
-func (a *LooseberryAdapter) SetNetwork(network Network) {
-    a.network = NewLooseberryNetworkAdapter(network)
-    a.lb.SetNetwork(a.network)
-}
+func (a *LooseberryAdapter) AddTx(tx *Transaction, callback TxCallback) error
+func (a *LooseberryAdapter) ReapCertifiedBatches(maxBytes int64) []*CertifiedBatch
+func (a *LooseberryAdapter) NotifyCommitted(round uint64)
+func (a *LooseberryAdapter) UpdateValidatorSet(validators []Validator)
+func (a *LooseberryAdapter) StreamConfigs() []StreamConfig
+func (a *LooseberryAdapter) SetNetwork(network MempoolNetwork)
 ```
 
 **Tasks:**
-- [ ] Create `mempool/looseberry/adapter.go`
-- [ ] Implement all mempool interfaces
-- [ ] Create `LooseberryNetworkAdapter` for glueberry
-- [ ] Add looseberry stream registration
-- [ ] Register with mempool factory
-
-### 2.4 TransactionsReactor Passive Mode
-
-Support passive mode for validators using DAG mempools:
-
-```go
-type TransactionsReactor struct {
-    mempool     Mempool
-    dagMempool  DAGMempool  // nil for simple mempools
-    passiveMode bool        // true for validators with DAG mempool
-    // ...
-}
-
-func (r *TransactionsReactor) Start() error {
-    // Determine mode based on mempool type
-    if dagMP, ok := r.mempool.(DAGMempool); ok {
-        r.dagMempool = dagMP
-        r.passiveMode = true  // Validators using DAG don't gossip
-    }
-
-    if !r.passiveMode {
-        r.wg.Add(1)
-        go r.gossipLoop()
-    }
-
-    return nil
-}
-
-func (r *TransactionsReactor) HandleMessage(peerID peer.ID, data []byte) error {
-    // In passive mode, only receive and route to mempool
-    // In active mode, also gossip to other peers
-
-    // ... parse message ...
-
-    if r.passiveMode {
-        // Just add to mempool, no further gossiping
-        return r.mempool.AddTx(txData)
-    }
-
-    // Active mode: add to mempool and schedule gossip
-    if err := r.mempool.AddTx(txData); err != nil {
-        return err
-    }
-    r.scheduleGossip(txData)
-    return nil
-}
-```
-
-**Tasks:**
-- [ ] Add `passiveMode` field to `TransactionsReactor`
-- [ ] Auto-detect mode based on mempool type
-- [ ] Skip gossip loop in passive mode
-- [ ] Add mode to metrics
+- [x] Create `mempool/looseberry/adapter.go`
+- [x] Implement all ABI mempool interfaces
+- [x] Create `LooseberryNetworkAdapter` for glueberry
+- [x] Add looseberry stream registration
 
 ---
 
-## Phase 3: Consensus Engine Framework
+## Phase 5: ConsensusEngine Framework
 
 **Priority: HIGH**
-**Effort: 3-4 weeks**
+**Status: ✅ COMPLETE (January 2026)**
 
-Create a pluggable consensus engine framework that supports multiple consensus algorithms.
+Implement ABI's ConsensusEngine interface system for pluggable consensus algorithms.
 
-### 3.1 Consensus Engine Interface
+### 5.1 ConsensusEngine Interface (from ABI)
 
 ```go
-// ConsensusEngine is the main interface for consensus implementations.
+// abi/consensus.go
+
+// ConsensusEngine is the interface for consensus implementations.
 type ConsensusEngine interface {
     Component
+    Named
 
-    // Initialize sets up the consensus engine with its dependencies.
+    // Initialize sets up the engine with its dependencies.
     Initialize(deps ConsensusDependencies) error
 
-    // ProcessBlock is called when a new block is received.
-    ProcessBlock(block *Block) error
+    // State queries
+    Height() uint64
+    Round() uint32
+    State() ConsensusState
 
-    // GetHeight returns the current consensus height.
-    GetHeight() int64
-
-    // GetRound returns the current consensus round (if applicable).
-    GetRound() int32
-
-    // IsValidator returns true if this node is a validator.
+    // Validator info
     IsValidator() bool
-
-    // ValidatorSet returns the current validator set.
     ValidatorSet() ValidatorSet
+
+    // Message handling
+    HandleMessage(peerID []byte, msgType ConsensusMessageType, data []byte) error
 }
 
-// ConsensusDependencies provides access to node components.
 type ConsensusDependencies struct {
-    Network      Network
-    BlockStore   BlockStore
-    StateStore   StateStore
-    Mempool      Mempool
-    Application  Application
-    Callbacks    *ConsensusCallbacks
+    Network     ConsensusNetwork
+    BlockStore  BlockStore
+    StateStore  StateStore
+    Mempool     MempoolEngine
+    Application Application
+    Signer      Signer
+    Config      *ConsensusConfig
+    Logger      Logger
+    Metrics     Metrics
 }
 
-// ConsensusCallbacks allows consensus to notify the node of events.
-type ConsensusCallbacks struct {
-    // OnBlockProduced is called when consensus produces a new block.
-    OnBlockProduced func(block *Block) error
+type ConsensusState int
+const (
+    ConsensusStateIdle ConsensusState = iota
+    ConsensusStateProposing
+    ConsensusStatePrevoting
+    ConsensusStatePrecommitting
+    ConsensusStateCommitting
+    ConsensusStateCatchup
+)
 
-    // OnBlockCommitted is called when a block is finalized.
-    OnBlockCommitted func(height int64, hash []byte) error
+type ConsensusMessageType int
+const (
+    MsgTypeProposal ConsensusMessageType = iota
+    MsgTypePrevote
+    MsgTypePrecommit
+    MsgTypeCommit
+    MsgTypeBlock
+    MsgTypeBlockPart
+    MsgTypeVoteSetBits
+    MsgTypeNewRoundStep
+    MsgTypeHasVote
+)
+```
 
-    // OnValidatorSetChanged is called when validators change.
-    OnValidatorSetChanged func(validators ValidatorSet) error
+**Tasks:**
+- [x] Create `abi/consensus.go` with ConsensusEngine interface
+- [x] Define ConsensusDependencies struct
+- [x] Define ConsensusState enum
+- [x] Define ConsensusMessageType enum
 
-    // OnStateSync is called when state sync should begin.
-    OnStateSync func(targetHeight int64) error
-}
+### 5.2 BFTConsensusEngine Interface (from ABI)
 
-// BlockProducer is implemented by engines that can create blocks.
-type BlockProducer interface {
-    // ProduceBlock creates a new block proposal.
-    ProduceBlock(height int64) (*Block, error)
+```go
+// abi/consensus_bft.go
 
-    // ShouldPropose returns true if this node should propose for the round.
-    ShouldPropose(height int64, round int32) bool
-}
-
-// BFTConsensus is the interface for BFT-style consensus engines.
-type BFTConsensus interface {
+// BFTConsensusEngine extends ConsensusEngine for BFT protocols.
+type BFTConsensusEngine interface {
     ConsensusEngine
-    BlockProducer
 
-    // HandleProposal processes a block proposal.
+    // Block production
+    ProposeBlock(ctx context.Context) (*BlockProposal, error)
+
+    // Message handling
     HandleProposal(proposal *Proposal) error
-
-    // HandleVote processes a consensus vote.
-    HandleVote(vote *Vote) error
-
-    // HandleCommit processes a commit message.
+    HandlePrevote(vote *Vote) error
+    HandlePrecommit(vote *Vote) error
     HandleCommit(commit *Commit) error
 
-    // OnTimeout handles consensus timeouts.
-    OnTimeout(height int64, round int32, step TimeoutStep) error
+    // Timeout handling
+    OnTimeout(height uint64, round uint32, step TimeoutStep) error
+
+    // Evidence
+    ReportMisbehavior(evidence Evidence) error
 }
 
-// StreamAwareConsensus can register additional streams.
-type StreamAwareConsensus interface {
+type BlockProposal struct {
+    Height    uint64
+    Round     uint32
+    Block     *Block
+    POLRound  int32   // Proof-of-Lock round (-1 if none)
+    Signature []byte
+}
+
+type Proposal struct {
+    Type      ConsensusMessageType
+    Height    uint64
+    Round     uint32
+    BlockHash []byte
+    POLRound  int32
+    Timestamp time.Time
+    Signature []byte
+}
+
+type Vote struct {
+    Type             ConsensusMessageType  // Prevote or Precommit
+    Height           uint64
+    Round            uint32
+    BlockHash        []byte     // nil = nil vote
+    Timestamp        time.Time
+    ValidatorAddress []byte
+    ValidatorIndex   int32
+    Signature        []byte
+    Extension        []byte     // Vote extension (optional)
+    ExtensionSig     []byte
+}
+
+type Commit struct {
+    Height     uint64
+    Round      uint32
+    BlockHash  []byte
+    Signatures []CommitSig
+}
+
+type TimeoutStep int
+const (
+    TimeoutPropose TimeoutStep = iota
+    TimeoutPrevote
+    TimeoutPrecommit
+)
+```
+
+**Tasks:**
+- [x] Create `abi/consensus_bft.go`
+- [x] Implement BFTConsensusEngine interface
+- [x] Define Proposal, Vote, Commit types
+- [x] Define timeout types
+
+### 5.3 DAGConsensusEngine Interface (from ABI)
+
+```go
+// abi/consensus_dag.go
+
+// DAGConsensusEngine extends ConsensusEngine for DAG-based protocols.
+type DAGConsensusEngine interface {
     ConsensusEngine
 
-    // StreamConfigs returns stream configurations this engine needs.
-    StreamConfigs() []StreamConfig
+    // DAG operations
+    AddVertex(vertex *DAGVertex) error
+    GetVertex(hash []byte) (*DAGVertex, error)
+    GetVerticesByRound(round uint64) []*DAGVertex
 
-    // HandleStreamMessage handles messages on custom streams.
-    HandleStreamMessage(stream string, peerID peer.ID, data []byte) error
+    // Certificate operations
+    HandleCertificate(cert *Certificate) error
+    GetCertificate(round uint64, validator []byte) (*Certificate, error)
+
+    // Ordering
+    GetOrderedVertices(fromRound, toRound uint64) []*DAGVertex
+    CommittedRound() uint64
+
+    // Wave/Leader operations (for Tusk/Bullshark)
+    GetWaveLeader(wave uint64) ([]byte, error)
+    IsLeaderVertex(vertex *DAGVertex) bool
+}
+
+type DAGVertex struct {
+    Round     uint64
+    Source    []byte           // Validator that created this
+    Parents   [][]byte         // Hashes of parent vertices
+    Payload   []byte           // Transaction batch or other data
+    Timestamp time.Time
+    Signature []byte
+    Hash      []byte           // Computed hash
 }
 ```
 
 **Tasks:**
-- [ ] Create `consensus/interface.go` with core interfaces
-- [ ] Define `ConsensusDependencies` struct
-- [ ] Define `ConsensusCallbacks` struct
-- [ ] Add `BFTConsensus` interface for BFT engines
-- [ ] Add `StreamAwareConsensus` for custom protocols
+- [x] Create `abi/consensus_dag.go`
+- [x] Implement DAGConsensusEngine interface
+- [x] Define DAGVertex type
 
-### 3.2 Consensus Factory
+### 5.4 StreamAwareConsensusEngine (from ABI)
 
 ```go
-// ConsensusFactory creates consensus engine instances.
+// abi/consensus_stream.go
+
+// StreamAwareConsensusEngine can declare custom network streams.
+type StreamAwareConsensusEngine interface {
+    ConsensusEngine
+
+    // StreamConfigs returns stream configurations.
+    StreamConfigs() []StreamConfig
+
+    // HandleStreamMessage processes messages from custom streams.
+    HandleStreamMessage(stream string, peerID []byte, data []byte) error
+}
+```
+
+**Tasks:**
+- [x] Create `abi/consensus_stream.go`
+- [x] Implement StreamAwareConsensusEngine interface
+
+### 5.5 Consensus Factory
+
+```go
+// consensus/factory.go
+
 type ConsensusFactory struct {
     registry map[string]ConsensusConstructor
 }
 
-type ConsensusConstructor func(cfg *ConsensusConfig) (ConsensusEngine, error)
+type ConsensusConstructor func(cfg *ConsensusEngineConfig) (ConsensusEngine, error)
 
 func NewConsensusFactory() *ConsensusFactory {
-    f := &ConsensusFactory{
-        registry: make(map[string]ConsensusConstructor),
-    }
-
-    // Register built-in engines
-    f.Register("none", NewNullConsensus)
-
+    f := &ConsensusFactory{registry: make(map[string]ConsensusConstructor)}
+    f.Register("none", NewNullConsensusEngine)
     return f
 }
-
-func (f *ConsensusFactory) Register(name string, constructor ConsensusConstructor) {
-    f.registry[name] = constructor
-}
 ```
 
 **Tasks:**
-- [ ] Create `consensus/factory.go`
-- [ ] Create `NullConsensus` (no-op for full nodes)
-- [ ] Add external engine registration API
+- [x] Create `consensus/factory.go`
+- [x] Create `NullConsensusEngine` (no-op for full nodes)
+- [x] Add external engine registration API
 
-### 3.3 Consensus Reactor Refactoring
-
-Refactor the existing consensus reactor to use the new interface:
+### 5.6 Reference BFT Implementation Skeleton
 
 ```go
-// ConsensusReactor routes messages to the consensus engine.
-type ConsensusReactor struct {
-    engine        ConsensusEngine
-    network       *p2p.Network
-    peerManager   *p2p.PeerManager
+// consensus/bft/tendermint.go
 
-    // Custom streams registered by the engine
-    customStreams map[string]bool
-
-    running bool
-    stopCh  chan struct{}
-    wg      sync.WaitGroup
-    mu      sync.RWMutex
-}
-
-func NewConsensusReactor(engine ConsensusEngine, network *p2p.Network) *ConsensusReactor {
-    r := &ConsensusReactor{
-        engine:        engine,
-        network:       network,
-        customStreams: make(map[string]bool),
-    }
-
-    // Register custom streams if engine supports them
-    if streamAware, ok := engine.(StreamAwareConsensus); ok {
-        for _, cfg := range streamAware.StreamConfigs() {
-            r.customStreams[cfg.Name] = true
-        }
-    }
-
-    return r
-}
-
-func (r *ConsensusReactor) HandleMessage(peerID peer.ID, data []byte) error {
-    // Route to BFT handler or custom stream handler
-    if bft, ok := r.engine.(BFTConsensus); ok {
-        return r.handleBFTMessage(bft, peerID, data)
-    }
-
-    // For non-BFT engines, just pass raw data
-    return r.engine.ProcessBlock(&Block{Data: data})
-}
-```
-
-**Tasks:**
-- [ ] Refactor `ConsensusReactor` to use `ConsensusEngine` interface
-- [ ] Add custom stream routing
-- [ ] Add BFT message parsing and routing
-- [ ] Integrate with node callbacks
-
-### 3.4 Reference BFT Implementation Skeleton
-
-Create a skeleton for a reference BFT implementation:
-
-```go
 // TendermintBFT is a reference Tendermint-style BFT implementation.
 type TendermintBFT struct {
-    // Configuration
-    cfg *BFTConsensusConfig
-
-    // State
-    height    int64
-    round     int32
-    step      RoundStep
-    lockedValue *Block
-    lockedRound int32
-    validValue  *Block
-    validRound  int32
-
-    // Validator info
-    validatorSet ValidatorSet
+    cfg           *BFTConsensusConfig
+    height        uint64
+    round         uint32
+    step          RoundStep
+    lockedValue   *Block
+    lockedRound   int32
+    validValue    *Block
+    validRound    int32
+    validatorSet  ValidatorSet
     privValidator PrivValidator
-
-    // Vote tracking
-    prevotes    *HeightVoteSet
-    precommits  *HeightVoteSet
-
-    // Dependencies
-    deps ConsensusDependencies
-
-    // WAL for crash recovery
-    wal *WAL
-
-    // Timeouts
-    timeoutPropose   time.Duration
-    timeoutPrevote   time.Duration
-    timeoutPrecommit time.Duration
-    timeoutCommit    time.Duration
-
-    // Lifecycle
-    running atomic.Bool
-    stopCh  chan struct{}
-    wg      sync.WaitGroup
-    mu      sync.RWMutex
+    prevotes      *HeightVoteSet
+    precommits    *HeightVoteSet
+    deps          ConsensusDependencies
+    wal           *WAL
+    // Timeouts and lifecycle...
 }
 ```
 
 **Tasks:**
-- [ ] Create `consensus/bft/tendermint.go` skeleton
-- [ ] Define round step state machine
-- [ ] Define vote tracking structures
-- [ ] Define WAL interface
-- [ ] Document as reference for custom implementations
-
-### 3.5 Validator Set Management
-
-```go
-// ValidatorSet represents the set of validators.
-type ValidatorSet interface {
-    // Validators returns all validators.
-    Validators() []*Validator
-
-    // GetByIndex returns a validator by index.
-    GetByIndex(index uint16) *Validator
-
-    // GetByAddress returns a validator by address.
-    GetByAddress(addr Address) *Validator
-
-    // Count returns the number of validators.
-    Count() int
-
-    // TotalVotingPower returns the sum of all voting power.
-    TotalVotingPower() int64
-
-    // Proposer returns the proposer for the given height and round.
-    Proposer(height int64, round int32) *Validator
-
-    // VerifySignature verifies a signature from a validator.
-    VerifySignature(validatorIdx uint16, digest Hash, sig Signature) bool
-
-    // Quorum returns the minimum voting power for consensus (2f+1).
-    Quorum() int64
-
-    // F returns the maximum Byzantine validators tolerated.
-    F() int
-
-    // Epoch returns the epoch number for this validator set.
-    Epoch() uint64
-
-    // Copy returns a deep copy of the validator set.
-    Copy() ValidatorSet
-}
-
-// Validator represents a single validator.
-type Validator struct {
-    Address     Address
-    PublicKey   PublicKey
-    VotingPower int64
-    Index       uint16
-}
-
-// ValidatorSetStore persists validator sets.
-type ValidatorSetStore interface {
-    // Save persists a validator set at a height.
-    Save(height int64, valSet ValidatorSet) error
-
-    // Load retrieves the validator set at a height.
-    Load(height int64) (ValidatorSet, error)
-
-    // Latest returns the most recent validator set.
-    Latest() (ValidatorSet, error)
-}
-```
-
-**Tasks:**
-- [ ] Create `types/validator.go` with interfaces
-- [ ] Implement `SimpleValidatorSet`
-- [ ] Implement `WeightedValidatorSet` for PoS
-- [ ] Create `ValidatorSetStore` interface
-- [ ] Add IAVL-based implementation
+- [x] Create `consensus/bft/tendermint.go` skeleton
+- [x] Define round step state machine
+- [x] Define vote tracking structures
+- [x] Document as reference for custom implementations
 
 ---
 
-## Phase 4: Node Role System
+## Phase 6: Node Role System
 
 **Priority: HIGH**
-**Effort: 1-2 weeks**
+**Status: ✅ COMPLETE (January 2026)**
 
-Implement a comprehensive node role system that determines which components are active based on the node's role in the network.
+Implement a comprehensive node role system using ABI patterns.
 
-### 4.1 Node Role Definitions
+### 6.1 Node Role Definitions
 
 ```go
+// abi/role.go
+
 // NodeRole defines the role of a node in the network.
 type NodeRole string
 
 const (
-    // RoleValidator is a consensus-participating validator node.
-    RoleValidator NodeRole = "validator"
-
-    // RoleFull is a full node that stores all data but doesn't validate.
-    RoleFull NodeRole = "full"
-
-    // RoleSeed is a seed node for peer discovery.
-    RoleSeed NodeRole = "seed"
-
-    // RoleLight is a light client that only stores headers.
-    RoleLight NodeRole = "light"
-
-    // RoleArchive is a full node that never prunes.
-    RoleArchive NodeRole = "archive"
+    RoleValidator NodeRole = "validator"  // Consensus-participating validator
+    RoleFull      NodeRole = "full"       // Full node (stores all data)
+    RoleSeed      NodeRole = "seed"       // Seed node for peer discovery
+    RoleLight     NodeRole = "light"      // Light client (headers only)
+    RoleArchive   NodeRole = "archive"    // Full node that never prunes
 )
 
 // RoleCapabilities defines what each role can do.
 type RoleCapabilities struct {
-    // CanPropose indicates if this role can propose blocks.
-    CanPropose bool
-
-    // CanVote indicates if this role can vote in consensus.
-    CanVote bool
-
-    // StoresFullBlocks indicates if this role stores full block data.
-    StoresFullBlocks bool
-
-    // StoresState indicates if this role stores application state.
-    StoresState bool
-
-    // ParticipatesInPEX indicates if this role exchanges peer addresses.
-    ParticipatesInPEX bool
-
-    // GossipsTransactions indicates if this role gossips transactions.
-    GossipsTransactions bool
-
-    // AcceptsInboundConnections indicates if this role accepts connections.
+    CanPropose                bool
+    CanVote                   bool
+    StoresFullBlocks          bool
+    StoresState               bool
+    ParticipatesInPEX         bool
+    GossipsTransactions       bool
     AcceptsInboundConnections bool
-
-    // Prunes indicates if this role prunes old data.
-    Prunes bool
+    Prunes                    bool
 }
 
 var roleCapabilities = map[NodeRole]RoleCapabilities{
@@ -1174,15 +1295,15 @@ var roleCapabilities = map[NodeRole]RoleCapabilities{
 ```
 
 **Tasks:**
-- [ ] Create `types/role.go` with role definitions
-- [ ] Define capabilities per role
-- [ ] Add role to configuration
-- [ ] Add role validation
+- [x] Create `abi/role.go` with role definitions
+- [x] Define capabilities per role
+- [x] Add role validation
 
-### 4.2 Role-Based Component Selection
+### 6.2 Role-Based Component Selection
 
 ```go
-// RoleBasedBuilder creates components based on node role.
+// node/role_builder.go
+
 type RoleBasedBuilder struct {
     cfg        *Config
     role       NodeRole
@@ -1193,13 +1314,11 @@ func (b *RoleBasedBuilder) Build() (*Node, error) {
     caps := roleCapabilities[b.role]
 
     // Create mempool based on role
-    var mempool Mempool
+    var mempool MempoolEngine
     if caps.GossipsTransactions {
-        // Full nodes use simple mempool with gossip
-        mempool = b.createSimpleMempool()
+        mempool = b.createSimpleMempoolEngine()
     } else if caps.CanPropose {
-        // Validators use DAG mempool
-        mempool = b.createDAGMempool()
+        mempool = b.createDAGMempoolEngine()
     }
 
     // Create consensus engine based on role
@@ -1207,853 +1326,714 @@ func (b *RoleBasedBuilder) Build() (*Node, error) {
     if caps.CanVote {
         consensus = b.createConsensusEngine()
     } else {
-        consensus = NewNullConsensus()
-    }
-
-    // Create stores based on role
-    var blockStore BlockStore
-    if caps.StoresFullBlocks {
-        blockStore = b.createBlockStore()
-    } else {
-        blockStore = NewHeaderOnlyBlockStore()
+        consensus = NewNullConsensusEngine()
     }
 
     // ... create other components based on role
-
-    return b.assembleNode()
 }
 ```
 
 **Tasks:**
-- [ ] Create `node/role_builder.go`
-- [ ] Implement role-based component selection
-- [ ] Add role-specific startup logic
-- [ ] Add role-specific shutdown logic
-
-### 4.3 Validator Detection
-
-```go
-// ValidatorDetector determines if this node is a validator.
-type ValidatorDetector interface {
-    // IsValidator returns true if this node is in the validator set.
-    IsValidator(valSet ValidatorSet) bool
-
-    // ValidatorIndex returns this node's validator index, or -1 if not a validator.
-    ValidatorIndex(valSet ValidatorSet) int
-}
-
-// KeyBasedDetector uses the node's key to detect validator status.
-type KeyBasedDetector struct {
-    publicKey PublicKey
-}
-
-func (d *KeyBasedDetector) IsValidator(valSet ValidatorSet) bool {
-    for _, val := range valSet.Validators() {
-        if bytes.Equal(val.PublicKey, d.publicKey) {
-            return true
-        }
-    }
-    return false
-}
-```
-
-**Tasks:**
-- [ ] Create `ValidatorDetector` interface
-- [ ] Implement key-based detection
-- [ ] Add validator set change handling
-- [ ] Add dynamic role switching (e.g., becoming a validator)
+- [x] Create `node/role_builder.go`
+- [x] Implement role-based component selection
+- [x] Add role-specific startup/shutdown logic
 
 ---
 
-## Phase 5: Dynamic Stream Registry
+## Phase 7: Dynamic Stream Registry
 
 **Priority: HIGH**
-**Effort: 2-3 weeks**
+**Status: ✅ COMPLETE (January 2026)**
 
-Create a dynamic stream registry that allows plugins to register additional P2P streams at runtime.
+Create a dynamic stream registry for plugin stream registration using ABI patterns.
 
-### 5.1 Stream Registry Interface
+### 7.1 Stream Configuration (from ABI)
 
 ```go
-// StreamRegistry manages dynamic stream registration.
-type StreamRegistry interface {
-    // Register adds a new stream configuration.
-    Register(cfg StreamConfig) error
+// abi/stream.go
 
-    // Unregister removes a stream.
-    Unregister(name string) error
-
-    // Get returns a stream configuration by name.
-    Get(name string) (*StreamConfig, error)
-
-    // All returns all registered streams.
-    All() []StreamConfig
-
-    // RegisterHandler sets the message handler for a stream.
-    RegisterHandler(name string, handler StreamHandler) error
-}
-
-// StreamConfig defines a P2P stream.
 type StreamConfig struct {
-    // Name is the unique stream identifier.
-    Name string `toml:"name"`
-
-    // Encrypted indicates if the stream uses encryption.
-    Encrypted bool `toml:"encrypted"`
-
-    // MessageTypes lists the message type IDs for this stream.
-    MessageTypes []uint16 `toml:"message_types"`
-
-    // RateLimit is the maximum messages per second.
-    RateLimit int `toml:"rate_limit"`
-
-    // MaxMessageSize is the maximum message size in bytes.
-    MaxMessageSize int `toml:"max_message_size"`
-
-    // Owner identifies which component owns this stream.
-    Owner string `toml:"owner"`
+    Name           string
+    Direction      StreamDirection
+    Priority       int
+    BufferSize     int
+    RateLimit      int   // Messages per second
+    MaxMessageSize int
 }
 
-// StreamHandler processes messages on a stream.
-type StreamHandler func(peerID peer.ID, data []byte) error
-```
-
-**Tasks:**
-- [ ] Create `p2p/stream_registry.go`
-- [ ] Implement in-memory registry
-- [ ] Add handler registration
-- [ ] Add rate limit enforcement per stream
-
-### 5.2 Integration with Glueberry
-
-```go
-// GlueberryStreamAdapter integrates the registry with glueberry.
-type GlueberryStreamAdapter struct {
-    registry StreamRegistry
-    node     *glueberry.Node
-    handlers map[string]StreamHandler
-    mu       sync.RWMutex
-}
-
-func (a *GlueberryStreamAdapter) OnStreamRegistered(cfg StreamConfig) error {
-    // Add stream to glueberry
-    if cfg.Encrypted {
-        return a.node.AddEncryptedStream(cfg.Name)
-    }
-    return a.node.AddStream(cfg.Name)
-}
-
-func (a *GlueberryStreamAdapter) RouteMessage(msg streams.IncomingMessage) error {
-    a.mu.RLock()
-    handler, ok := a.handlers[msg.StreamName]
-    a.mu.RUnlock()
-
-    if !ok {
-        return fmt.Errorf("no handler for stream: %s", msg.StreamName)
-    }
-
-    return handler(msg.PeerID, msg.Data)
-}
-```
-
-**Tasks:**
-- [ ] Create stream adapter for glueberry
-- [ ] Add dynamic stream creation
-- [ ] Add message routing
-- [ ] Handle stream removal
-
-### 5.3 Plugin Stream Registration
-
-```go
-// Network provides stream registration to plugins.
-type Network interface {
-    // ... existing methods ...
-
-    // RegisterStream registers a new stream with the network.
-    RegisterStream(cfg StreamConfig, handler StreamHandler) error
-
-    // UnregisterStream removes a stream.
-    UnregisterStream(name string) error
-}
-
-// Example: Looseberry registering its streams
-func (a *LooseberryAdapter) SetNetwork(network Network) {
-    // Register looseberry-specific streams
-    network.RegisterStream(StreamConfig{
-        Name:           "looseberry-batches",
-        Encrypted:      true,
-        RateLimit:      1000,
-        MaxMessageSize: 10 * 1024 * 1024,
-        Owner:          "looseberry",
-    }, a.handleBatchMessage)
-
-    network.RegisterStream(StreamConfig{
-        Name:           "looseberry-headers",
-        Encrypted:      true,
-        RateLimit:      100,
-        MaxMessageSize: 1024 * 1024,
-        Owner:          "looseberry",
-    }, a.handleHeaderMessage)
-}
-```
-
-**Tasks:**
-- [ ] Add `RegisterStream` to Network interface
-- [ ] Update looseberry adapter to use registration
-- [ ] Update consensus reactor to use registration
-- [ ] Add stream ownership tracking
-
----
-
-## Phase 6: Storage Enhancements
-
-**Priority: MEDIUM**
-**Effort: 3-4 weeks**
-
-Enhance storage capabilities with pruning, snapshots, and additional backends.
-
-### 6.1 Block Pruning
-
-**Issue:** No pruning mechanism - blocks accumulate forever.
-
-```go
-type BlockStore interface {
-    // ... existing methods ...
-
-    // Prune removes blocks before the given height.
-    Prune(beforeHeight int64) error
-
-    // PruneConfig returns the pruning configuration.
-    PruneConfig() *PruneConfig
-}
-
-type PruneConfig struct {
-    // Strategy is the pruning strategy.
-    Strategy PruneStrategy `toml:"strategy"`
-
-    // KeepRecent is the number of recent blocks to keep.
-    KeepRecent int64 `toml:"keep_recent"`
-
-    // KeepEvery is the interval for keeping pruning checkpoints.
-    KeepEvery int64 `toml:"keep_every"`
-
-    // Interval is how often to run pruning.
-    Interval time.Duration `toml:"interval"`
-}
-
-type PruneStrategy string
-
+type StreamDirection int
 const (
-    PruneNothing    PruneStrategy = "nothing"    // Archive node
-    PruneEverything PruneStrategy = "everything" // Aggressive pruning
-    PruneDefault    PruneStrategy = "default"    // Keep recent + checkpoints
+    StreamBidirectional StreamDirection = iota
+    StreamInbound
+    StreamOutbound
 )
 ```
 
 **Tasks:**
-- [ ] Add `Prune()` to BlockStore interface
-- [ ] Implement pruning in LevelDBBlockStore
-- [ ] Add background pruning goroutine
-- [ ] Add pruning metrics
+- [x] Create `abi/stream.go` with StreamConfig
+- [x] Implement stream registry
+- [x] Add glueberry integration
 
-### 6.2 State Pruning
+---
+
+## Phase 8: Storage Enhancements
+
+**Priority: MEDIUM**
+**Status: ✅ COMPLETE (January 2026)**
+
+Enhance storage capabilities using ABI's storage interfaces.
+
+### 8.1 BlockStore Interface (from ABI)
 
 ```go
-type StateStore interface {
-    // ... existing methods ...
+// abi/storage.go
 
-    // PruneVersions removes old versions of the state.
-    PruneVersions(keepRecent int64, keepEvery int64) error
+// BlockStore persists blocks and provides retrieval.
+type BlockStore interface {
+    Component
 
-    // AvailableVersions returns the range of available versions.
-    AvailableVersions() (oldest, newest int64)
+    // Save a block and its metadata.
+    SaveBlock(block *Block, parts *PartSet, commit *Commit) error
+
+    // Load operations
+    LoadBlock(height uint64) (*Block, error)
+    LoadBlockMeta(height uint64) (*BlockMeta, error)
+    LoadBlockPart(height uint64, index int) (*Part, error)
+    LoadBlockCommit(height uint64) (*Commit, error)
+
+    // Height queries
+    Base() uint64    // Lowest available height
+    Height() uint64  // Highest stored height
+
+    // Pruning
+    PruneBlocks(retainHeight uint64) (uint64, error)
 }
 ```
 
 **Tasks:**
-- [ ] Add `PruneVersions()` to StateStore interface
-- [ ] Implement IAVL pruning
-- [ ] Add pruning configuration
-- [ ] Add background pruning
+- [x] Block pruning (`blockstore/pruning.go`)
+- [x] State pruning (`statestore/pruning.go`)
+- [x] State snapshots (`statestore/snapshot.go`)
+- [x] BadgerDB backend (`blockstore/badgerdb.go`)
 
-### 6.3 State Snapshots
+### 8.2 StateStore Interface (from ABI)
 
 ```go
-// SnapshotStore manages state snapshots for fast sync.
-type SnapshotStore interface {
-    // Create creates a snapshot at the given height.
-    Create(height int64) (*Snapshot, error)
+// abi/storage.go
 
-    // List returns available snapshots.
-    List() ([]*SnapshotInfo, error)
+// StateStore manages consensus and application state.
+type StateStore interface {
+    Component
 
-    // Load loads a snapshot by hash.
-    Load(hash []byte) (*Snapshot, error)
+    // Consensus state
+    LoadState() (*ConsensusState, error)
+    SaveState(state *ConsensusState) error
 
-    // Delete removes a snapshot.
-    Delete(hash []byte) error
+    // Validator sets
+    LoadValidators(height uint64) (*ValidatorSet, error)
+    SaveValidators(height uint64, validators *ValidatorSet) error
 
-    // Prune removes old snapshots.
-    Prune(keepRecent int) error
+    // Consensus params
+    LoadConsensusParams(height uint64) (*ConsensusParams, error)
+    SaveConsensusParams(height uint64, params *ConsensusParams) error
+
+    // Pruning
+    PruneStates(retainHeight uint64) error
+}
+```
+
+**Tasks:**
+- [x] Implement StateStore interface
+- [x] Add IAVL pruning
+- [x] Add background pruning
+
+### 8.3 EvidenceStore Interface (from ABI)
+
+```go
+// abi/storage.go
+
+// EvidenceStore tracks misbehavior evidence.
+type EvidenceStore interface {
+    Component
+
+    AddEvidence(evidence Evidence) error
+    HasEvidence(evidence Evidence) bool
+    PendingEvidence(maxBytes int64) []Evidence
+    MarkEvidenceCommitted(evidence Evidence) error
+    IsExpired(evidence Evidence, currentHeight uint64, currentTime time.Time) bool
+}
+```
+
+**Tasks:**
+- [x] Create EvidenceStore interface
+- [x] Implement LevelDB-based evidence store
+
+---
+
+## Phase 9: Event System
+
+**Priority: MEDIUM**
+**Status: ✅ COMPLETE (January 2026)**
+
+Implement ABI's EventBus for pub/sub event handling.
+
+### 9.1 EventBus Interface (from ABI)
+
+```go
+// abi/eventbus.go
+
+// EventBus provides pub/sub for system events.
+type EventBus interface {
+    Component
+
+    // Subscribe to events matching the query.
+    Subscribe(ctx context.Context, subscriber string, query Query) (<-chan Event, error)
+
+    // Unsubscribe from events.
+    Unsubscribe(ctx context.Context, subscriber string, query Query) error
+
+    // UnsubscribeAll removes all subscriptions for a subscriber.
+    UnsubscribeAll(ctx context.Context, subscriber string) error
+
+    // Publish sends an event to all matching subscribers.
+    Publish(ctx context.Context, event Event) error
+
+    // PublishWithTimeout publishes with a timeout for slow subscribers.
+    PublishWithTimeout(ctx context.Context, event Event, timeout time.Duration) error
+}
+
+// Query for filtering events.
+type Query interface {
+    Matches(event Event) bool
+    String() string
+}
+```
+
+**Tasks:**
+- [x] Create `abi/eventbus.go` with EventBus interface
+- [x] Implement in-memory EventBus (`events/bus.go`)
+- [x] Add query language for filtering (QueryAll, QueryEventType, QueryEventTypes, QueryAttribute, QueryAttributeExists, QueryAnd, QueryOr, QueryFunc)
+- [x] Add WebSocket transport for external subscribers (rpc/websocket package)
+
+---
+
+## Phase 10: Extended Application Interfaces
+
+**Priority: MEDIUM**
+**Status: ✅ COMPLETE (January 2026)**
+
+Implement ABI's extended application interfaces for advanced functionality.
+
+### 10.1 SnapshotApplication Interface (from ABI)
+
+```go
+// abi/application_snapshot.go
+
+// SnapshotApplication supports state sync via snapshots.
+type SnapshotApplication interface {
+    Application
+
+    ListSnapshots() []*Snapshot
+    LoadSnapshotChunk(height uint64, format uint32, chunk uint32) ([]byte, error)
+    OfferSnapshot(snapshot *Snapshot) OfferResult
+    ApplySnapshotChunk(chunk []byte, index uint32) ApplyResult
 }
 
 type Snapshot struct {
-    Height    int64
-    Hash      []byte
-    ChunkSize int
-    Chunks    int
-    Metadata  []byte
+    Height   uint64
+    Format   uint32
+    Chunks   uint32
+    Hash     []byte
+    Metadata []byte
 }
 
-type SnapshotChunk struct {
-    Index int
-    Data  []byte
+type OfferResult uint32
+const (
+    OfferAccept OfferResult = iota
+    OfferAbort
+    OfferReject
+    OfferRejectFormat
+    OfferRejectSender
+)
+
+type ApplyResult uint32
+const (
+    ApplyAccept ApplyResult = iota
+    ApplyAbort
+    ApplyRetry
+    ApplyRetrySnapshot
+    ApplyRejectSnapshot
+)
+```
+
+**Tasks:**
+- [x] Create `abi/application_snapshot.go`
+- [x] Implement SnapshotApplication interface
+- [x] Add snapshot sync reactor
+
+### 10.2 ProposerApplication Interface (from ABI)
+
+```go
+// abi/application_proposer.go
+
+// ProposerApplication supports custom block proposal logic.
+type ProposerApplication interface {
+    Application
+
+    // PrepareProposal allows the app to modify a proposed block.
+    PrepareProposal(ctx context.Context, req *PrepareRequest) *PrepareResponse
+
+    // ProcessProposal allows the app to accept/reject a received proposal.
+    ProcessProposal(ctx context.Context, req *ProcessRequest) *ProcessResponse
+}
+
+type PrepareRequest struct {
+    MaxTxBytes      int64
+    Txs             [][]byte
+    LocalLastCommit CommitInfo
+    Misbehavior     []Misbehavior
+    Height          uint64
+    Time            time.Time
+    ProposerAddress []byte
+}
+
+type PrepareResponse struct {
+    Txs [][]byte
+}
+
+type ProcessRequest struct {
+    Txs                [][]byte
+    ProposedLastCommit CommitInfo
+    Misbehavior        []Misbehavior
+    Hash               []byte
+    Height             uint64
+    Time               time.Time
+    ProposerAddress    []byte
+}
+
+type ProcessResponse struct {
+    Status ProcessStatus
+}
+
+type ProcessStatus uint32
+const (
+    ProcessAccept ProcessStatus = iota
+    ProcessReject
+)
+```
+
+**Tasks:**
+- [x] Create `abi/application_proposer.go`
+- [x] Implement ProposerApplication interface
+- [ ] Integrate with consensus engine (deferred to consensus implementation)
+
+### 10.3 FinalityApplication Interface (from ABI)
+
+```go
+// abi/application_finality.go
+
+// FinalityApplication supports extended finality information.
+type FinalityApplication interface {
+    Application
+
+    ExtendVote(ctx context.Context, req *ExtendVoteRequest) *ExtendVoteResponse
+    VerifyVoteExtension(ctx context.Context, req *VerifyVoteExtRequest) *VerifyVoteExtResponse
+    FinalizeBlock(ctx context.Context, req *FinalizeBlockRequest) *FinalizeBlockResponse
+}
+
+type ExtendVoteRequest struct {
+    Hash   []byte
+    Height uint64
+    Time   time.Time
+}
+
+type ExtendVoteResponse struct {
+    VoteExtension []byte
+}
+
+type VerifyVoteExtRequest struct {
+    Hash             []byte
+    ValidatorAddress []byte
+    Height           uint64
+    VoteExtension    []byte
+}
+
+type VerifyVoteExtResponse struct {
+    Status VerifyStatus
+}
+
+type VerifyStatus uint32
+const (
+    VerifyAccept VerifyStatus = iota
+    VerifyReject
+)
+
+type FinalizeBlockRequest struct {
+    Txs             [][]byte
+    DecidedLastCommit CommitInfo
+    Misbehavior     []Misbehavior
+    Hash            []byte
+    Height          uint64
+    Time            time.Time
+    ProposerAddress []byte
+}
+
+type FinalizeBlockResponse struct {
+    Events           []Event
+    TxResults        []TxExecResult
+    ValidatorUpdates []ValidatorUpdate
+    ConsensusParams  *ConsensusParams
+    AppHash          []byte
 }
 ```
 
 **Tasks:**
-- [ ] Create `SnapshotStore` interface
-- [ ] Implement IAVL export/import
-- [ ] Add chunked streaming
-- [ ] Add snapshot discovery via PEX
-
-### 6.4 BadgerDB Backend
-
-**Issue:** Configuration supports "badgerdb" but only LevelDB is implemented.
-
-**Tasks:**
-- [ ] Implement `BadgerDBBlockStore`
-- [ ] Add BadgerDB-specific configuration
-- [ ] Benchmark against LevelDB
-- [ ] Add migration tooling
+- [x] Create `abi/application_finality.go`
+- [x] Implement FinalityApplication interface
+- [ ] Add vote extension support to consensus engine (deferred to consensus implementation)
 
 ---
 
-## Phase 7: Developer Experience
+## Phase 11: Developer Experience
 
 **Priority: MEDIUM**
-**Effort: 4-6 weeks**
+**Status: 🔄 IN PROGRESS**
 
-Improve the developer experience with tooling, documentation, and APIs.
+Improve developer experience with tooling, documentation, and APIs.
 
-### 7.1 RPC API
+### 11.1 RPC API (using ABI types)
 
 ```go
-// RPCServer provides the node RPC interface.
+// rpc/server.go
+
 type RPCServer interface {
     Component
 
-    // Health returns the node health status.
     Health() (*HealthStatus, error)
-
-    // Status returns the node status.
     Status() (*NodeStatus, error)
-
-    // BroadcastTx broadcasts a transaction.
     BroadcastTx(tx []byte, mode BroadcastMode) (*BroadcastResult, error)
-
-    // Query queries the application state.
-    Query(path string, data []byte, height int64) (*QueryResult, error)
-
-    // Block returns a block by height or hash.
-    Block(height int64) (*Block, error)
-
-    // Tx returns a transaction by hash.
-    Tx(hash []byte) (*TxResult, error)
-
-    // Peers returns connected peers.
+    Query(path string, data []byte, height uint64) (*QueryResponse, error)  // ABI type
+    Block(height uint64) (*Block, error)
+    Tx(hash []byte) (*TxExecResult, error)  // ABI type
     Peers() ([]*PeerInfo, error)
-
-    // Subscribe subscribes to events.
-    Subscribe(query string) (<-chan Event, error)
+    Subscribe(query string) (<-chan Event, error)  // ABI Event type
 }
 ```
 
 **Tasks:**
-- [ ] Define RPC interface
-- [ ] Implement JSON-RPC 2.0 transport
-- [ ] Implement gRPC transport
-- [ ] Add authentication and rate limiting
-- [ ] Generate OpenAPI documentation
+- [x] Define RPC interface using ABI types (`rpc/server.go`, `rpc/types.go`)
+- [x] Implement JSON-RPC 2.0 transport (`rpc/jsonrpc/server.go`, `rpc/jsonrpc/types.go`)
+- [ ] Implement gRPC transport (deferred)
+- [ ] Add authentication and rate limiting (deferred)
 
-### 7.2 CLI Tooling
+### 11.2 CLI Tooling ✅ COMPLETE
 
 ```bash
-# Node operations
 blockberry init --chain-id mychain --moniker mynode
 blockberry start --config config.toml
 blockberry status
-blockberry peers [list|connect|disconnect|ban]
-
-# Transaction operations
-blockberry tx broadcast <tx-file>
-blockberry tx status <hash>
-
-# Query operations
-blockberry query state <path>
-blockberry query block <height>
-blockberry query validator-set
-
-# Key management
 blockberry keys generate
-blockberry keys import <file>
-blockberry keys export
-blockberry keys show
-
-# Debug operations
-blockberry debug dump-state <height>
-blockberry debug profile [cpu|heap|goroutine]
+blockberry keys show <key-file>
 ```
 
 **Tasks:**
-- [ ] Create CLI framework using cobra
-- [ ] Implement node commands
-- [ ] Implement transaction commands
-- [ ] Implement query commands
-- [ ] Implement key management
+- [x] Create CLI framework using cobra (`cmd/blockberry/`)
+- [x] Implement `init` command - Initialize new node with config and keys
+- [x] Implement `start` command - Start node with configuration
+- [x] Implement `status` command - Query running node status via RPC
+- [x] Implement `keys` commands - Key generation and display
+- [x] Implement `version` command - Display version information
+- [ ] Implement transaction commands (future enhancement)
+- [ ] Implement query commands (future enhancement)
 
-### 7.3 Event Subscription System
-
-```go
-// EventBus provides pub/sub for blockchain events.
-type EventBus interface {
-    // Publish publishes an event.
-    Publish(event Event) error
-
-    // Subscribe creates a subscription for the given query.
-    Subscribe(query string) (Subscription, error)
-
-    // Unsubscribe removes a subscription.
-    Unsubscribe(sub Subscription) error
-}
-
-type Event interface {
-    Type() string
-    Data() interface{}
-    Height() int64
-    Time() time.Time
-}
-
-type Subscription interface {
-    Events() <-chan Event
-    Close() error
-}
-```
-
-**Tasks:**
-- [ ] Define event types
-- [ ] Implement event bus
-- [ ] Add query language for filtering
-- [ ] Add WebSocket transport
-
-### 7.4 Transaction Indexing
+### 11.3 Transaction Indexing
 
 ```go
-// TxIndexer indexes transactions for querying.
+// abi/indexer.go
+
 type TxIndexer interface {
-    // Index indexes a transaction.
-    Index(tx *TxResult) error
-
-    // Get retrieves a transaction by hash.
-    Get(hash []byte) (*TxResult, error)
-
-    // Search searches for transactions matching the query.
-    Search(query string) ([]*TxResult, error)
-
-    // Delete removes a transaction from the index.
+    Index(tx *TxExecResult) error      // ABI type
+    Get(hash []byte) (*TxExecResult, error)
+    Search(query string) ([]*TxExecResult, error)
     Delete(hash []byte) error
 }
 ```
 
 **Tasks:**
-- [ ] Define TxIndexer interface
-- [ ] Implement LevelDB-based indexer
-- [ ] Add indexing by hash, height, sender
-- [ ] Add search query language
+- [x] Define TxIndexer interface using ABI types (`abi/indexer.go`)
+- [x] Implement NullTxIndexer no-op implementation
+- [x] Implement LevelDB-based indexer (`indexer/kv/indexer.go`)
+- [x] Add search query language (height queries, event queries with pagination)
 
 ---
 
-## Phase 8: Security Hardening
+## Phase 12: Security Hardening
 
 **Priority: MEDIUM**
-**Effort: 2-3 weeks**
+**Status: 🔄 IN PROGRESS**
 
-Address security issues and harden the system against attacks.
+Address security issues using ABI's security patterns.
 
-### 8.1 Eclipse Attack Mitigation
-
-**Issue:** PEX accepts addresses without validation (pex/reactor.go:165-189).
+### 12.1 Fail-Closed Defaults (from ABI)
 
 ```go
-// AddressTrustScore tracks address reputation.
-type AddressTrustScore struct {
-    Address     string
-    Source      peer.ID
-    FirstSeen   time.Time
-    LastSuccess time.Time
-    FailCount   int
-    SuccessCount int
-    Trust       float64  // 0.0 to 1.0
-}
+// All validators and handlers default to rejecting (ABI principle).
 
-// AddressValidator validates received addresses.
-type AddressValidator interface {
-    // Validate checks if an address should be added.
-    Validate(addr string, source peer.ID) error
-
-    // UpdateScore updates the trust score for an address.
-    UpdateScore(addr string, connected bool)
-}
-```
-
-**Tasks:**
-- [ ] Add address trust scoring
-- [ ] Validate address reachability before adding
-- [ ] Limit addresses per source peer
-- [ ] Add diversity requirements (different subnets/ASNs)
-
-### 8.2 Rate Limiting Enhancements
-
-```go
-// StreamRateLimiter applies per-stream rate limits.
-type StreamRateLimiter struct {
-    limits   map[string]*RateLimit
-    counters map[peer.ID]map[string]*Counter
-    mu       sync.RWMutex
-}
-
-type RateLimit struct {
-    MessagesPerSecond int
-    BytesPerSecond    int64
-    BurstSize         int
-}
-```
-
-**Tasks:**
-- [ ] Add per-stream rate limits
-- [ ] Add per-peer rate limits
-- [ ] Add adaptive rate limiting
-- [ ] Add rate limit metrics
-
-### 8.3 Private Key Encryption
-
-**Issue:** Private key stored as raw bytes (node/node.go:499).
-
-```go
-// EncryptedKeyStore stores encrypted private keys.
-type EncryptedKeyStore interface {
-    // Load loads and decrypts a private key.
-    Load(path string, password []byte) (ed25519.PrivateKey, error)
-
-    // Save encrypts and saves a private key.
-    Save(path string, key ed25519.PrivateKey, password []byte) error
-}
-
-// Use argon2 for key derivation, AES-GCM for encryption
-```
-
-**Tasks:**
-- [ ] Add encrypted key storage
-- [ ] Add password prompt on startup
-- [ ] Support environment variable for password
-- [ ] Add key rotation support
-
-### 8.4 Security Audit Preparation
-
-**Tasks:**
-- [ ] Document all security assumptions
-- [ ] Add fuzz testing for message parsers
-- [ ] Add static analysis CI checks
-- [ ] Create threat model document
-
----
-
-## Phase 9: Performance & Observability
-
-**Priority: MEDIUM**
-**Effort: 2-3 weeks**
-
-Optimize performance and enhance observability.
-
-### 9.1 Parallel Block Sync
-
-**Issue:** Block sync only requests from one peer (sync/reactor.go:239).
-
-```go
-// ParallelSyncManager downloads blocks from multiple peers.
-type ParallelSyncManager struct {
-    blockStore  BlockStore
-    peerManager *PeerManager
-    network     Network
-
-    workers   int
-    batchSize int
-
-    pending   map[int64]*syncRequest
-    inFlight  map[peer.ID]int64  // peerID -> height being fetched
-    mu        sync.Mutex
-}
-
-func (m *ParallelSyncManager) Sync(targetHeight int64) error {
-    // Divide work across multiple peers
-    // Use work-stealing for load balancing
-    // Validate and store blocks in order
-}
-```
-
-**Tasks:**
-- [ ] Implement parallel sync manager
-- [ ] Add work-stealing for load balancing
-- [ ] Add adaptive worker count
-- [ ] Add sync progress metrics
-
-### 9.2 Memory Optimization
-
-```go
-// Use object pools for frequently allocated types
-var messagePool = sync.Pool{
-    New: func() interface{} {
-        return &Message{}
-    },
-}
-
-// Use buffer pools for serialization
-var bufferPool = cramberry.NewBufferPool()
-```
-
-**Tasks:**
-- [ ] Add object pooling for messages
-- [ ] Add buffer pooling for serialization
-- [ ] Profile memory hotspots
-- [ ] Reduce allocations in hot paths
-
-### 9.3 Distributed Tracing
-
-```go
-// TracingMiddleware adds OpenTelemetry tracing.
-type TracingMiddleware struct {
-    tracer trace.Tracer
-}
-
-func (m *TracingMiddleware) WrapHandler(name string, handler StreamHandler) StreamHandler {
-    return func(peerID peer.ID, data []byte) error {
-        ctx, span := m.tracer.Start(context.Background(), name)
-        defer span.End()
-
-        span.SetAttributes(
-            attribute.String("peer_id", peerID.String()),
-            attribute.Int("message_size", len(data)),
-        )
-
-        err := handler(peerID, data)
-        if err != nil {
-            span.RecordError(err)
-        }
-        return err
+// DefaultTxValidator rejects all transactions
+func DefaultTxValidator(ctx context.Context, tx *Transaction) *TxCheckResult {
+    return &TxCheckResult{
+        Code:  CodeNotAuthorized,
+        Error: errors.New("no validator configured"),
     }
 }
 ```
 
 **Tasks:**
-- [ ] Add OpenTelemetry integration
-- [ ] Add trace context to messages
-- [ ] Add span creation for key operations
-- [ ] Add Jaeger/Zipkin export
+- [x] Audit all validation points for fail-closed behavior (completed in Phase 0)
+- [x] Add eclipse attack mitigation (`security/eclipse.go`)
+- [x] Implement enhanced rate limiting (`security/ratelimit.go`)
+- [ ] Add private key encryption (deferred)
 
-### 9.4 Health Check Endpoints
+### 12.2 Resource Limits (from ABI)
 
 ```go
-// HealthServer provides health check endpoints.
-type HealthServer struct {
-    node *Node
-}
+// abi/limits.go
 
-// Kubernetes-compatible health checks
-// GET /health/live - Node is running
-// GET /health/ready - Node is synced and accepting requests
-// GET /health/startup - Node has completed initialization
+type ResourceLimits struct {
+    MaxTxSize       int64
+    MaxBlockSize    int64
+    MaxEvidenceSize int64
+    MaxMsgSize      int64
+    MaxPeers        int
+    MaxSubscribers  int
+}
 ```
 
 **Tasks:**
-- [ ] Implement health check endpoints
-- [ ] Add Kubernetes probe compatibility
-- [ ] Add detailed health status
-- [ ] Add health check configuration
+- [x] Implement configurable resource limits (`abi/limits.go`)
+- [ ] Add limit enforcement throughout (partial - interfaces defined)
 
 ---
 
-## Phase 10: Ecosystem Integration
+## Phase 13: Performance & Observability
+
+**Priority: MEDIUM**
+**Status: 🔄 IN PROGRESS (January 27, 2026)**
+
+Optimize performance using ABI's observability interfaces.
+
+### 13.1 Metrics Interface (from ABI) ✅ COMPLETE
+
+The `abi.Metrics` interface has been implemented in `abi/metrics.go` with:
+- Consensus metrics (height, round, step, block committed, block size)
+- Mempool metrics (size, tx added/removed/rejected)
+- Application metrics (BeginBlock, ExecuteTx, EndBlock, Commit, Query, CheckTx)
+- Network metrics (peers, bytes sent/received, messages, errors)
+- Storage metrics (block store height/size, state store operations)
+- Sync metrics (progress, blocks received, duration)
+
+The `metrics.ABIMetricsAdapter` in `metrics/abi_adapter.go` bridges the existing Prometheus implementation to the new ABI interface.
+
+**Tasks:**
+- [x] Implement ABI Metrics interface (`abi/metrics.go`)
+- [x] Add NullMetrics no-op implementation
+- [x] Add Prometheus exporter adapter (`metrics/abi_adapter.go`)
+- [ ] Add parallel block sync
+- [ ] Add memory optimization
+
+### 13.2 Tracer Interface (from ABI) ✅ COMPLETE
+
+The `abi.Tracer` interface has been implemented in `abi/tracer.go` with:
+- `Tracer` interface for distributed tracing
+- `Span` interface for individual trace spans
+- `SpanContext` for trace propagation
+- `Carrier` interface for context injection/extraction
+- `NullTracer` no-op implementation
+- Standard span names and attribute keys
+
+**Tasks:**
+- [x] Implement ABI Tracer interface (`abi/tracer.go`)
+- [x] Add NullTracer no-op implementation
+- [x] Add SpanAttribute helpers
+- [x] Add MapCarrier for context propagation
+- [x] Add OpenTelemetry integration (tracing/otel package)
+- [ ] Add Jaeger/Zipkin export
+
+---
+
+## Phase 14: Ecosystem Integration
 
 **Priority: LOW**
-**Effort: 4-8 weeks**
+**Status: ⬜ PENDING**
 
 Integrate with the broader blockchain ecosystem.
 
-### 10.1 ABCI Compatibility Layer
+### 14.1 ABCI Interoperability (Optional)
 
-```go
-// ABCIApplication wraps a blockberry application as ABCI.
-type ABCIApplication struct {
-    app Application
-}
+For applications that want to expose an ABCI-compatible interface to external tools (e.g., Tendermint tooling, ABCI-aware clients), an optional ABCI server can wrap the ABI Application.
 
-func (a *ABCIApplication) CheckTx(req abci.RequestCheckTx) abci.ResponseCheckTx {
-    err := a.app.CheckTx(req.Tx)
-    // Convert to ABCI response
-}
-```
+**Note:** This is for EXTERNAL interoperability only. Within blockberry, all applications implement `abi.Application` directly - there is no legacy support.
 
-**Tasks:**
-- [ ] Implement ABCI server
-- [ ] Create application wrapper
-- [ ] Add Tendermint RPC compatibility
-- [ ] Create migration guide
-
-### 10.2 IBC Compatibility
+| ABCI v1 | ABI v2 |
+|---------|--------|
+| `CheckTx(RequestCheckTx)` | `CheckTx(ctx, *Transaction)` |
+| `BeginBlock(RequestBeginBlock)` | `BeginBlock(ctx, *BlockHeader)` |
+| `DeliverTx(RequestDeliverTx)` | `ExecuteTx(ctx, *Transaction)` |
+| `EndBlock(RequestEndBlock)` | `EndBlock(ctx)` |
+| `Commit()` | `Commit(ctx)` |
+| `Query(RequestQuery)` | `Query(ctx, *QueryRequest)` |
 
 **Tasks:**
-- [ ] Implement IBC client interface
-- [ ] Add connection/channel handshakes
-- [ ] Implement packet relay
-- [ ] Add ICS-20 token transfer
-
-### 10.3 Light Client Protocol
-
-```go
-// LightClient verifies headers without full blocks.
-type LightClient interface {
-    // Sync syncs headers from trusted height to target.
-    Sync(trustedHeight int64, trustedHash []byte, targetHeight int64) error
-
-    // VerifyHeader verifies a header against the trusted set.
-    VerifyHeader(header *Header) error
-
-    // VerifyProof verifies a merkle proof against a root.
-    VerifyProof(key, value, proof []byte, root []byte) error
-}
-```
-
-**Tasks:**
-- [ ] Implement header-only sync
-- [ ] Add bisection algorithm for verification
-- [ ] Add merkle proof verification
-- [ ] Create light client library
+- [ ] Implement optional ABCI server for external tool compatibility
+- [ ] Add IBC compatibility
+- [ ] Add light client protocol
 
 ---
 
 ## Version Milestones
 
-### v1.1.0 - Critical Fixes & Stability
-**Target: 2-3 weeks**
-- All Phase 0 critical fixes
-- Basic block/transaction validation
-- Handshake timeout enforcement
-- Penalty persistence
+### v1.1.0 - Critical Fixes & Stability ✅ COMPLETE
+**Status: ✅ COMPLETE (January 2026)**
 
-### v1.2.0 - Pluggable Foundation
-**Target: 4-6 weeks**
-- Component interface pattern
-- Dependency injection container
-- Callback-based extensibility
-- Configuration overhaul
+All Phase 0 critical fixes completed.
 
-### v1.3.0 - Mempool Plugin System
-**Target: 3-4 weeks**
-- Extended mempool interfaces
-- Mempool factory
-- Looseberry integration
-- Passive mode for TransactionsReactor
+### v2.0.0 - ABI Foundation ✅ COMPLETE
+**Status: ✅ COMPLETE (January 2026)**
 
-### v2.0.0 - Consensus Engine Framework
-**Target: 6-8 weeks**
-- Consensus engine interfaces
-- Consensus factory
-- Reference BFT skeleton
-- Validator set management
-- Node role system
+- ✅ ABI Core Types (Phase 1)
+- ✅ Application Interface (Phase 2)
+- ✅ Pluggable Architecture (Phase 3)
 
-### v2.1.0 - Dynamic Streams
-**Target: 3-4 weeks**
-- Stream registry
-- Glueberry integration
-- Plugin stream registration
+### v2.1.0 - Pluggable Engines ✅ COMPLETE
+**Status: ✅ COMPLETE (January 2026)**
 
-### v2.2.0 - Storage Enhancements
-**Target: 4-5 weeks**
-- Block pruning
-- State pruning
-- State snapshots
-- BadgerDB backend
+- ✅ MempoolEngine System (Phase 4)
+- ✅ ConsensusEngine Framework (Phase 5)
+- ✅ Node Role System (Phase 6)
 
-### v3.0.0 - Developer Experience
-**Target: 6-8 weeks**
-- RPC API (JSON-RPC + gRPC)
-- CLI tooling
-- Event subscription
-- Transaction indexing
+### v2.2.0 - Infrastructure ✅ COMPLETE
+**Status: ✅ COMPLETE (January 2026)**
 
-### v3.1.0 - Security Hardening
-**Target: 3-4 weeks**
-- Eclipse attack mitigation
-- Enhanced rate limiting
-- Private key encryption
-- Security documentation
+- ✅ Dynamic Stream Registry (Phase 7)
+- ✅ Storage Enhancements (Phase 8)
 
-### v3.2.0 - Performance & Observability
-**Target: 3-4 weeks**
-- Parallel block sync
-- Memory optimization
-- Distributed tracing
-- Health check endpoints
+### v3.0.0 - Events & Extended Interfaces
+**Status: ✅ COMPLETE (January 2026)**
+
+- ✅ Event System (Phase 9)
+- ✅ Extended Application Interfaces (Phase 10)
+  - SnapshotApplication
+  - ProposerApplication
+  - FinalityApplication
+
+### v3.1.0 - Developer Experience
+**Status: ✅ COMPLETE (January 2026)**
+
+- ✅ RPC Server interface (ABI types)
+- ✅ JSON-RPC 2.0 transport
+- ✅ TxIndexer interface with NullTxIndexer
+- ✅ LevelDB-based KV indexer (indexer/kv package)
+- ✅ CLI tooling (cmd/blockberry - init, start, status, keys, version)
+- ⬜ gRPC transport (not implemented - user opted out of protobuf)
+
+### v3.2.0 - Security & Performance
+**Status: 🔄 IN PROGRESS (January 2026)**
+
+- ✅ ResourceLimits types and configuration
+- ✅ Rate limiting (TokenBucket + SlidingWindow)
+- ✅ Connection limiting
+- ✅ Eclipse attack mitigation
+- ✅ Observability - ABI Metrics interface + Prometheus adapter
+- ✅ Observability - ABI Tracer interface + NullTracer
+- ✅ OpenTelemetry integration (tracing/otel package)
+- ⬜ Performance optimization (deferred)
 
 ### v4.0.0 - Ecosystem Integration
-**Target: 8-12 weeks**
+**Status: ⬜ PENDING**
+
 - ABCI compatibility
 - IBC support
 - Light client protocol
 
 ---
 
-## Example: Building a Blockchain with the Berry Stack
+## Example: Building a Blockchain with ABI
 
 ```go
 package main
 
 import (
+    "context"
+
     "github.com/blockberries/blockberry"
+    "github.com/blockberries/blockberry/abi"
     "github.com/blockberries/blockberry/consensus"
     "github.com/blockberries/blockberry/mempool"
     "github.com/blockberries/looseberry"
 )
 
+// MyApp implements the ABI Application interface.
+type MyApp struct {
+    abi.BaseApplication  // Provides fail-closed defaults
+    state   map[string][]byte
+    height  uint64
+    appHash []byte
+}
+
+func (app *MyApp) Info() abi.ApplicationInfo {
+    return abi.ApplicationInfo{
+        Name:    "myapp",
+        Version: "1.0.0",
+        AppHash: app.appHash,
+        Height:  app.height,
+    }
+}
+
+func (app *MyApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+    // Validate transaction
+    if len(tx.Data) == 0 {
+        return &abi.TxCheckResult{Code: abi.CodeInvalidTx}
+    }
+    return &abi.TxCheckResult{Code: abi.CodeOK, Priority: 1}
+}
+
+func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
+    // Execute transaction
+    return &abi.TxExecResult{Code: abi.CodeOK}
+}
+
+func (app *MyApp) Commit(ctx context.Context) *abi.CommitResult {
+    app.height++
+    app.appHash = computeHash(app.state)
+    return &abi.CommitResult{AppHash: app.appHash}
+}
+
 func main() {
-    // Load configuration
     cfg, _ := blockberry.LoadConfig("config.toml")
 
-    // Create node builder
     builder := blockberry.NewNodeBuilder(cfg)
 
     // Configure based on role
-    if cfg.Role == blockberry.RoleValidator {
-        // Validators use looseberry DAG mempool
+    if cfg.Role == abi.RoleValidator {
+        // Validators use DAGMempoolEngine (Looseberry)
         lb, _ := looseberry.New(&looseberry.Config{
-            ValidatorIndex: cfg.Looseberry.ValidatorIndex,
+            ValidatorIndex: cfg.DAG.ValidatorIndex,
             Signer:         loadSigner(cfg),
         })
         builder.WithMempool(mempool.NewLooseberryAdapter(lb))
 
-        // Validators use BFT consensus
+        // Validators use BFTConsensusEngine
         bft := consensus.NewTendermintBFT(&cfg.Consensus.BFT)
         builder.WithConsensus(bft)
     } else {
-        // Full nodes use simple mempool with gossip
-        builder.WithMempool(mempool.NewSimpleMempool(&cfg.Mempool.Simple))
+        // Full nodes use simple MempoolEngine with gossip
+        builder.WithMempool(mempool.NewSimpleMempoolEngine(&cfg.Mempool.Simple))
 
-        // Full nodes use null consensus (just follow)
-        builder.WithConsensus(consensus.NewNullConsensus())
+        // Full nodes use NullConsensusEngine (follow only)
+        builder.WithConsensus(consensus.NewNullConsensusEngine())
     }
 
-    // Set application logic
+    // Set ABI Application
     builder.WithApplication(&MyApp{})
 
     // Build and start
@@ -2072,12 +2052,14 @@ func main() {
 
 When working on this plan:
 
-1. **Reference this document** in commits and PRs (e.g., "Phase 0.1: Mandatory Block Validation")
-2. **Follow CLAUDE.md guidelines** for implementation workflow
-3. **Update PROGRESS_REPORT.md** after completing each item
-4. **Open issues** for blockers or design questions
-5. **Write tests first** for all new functionality
+1. **Reference ABI_DESIGN.md** - All interfaces must align with ABI v2.0 specification
+2. **Reference this document** in commits and PRs (e.g., "Phase 1.2: ABI Transaction Types")
+3. **Follow CLAUDE.md guidelines** for implementation workflow
+4. **Update PROGRESS_REPORT.md** after completing each item
+5. **Use ABI types throughout** - Never create parallel types when ABI types exist
+6. **Maintain fail-closed defaults** - All validators reject by default
+7. **No backward compatibility** - ABI is the only interface; do not create legacy adapters or shims
 
 ---
 
-*Last Updated: January 2025*
+*Last Updated: January 27, 2026 - Comprehensive ABI-centric restructuring*

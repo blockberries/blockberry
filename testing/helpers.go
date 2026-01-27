@@ -2,6 +2,7 @@
 package testing
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
+	"github.com/blockberries/blockberry/abi"
 	"github.com/blockberries/blockberry/blockstore"
 	"github.com/blockberries/blockberry/config"
 	"github.com/blockberries/blockberry/handlers"
@@ -550,14 +552,16 @@ func (tn *TestNode) handleMessage(msg streams.IncomingMessage) {
 	}
 }
 
-// MockApplication is a test application that tracks received events.
+// MockApplication is a test application that implements abi.Application and
+// handlers.ConsensusHandler for testing purposes.
 type MockApplication struct {
 	mu                sync.Mutex
-	CheckedTxs        [][]byte
-	DeliveredTxs      [][]byte
-	BlocksBegun       []int64
-	BlocksEnded       []int64
+	CheckedTxs        []*abi.Transaction
+	ExecutedTxs       []*abi.Transaction
+	BlocksBegun       []uint64
+	BlocksEnded       int
 	Commits           int
+	AppHash           []byte
 	ConsensusMessages []struct {
 		PeerID peer.ID
 		Data   []byte
@@ -566,55 +570,95 @@ type MockApplication struct {
 
 // NewMockApplication creates a new mock application.
 func NewMockApplication() *MockApplication {
-	return &MockApplication{}
+	return &MockApplication{
+		AppHash: make([]byte, 32),
+	}
 }
 
-// CheckTx records a transaction check.
-func (m *MockApplication) CheckTx(tx []byte) error {
+// Ensure MockApplication implements abi.Application.
+var _ abi.Application = (*MockApplication)(nil)
+
+// Info returns application metadata.
+func (m *MockApplication) Info() abi.ApplicationInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var height uint64
+	if len(m.BlocksBegun) > 0 {
+		height = m.BlocksBegun[len(m.BlocksBegun)-1]
+	}
+	return abi.ApplicationInfo{
+		Name:    "mock-application",
+		Version: "1.0.0",
+		AppHash: m.AppHash,
+		Height:  height,
+	}
+}
+
+// InitChain initializes the chain.
+func (m *MockApplication) InitChain(genesis *abi.Genesis) error {
+	return nil
+}
+
+// CheckTx records a transaction check and accepts all.
+func (m *MockApplication) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.CheckedTxs = append(m.CheckedTxs, tx)
-	return nil
+	return &abi.TxCheckResult{Code: abi.CodeOK}
 }
 
 // BeginBlock records a block beginning.
-func (m *MockApplication) BeginBlock(height int64, hash []byte) error {
+func (m *MockApplication) BeginBlock(ctx context.Context, header *abi.BlockHeader) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.BlocksBegun = append(m.BlocksBegun, height)
+	m.BlocksBegun = append(m.BlocksBegun, header.Height)
 	return nil
 }
 
-// DeliverTx records a transaction delivery.
-func (m *MockApplication) DeliverTx(tx []byte) error {
+// ExecuteTx records a transaction execution.
+func (m *MockApplication) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.DeliveredTxs = append(m.DeliveredTxs, tx)
-	return nil
+	m.ExecutedTxs = append(m.ExecutedTxs, tx)
+	return &abi.TxExecResult{Code: abi.CodeOK}
 }
 
 // EndBlock records a block end.
-func (m *MockApplication) EndBlock() error {
+func (m *MockApplication) EndBlock(ctx context.Context) *abi.EndBlockResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.BlocksEnded = append(m.BlocksEnded, int64(len(m.BlocksBegun)))
-	return nil
+	m.BlocksEnded++
+	return &abi.EndBlockResult{}
 }
 
 // Commit records a commit.
-func (m *MockApplication) Commit() ([]byte, error) {
+func (m *MockApplication) Commit(ctx context.Context) *abi.CommitResult {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Commits++
-	return make([]byte, 32), nil
+	return &abi.CommitResult{AppHash: m.AppHash}
 }
 
-// Query returns nil.
-func (m *MockApplication) Query(path string, data []byte) ([]byte, error) {
-	return nil, nil
+// Query returns an OK response.
+func (m *MockApplication) Query(ctx context.Context, req *abi.QueryRequest) *abi.QueryResponse {
+	return &abi.QueryResponse{Code: abi.CodeOK}
 }
 
-// HandleConsensusMessage records a consensus message.
+// TxCount returns the number of checked transactions.
+func (m *MockApplication) TxCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.CheckedTxs)
+}
+
+// ExecutedTxCount returns the number of executed transactions.
+func (m *MockApplication) ExecutedTxCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.ExecutedTxs)
+}
+
+// HandleConsensusMessage implements handlers.ConsensusHandler.
 func (m *MockApplication) HandleConsensusMessage(peerID peer.ID, data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -623,13 +667,6 @@ func (m *MockApplication) HandleConsensusMessage(peerID peer.ID, data []byte) er
 		Data   []byte
 	}{peerID, data})
 	return nil
-}
-
-// TxCount returns the number of checked transactions.
-func (m *MockApplication) TxCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.CheckedTxs)
 }
 
 // ConsensusMessageCount returns the number of consensus messages received.

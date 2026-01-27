@@ -1,14 +1,17 @@
 package types
 
 import (
-	"github.com/libp2p/go-libp2p/core/peer"
+	"context"
+
+	"github.com/blockberries/blockberry/abi"
 )
 
-// NullApplication is a no-op implementation of the Application interface.
-// It is useful for testing and as a starting point for new applications.
+// NullApplication is a no-op implementation of abi.Application.
+// It accepts all transactions and returns empty results.
+// Useful for testing and as a starting point for new applications.
 type NullApplication struct {
 	// LastBlockHeight tracks the last committed block height.
-	LastBlockHeight int64
+	LastBlockHeight uint64
 
 	// LastBlockHash stores the last committed block hash.
 	LastBlockHash []byte
@@ -24,43 +27,52 @@ func NewNullApplication() *NullApplication {
 	}
 }
 
-// CheckTx validates a transaction. Always returns nil (accepts all transactions).
-func (app *NullApplication) CheckTx(tx []byte) error {
+// Ensure NullApplication implements abi.Application.
+var _ abi.Application = (*NullApplication)(nil)
+
+// Info returns application metadata.
+func (app *NullApplication) Info() abi.ApplicationInfo {
+	return abi.ApplicationInfo{
+		Name:    "null-application",
+		Version: "1.0.0",
+		AppHash: app.AppHash,
+		Height:  app.LastBlockHeight,
+	}
+}
+
+// InitChain initializes the chain. Always returns nil.
+func (app *NullApplication) InitChain(genesis *abi.Genesis) error {
 	return nil
+}
+
+// CheckTx validates a transaction. Always accepts (returns CodeOK).
+func (app *NullApplication) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+	return &abi.TxCheckResult{Code: abi.CodeOK}
 }
 
 // BeginBlock starts processing a new block.
-func (app *NullApplication) BeginBlock(height int64, hash []byte) error {
-	app.LastBlockHeight = height
-	app.LastBlockHash = hash
+func (app *NullApplication) BeginBlock(ctx context.Context, header *abi.BlockHeader) error {
+	app.LastBlockHeight = header.Height
+	app.LastBlockHash = header.PrevHash
 	return nil
 }
 
-// DeliverTx processes a transaction. Always returns nil.
-func (app *NullApplication) DeliverTx(tx []byte) error {
-	return nil
+// ExecuteTx executes a transaction. Always succeeds (returns CodeOK).
+func (app *NullApplication) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
+	return &abi.TxExecResult{Code: abi.CodeOK}
 }
 
-// EndBlock ends block processing. Always returns nil.
-func (app *NullApplication) EndBlock() error {
-	return nil
+// EndBlock ends block processing.
+func (app *NullApplication) EndBlock(ctx context.Context) *abi.EndBlockResult {
+	return &abi.EndBlockResult{}
 }
 
 // Commit persists the application state and returns the app hash.
-func (app *NullApplication) Commit() ([]byte, error) {
-	// In a real application, this would compute a merkle root of state
-	return app.AppHash, nil
+func (app *NullApplication) Commit(ctx context.Context) *abi.CommitResult {
+	return &abi.CommitResult{AppHash: app.AppHash}
 }
 
-// Query performs a read-only query. Always returns nil.
-func (app *NullApplication) Query(path string, data []byte) ([]byte, error) {
-	return nil, nil
+// Query performs a read-only query. Always returns empty result.
+func (app *NullApplication) Query(ctx context.Context, req *abi.QueryRequest) *abi.QueryResponse {
+	return &abi.QueryResponse{Code: abi.CodeOK}
 }
-
-// HandleConsensusMessage processes a consensus message. Always returns nil.
-func (app *NullApplication) HandleConsensusMessage(peerID peer.ID, data []byte) error {
-	return nil
-}
-
-// Ensure NullApplication implements Application.
-var _ Application = (*NullApplication)(nil)

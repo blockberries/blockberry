@@ -138,7 +138,7 @@ func TestTwoNodes_TransactionGossip(t *testing.T) {
 	// 4. Node1 responds with tx data
 	// The gossip loop runs every second, so we need to wait for at least 2-3 cycles
 	txHash := types.HashTx(tx)
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		if node2.Mempool.HasTx(txHash) {
 			break

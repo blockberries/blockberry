@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/opt"
@@ -22,11 +23,13 @@ var (
 
 // LevelDBBlockStore implements BlockStore using LevelDB.
 type LevelDBBlockStore struct {
-	db     *leveldb.DB
-	path   string
-	height int64
-	base   int64
-	mu     sync.RWMutex
+	db        *leveldb.DB
+	path      string
+	height    int64
+	base      int64
+	pruneCfg  *PruneConfig
+	pruning   bool // Indicates if pruning is in progress
+	mu        sync.RWMutex
 }
 
 // NewLevelDBBlockStore creates a new LevelDB-backed block store.
@@ -215,6 +218,145 @@ func (s *LevelDBBlockStore) BlockCount() int {
 	}
 	return count
 }
+
+// Prune removes blocks before the given height.
+// Blocks that should be kept according to the prune config are preserved.
+func (s *LevelDBBlockStore) Prune(beforeHeight int64) (*PruneResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	start := time.Now()
+
+	// Validate inputs
+	if beforeHeight <= 0 {
+		return nil, ErrInvalidPruneHeight
+	}
+
+	if beforeHeight > s.height {
+		return nil, ErrPruneHeightTooHigh
+	}
+
+	// Check if pruning is already in progress
+	if s.pruning {
+		return nil, ErrPruningInProgress
+	}
+	s.pruning = true
+	defer func() { s.pruning = false }()
+
+	// Nothing to prune if base is already at or above target
+	if s.base >= beforeHeight {
+		return &PruneResult{
+			PrunedCount: 0,
+			NewBase:     s.base,
+			Duration:    time.Since(start),
+		}, nil
+	}
+
+	var prunedCount int64
+	var bytesFreed int64
+	newBase := beforeHeight
+
+	// Iterate through blocks from base to beforeHeight
+	iter := s.db.NewIterator(&util.Range{
+		Start: makeHeightKey(s.base),
+		Limit: makeHeightKey(beforeHeight),
+	}, nil)
+	defer iter.Release()
+
+	batch := new(leveldb.Batch)
+	batchSize := 0
+	const maxBatchSize = 1000 // Write in batches to avoid memory issues
+
+	for iter.Next() {
+		heightKey := iter.Key()
+		hash := iter.Value()
+
+		// Extract height from key
+		height := decodeInt64(heightKey[len(prefixHeight):])
+
+		// Check if this block should be kept
+		if s.pruneCfg != nil && s.pruneCfg.ShouldKeep(height, s.height) {
+			// Track the lowest kept height as new base
+			if height < newBase {
+				newBase = height
+			}
+			continue
+		}
+
+		// Delete height -> hash mapping
+		batch.Delete(heightKey)
+
+		// Delete hash -> data mapping
+		blockKey := makeBlockKey(hash)
+		if data, err := s.db.Get(blockKey, nil); err == nil {
+			bytesFreed += int64(len(data))
+		}
+		batch.Delete(blockKey)
+
+		prunedCount++
+		batchSize++
+
+		// Write batch if it gets too large
+		if batchSize >= maxBatchSize {
+			if err := s.db.Write(batch, nil); err != nil {
+				return nil, fmt.Errorf("writing prune batch: %w", err)
+			}
+			batch.Reset()
+			batchSize = 0
+		}
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterating blocks: %w", err)
+	}
+
+	// Write any remaining batch
+	if batchSize > 0 {
+		if err := s.db.Write(batch, nil); err != nil {
+			return nil, fmt.Errorf("writing final prune batch: %w", err)
+		}
+	}
+
+	// Update base metadata if changed
+	if newBase > s.base {
+		if err := s.db.Put(keyMetaBase, encodeInt64(newBase), nil); err != nil {
+			return nil, fmt.Errorf("updating base metadata: %w", err)
+		}
+		s.base = newBase
+	}
+
+	return &PruneResult{
+		PrunedCount: prunedCount,
+		NewBase:     s.base,
+		BytesFreed:  bytesFreed,
+		Duration:    time.Since(start),
+	}, nil
+}
+
+// PruneConfig returns the current pruning configuration.
+func (s *LevelDBBlockStore) PruneConfig() *PruneConfig {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pruneCfg
+}
+
+// SetPruneConfig updates the pruning configuration.
+func (s *LevelDBBlockStore) SetPruneConfig(cfg *PruneConfig) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneCfg = cfg
+}
+
+// Compact triggers LevelDB compaction to reclaim space after pruning.
+func (s *LevelDBBlockStore) Compact() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return s.db.CompactRange(util.Range{})
+}
+
+// Ensure LevelDBBlockStore implements PrunableBlockStore.
+var _ PrunableBlockStore = (*LevelDBBlockStore)(nil)
 
 // Key encoding helpers
 

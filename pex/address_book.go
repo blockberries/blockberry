@@ -49,18 +49,26 @@ type addressBookData struct {
 
 // AddressBook manages known peer addresses with persistence.
 type AddressBook struct {
-	peers map[peer.ID]*AddressEntry
-	seeds []SeedNode
-	path  string
-	mu    sync.RWMutex
+	peers        map[peer.ID]*AddressEntry
+	seeds        []SeedNode
+	path         string
+	maxAddresses int // Maximum total addresses to store (0 = unlimited)
+	mu           sync.RWMutex
 }
 
-// NewAddressBook creates a new AddressBook.
+// NewAddressBook creates a new AddressBook with no address limit.
 func NewAddressBook(path string) *AddressBook {
+	return NewAddressBookWithLimit(path, 0)
+}
+
+// NewAddressBookWithLimit creates a new AddressBook with a maximum address limit.
+// A limit of 0 means unlimited addresses.
+func NewAddressBookWithLimit(path string, maxAddresses int) *AddressBook {
 	return &AddressBook{
-		peers: make(map[peer.ID]*AddressEntry),
-		seeds: nil,
-		path:  path,
+		peers:        make(map[peer.ID]*AddressEntry),
+		seeds:        nil,
+		path:         path,
+		maxAddresses: maxAddresses,
 	}
 }
 
@@ -140,6 +148,7 @@ func (ab *AddressBook) Save() error {
 }
 
 // AddPeer adds or updates a peer in the address book.
+// If the address book is at capacity, the oldest non-seed peer is evicted.
 func (ab *AddressBook) AddPeer(peerID peer.ID, multiaddr string, nodeID string, latency int32) {
 	ab.mu.Lock()
 	defer ab.mu.Unlock()
@@ -147,18 +156,70 @@ func (ab *AddressBook) AddPeer(peerID peer.ID, multiaddr string, nodeID string, 
 	now := time.Now().Unix()
 
 	if entry, ok := ab.peers[peerID]; ok {
+		// Update existing peer
 		entry.Multiaddr = multiaddr
 		entry.NodeID = nodeID
 		entry.LastSeen = now
 		entry.Latency = latency
 		entry.AttemptCount = 0
 	} else {
+		// Adding a new peer - check capacity first
+		if ab.maxAddresses > 0 && len(ab.peers) >= ab.maxAddresses {
+			ab.evictOldestLocked()
+		}
+
 		ab.peers[peerID] = &AddressEntry{
 			Multiaddr: multiaddr,
 			NodeID:    nodeID,
 			LastSeen:  now,
 			Latency:   latency,
 			IsSeed:    false,
+		}
+	}
+}
+
+// evictOldestLocked removes the oldest non-seed peer from the address book.
+// Must be called with mu held.
+func (ab *AddressBook) evictOldestLocked() {
+	var oldestID peer.ID
+	var oldestTime int64 = 1<<63 - 1 // Max int64
+
+	for id, entry := range ab.peers {
+		// Don't evict seed nodes
+		if entry.IsSeed {
+			continue
+		}
+		if entry.LastSeen < oldestTime {
+			oldestTime = entry.LastSeen
+			oldestID = id
+		}
+	}
+
+	if oldestID != "" {
+		delete(ab.peers, oldestID)
+	}
+}
+
+// MaxAddresses returns the maximum number of addresses allowed in the book.
+// Returns 0 if unlimited.
+func (ab *AddressBook) MaxAddresses() int {
+	ab.mu.RLock()
+	defer ab.mu.RUnlock()
+	return ab.maxAddresses
+}
+
+// SetMaxAddresses sets the maximum number of addresses allowed in the book.
+// If the new limit is lower than the current size, oldest peers are evicted.
+func (ab *AddressBook) SetMaxAddresses(max int) {
+	ab.mu.Lock()
+	defer ab.mu.Unlock()
+
+	ab.maxAddresses = max
+
+	// Evict peers if over the new limit
+	if max > 0 {
+		for len(ab.peers) > max {
+			ab.evictOldestLocked()
 		}
 	}
 }

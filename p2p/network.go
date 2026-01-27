@@ -4,6 +4,7 @@ import (
 	"crypto/ed25519"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/blockberries/glueberry"
 	"github.com/blockberries/glueberry/pkg/streams"
@@ -19,6 +20,7 @@ const (
 	StreamPEX          = "pex"
 	StreamTransactions = "transactions"
 	StreamBlockSync    = "blocksync"
+	StreamStateSync    = "statesync"
 	StreamBlocks       = "blocks"
 	StreamConsensus    = "consensus"
 	StreamHousekeeping = "housekeeping"
@@ -30,10 +32,17 @@ func AllStreams() []string {
 		StreamPEX,
 		StreamTransactions,
 		StreamBlockSync,
+		StreamStateSync,
 		StreamBlocks,
 		StreamConsensus,
 		StreamHousekeeping,
 	}
+}
+
+// TempBanEntry represents a temporary ban on a peer.
+type TempBanEntry struct {
+	ExpiresAt time.Time
+	Reason    string
 }
 
 // Network wraps glueberry.Node with blockberry-specific logic.
@@ -50,6 +59,10 @@ type Network struct {
 	messages <-chan streams.IncomingMessage
 	events   <-chan glueberry.ConnectionEvent
 
+	// Temporary bans (softer than permanent blacklist)
+	tempBans   map[peer.ID]*TempBanEntry
+	tempBansMu sync.RWMutex
+
 	// Lifecycle
 	started bool
 	stopCh  chan struct{}
@@ -65,6 +78,7 @@ func NewNetwork(node *glueberry.Node) *Network {
 		peerManager:   pm,
 		scorer:        NewPeerScorer(pm),
 		streamAdapter: NewGlueberryStreamAdapter(registry),
+		tempBans:      make(map[peer.ID]*TempBanEntry),
 		stopCh:        make(chan struct{}),
 	}
 }
@@ -77,6 +91,7 @@ func NewNetworkWithRegistry(node *glueberry.Node, registry StreamRegistry) *Netw
 		peerManager:   pm,
 		scorer:        NewPeerScorer(pm),
 		streamAdapter: NewGlueberryStreamAdapter(registry),
+		tempBans:      make(map[peer.ID]*TempBanEntry),
 		stopCh:        make(chan struct{}),
 	}
 }
@@ -282,7 +297,8 @@ func (n *Network) getStreamNames() []string {
 	return AllStreams()
 }
 
-// BlacklistPeer blacklists a peer and disconnects them.
+// BlacklistPeer blacklists a peer permanently and disconnects them.
+// Use TempBanPeer for temporary bans (e.g., chain/version mismatch).
 func (n *Network) BlacklistPeer(peerID peer.ID) error {
 	// Remove from peer manager
 	n.peerManager.RemovePeer(peerID)
@@ -292,6 +308,67 @@ func (n *Network) BlacklistPeer(peerID peer.ID) error {
 
 	// Blacklist in glueberry
 	return n.node.BlacklistPeer(peerID)
+}
+
+// TempBanPeer temporarily bans a peer for a specified duration.
+// Unlike BlacklistPeer, this is not permanent and the peer can reconnect after the duration.
+// Use this for recoverable issues like chain/version mismatch.
+func (n *Network) TempBanPeer(peerID peer.ID, duration time.Duration, reason string) error {
+	n.tempBansMu.Lock()
+	n.tempBans[peerID] = &TempBanEntry{
+		ExpiresAt: time.Now().Add(duration),
+		Reason:    reason,
+	}
+	n.tempBansMu.Unlock()
+
+	// Remove from peer manager
+	n.peerManager.RemovePeer(peerID)
+
+	// Record the ban for scoring purposes
+	n.scorer.RecordBan(peerID)
+
+	// Disconnect the peer (but don't permanently blacklist)
+	return n.node.Disconnect(peerID)
+}
+
+// IsTempBanned checks if a peer is currently temporarily banned.
+func (n *Network) IsTempBanned(peerID peer.ID) bool {
+	n.tempBansMu.RLock()
+	defer n.tempBansMu.RUnlock()
+
+	entry, ok := n.tempBans[peerID]
+	if !ok {
+		return false
+	}
+	return time.Now().Before(entry.ExpiresAt)
+}
+
+// GetTempBanReason returns the reason for a temporary ban, or empty string if not banned.
+func (n *Network) GetTempBanReason(peerID peer.ID) string {
+	n.tempBansMu.RLock()
+	defer n.tempBansMu.RUnlock()
+
+	entry, ok := n.tempBans[peerID]
+	if !ok || time.Now().After(entry.ExpiresAt) {
+		return ""
+	}
+	return entry.Reason
+}
+
+// CleanupExpiredTempBans removes expired temporary bans.
+func (n *Network) CleanupExpiredTempBans() int {
+	n.tempBansMu.Lock()
+	defer n.tempBansMu.Unlock()
+
+	now := time.Now()
+	removed := 0
+	for peerID, entry := range n.tempBans {
+		if now.After(entry.ExpiresAt) {
+			delete(n.tempBans, peerID)
+			removed++
+		}
+	}
+	return removed
 }
 
 // AddPenalty adds penalty points to a peer and blacklists if threshold exceeded.

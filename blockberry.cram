@@ -107,3 +107,38 @@ interface HousekeepingMessages {
   142 = FirewallRequest;
   143 = FirewallResponse;
 }
+
+message SnapshotsRequest {
+  required int64 min_height = 1;
+}
+
+message SnapshotMetadata {
+  required int64 height = 1;
+  required bytes hash = 2;
+  required int32 chunks = 3;
+  required bytes app_hash = 4;
+  int64 created_at = 5;
+}
+
+message SnapshotsResponse {
+  repeated SnapshotMetadata snapshots = 1;
+}
+
+message SnapshotChunkRequest {
+  required bytes snapshot_hash = 1;
+  required int32 chunk_index = 2;
+}
+
+message SnapshotChunkResponse {
+  required bytes snapshot_hash = 1;
+  required int32 chunk_index = 2;
+  required bytes data = 3;
+  required bytes chunk_hash = 4;
+}
+
+interface StateSyncMessage {
+  144 = SnapshotsRequest;
+  145 = SnapshotsResponse;
+  146 = SnapshotChunkRequest;
+  147 = SnapshotChunkResponse;
+}

@@ -31,6 +31,7 @@ type Config struct {
 	Role         NodeRole           `toml:"role"`
 	Handlers     HandlersConfig     `toml:"handlers"`
 	PEX          PEXConfig          `toml:"pex"`
+	StateSync    StateSyncConfig    `toml:"statesync"`
 	Mempool      MempoolConfig      `toml:"mempool"`
 	BlockStore   BlockStoreConfig   `toml:"blockstore"`
 	StateStore   StateStoreConfig   `toml:"statestore"`
@@ -91,6 +92,39 @@ type PEXConfig struct {
 
 	// MaxAddressesPerResponse is the maximum addresses to return in a PEX response.
 	MaxAddressesPerResponse int `toml:"max_addresses_per_response"`
+
+	// MaxTotalAddresses is the maximum total addresses to store in the address book.
+	// This prevents memory exhaustion from malicious peers sending many addresses.
+	// When the limit is reached, old/stale addresses are evicted.
+	MaxTotalAddresses int `toml:"max_total_addresses"`
+}
+
+// StateSyncConfig contains state sync configuration.
+type StateSyncConfig struct {
+	// Enabled determines whether state sync is active.
+	// When enabled, the node will attempt to bootstrap from a snapshot
+	// instead of replaying blocks from genesis.
+	Enabled bool `toml:"enabled"`
+
+	// TrustHeight is the block height to trust for state sync.
+	// Must be set along with TrustHash when state sync is enabled.
+	TrustHeight int64 `toml:"trust_height"`
+
+	// TrustHash is the block hash at TrustHeight to trust.
+	// Used to verify the snapshot's integrity.
+	TrustHash string `toml:"trust_hash"`
+
+	// DiscoveryInterval is the time between snapshot discovery requests.
+	DiscoveryInterval Duration `toml:"discovery_interval"`
+
+	// ChunkRequestTimeout is the timeout for requesting a single chunk.
+	ChunkRequestTimeout Duration `toml:"chunk_request_timeout"`
+
+	// MaxChunkRetries is the maximum number of retries for a failed chunk request.
+	MaxChunkRetries int `toml:"max_chunk_retries"`
+
+	// SnapshotPath is the directory to store downloaded snapshots.
+	SnapshotPath string `toml:"snapshot_path"`
 }
 
 // MempoolConfig contains transaction mempool configuration.
@@ -273,6 +307,16 @@ func DefaultConfig() *Config {
 			Enabled:                 true,
 			RequestInterval:         Duration(30 * time.Second),
 			MaxAddressesPerResponse: 100,
+			MaxTotalAddresses:       1000,
+		},
+		StateSync: StateSyncConfig{
+			Enabled:             false,
+			TrustHeight:         0,
+			TrustHash:           "",
+			DiscoveryInterval:   Duration(10 * time.Second),
+			ChunkRequestTimeout: Duration(30 * time.Second),
+			MaxChunkRetries:     3,
+			SnapshotPath:        "data/snapshots",
 		},
 		Mempool: MempoolConfig{
 			Type:            "simple",
@@ -349,6 +393,7 @@ var (
 	ErrInvalidSyncMaxPendingBatches = errors.New("sync max_pending_batches must be positive")
 	ErrInvalidRequestInterval       = errors.New("request_interval must be positive when pex is enabled")
 	ErrInvalidMaxAddresses          = errors.New("max_addresses_per_response must be positive when pex is enabled")
+	ErrInvalidMaxTotalAddresses     = errors.New("max_total_addresses must be positive when pex is enabled")
 	ErrInvalidMaxTxs                = errors.New("max_txs must be positive")
 	ErrInvalidMaxBytes              = errors.New("max_bytes must be positive")
 	ErrInvalidMempoolCacheSize      = errors.New("mempool cache_size must be non-negative")
@@ -362,6 +407,11 @@ var (
 	ErrInvalidLogLevel              = errors.New("log level must be one of: debug, info, warn, error")
 	ErrInvalidLogFormat             = errors.New("log format must be 'text' or 'json'")
 	ErrEmptyLogOutput               = errors.New("log output cannot be empty")
+	ErrStateSyncMissingTrust        = errors.New("trust_height and trust_hash must be set when state sync is enabled")
+	ErrInvalidStateSyncDiscovery    = errors.New("discovery_interval must be positive when state sync is enabled")
+	ErrInvalidStateSyncChunkTimeout = errors.New("chunk_request_timeout must be positive when state sync is enabled")
+	ErrInvalidStateSyncRetries      = errors.New("max_chunk_retries must be non-negative when state sync is enabled")
+	ErrEmptyStateSyncPath           = errors.New("snapshot_path cannot be empty when state sync is enabled")
 )
 
 // Validate checks the configuration for errors.
@@ -380,6 +430,9 @@ func (c *Config) Validate() error {
 	}
 	if err := c.PEX.Validate(); err != nil {
 		return fmt.Errorf("pex config: %w", err)
+	}
+	if err := c.StateSync.Validate(); err != nil {
+		return fmt.Errorf("statesync config: %w", err)
 	}
 	if err := c.Mempool.Validate(); err != nil {
 		return fmt.Errorf("mempool config: %w", err)
@@ -447,6 +500,31 @@ func (c *PEXConfig) Validate() error {
 		}
 		if c.MaxAddressesPerResponse <= 0 {
 			return ErrInvalidMaxAddresses
+		}
+		if c.MaxTotalAddresses <= 0 {
+			return ErrInvalidMaxTotalAddresses
+		}
+	}
+	return nil
+}
+
+// Validate checks the state sync configuration for errors.
+func (c *StateSyncConfig) Validate() error {
+	if c.Enabled {
+		if c.TrustHeight <= 0 || c.TrustHash == "" {
+			return ErrStateSyncMissingTrust
+		}
+		if c.DiscoveryInterval.Duration() <= 0 {
+			return ErrInvalidStateSyncDiscovery
+		}
+		if c.ChunkRequestTimeout.Duration() <= 0 {
+			return ErrInvalidStateSyncChunkTimeout
+		}
+		if c.MaxChunkRetries < 0 {
+			return ErrInvalidStateSyncRetries
+		}
+		if c.SnapshotPath == "" {
+			return ErrEmptyStateSyncPath
 		}
 	}
 	return nil

@@ -1893,4 +1893,203 @@ All Phase 4 tasks completed:
 
 ---
 
+## Phase 5: Dynamic Stream Registry
+
+### Phase 5.1: Stream Registry Interface
+
+**Status:** Complete
+
+**Files Created:**
+- `p2p/stream_registry.go` - Stream registry interface and implementation
+- `p2p/stream_registry_test.go` - Comprehensive tests (35 tests)
+
+**StreamRegistry Interface:**
+```go
+type StreamRegistry interface {
+    Register(cfg StreamConfig) error
+    Unregister(name string) error
+    Get(name string) *StreamConfig
+    All() []StreamConfig
+    Names() []string
+    Has(name string) bool
+    RegisterHandler(name string, handler StreamHandler) error
+    GetHandler(name string) StreamHandler
+    ByOwner(owner string) []StreamConfig
+    UnregisterByOwner(owner string) int
+}
+```
+
+**StreamConfig Struct (Unified Definition):**
+```go
+type StreamConfig struct {
+    Name           string    // Unique stream identifier
+    Encrypted      bool      // Uses encryption after handshake
+    MessageTypes   []uint16  // Cramberry message type IDs
+    RateLimit      int       // Max messages per second
+    MaxMessageSize int       // Max message size in bytes
+    Owner          string    // Component that owns this stream
+}
+```
+
+**StreamHandler Type:**
+```go
+type StreamHandler func(peerID peer.ID, data []byte) error
+```
+
+**InMemoryStreamRegistry Implementation:**
+- Thread-safe with RWMutex
+- Validates configs on registration
+- Prevents unregistering streams with active handlers
+- Supports owner-based stream management
+- Clone semantics for all returned configs
+
+**Helper Functions:**
+- `RegisterBuiltinStreams(registry)` - Registers core blockberry streams
+- `StreamConfig.Validate()` - Validates configuration
+- `StreamConfig.Clone()` - Creates deep copy
+
+**Stream Registry Errors:**
+- ErrStreamAlreadyRegistered
+- ErrStreamNotFound
+- ErrStreamHandlerNotSet
+- ErrInvalidStreamConfig
+- ErrStreamInUse
+
+**Test Coverage (35 tests):**
+- StreamConfig validation (valid, empty name, negative values)
+- StreamConfig clone (deep copy, nil message types)
+- Registry creation and counting
+- Stream registration (success, duplicate, invalid)
+- Stream unregistration (success, not found, with handler)
+- Get/Has/Names/All operations
+- Handler registration and retrieval
+- Owner-based operations
+- Force unregister and clear
+- Concurrent access safety
+- Built-in stream registration
+
+---
+
+### Phase 5.2: Integration with Glueberry
+
+**Status:** Complete
+
+**Files Created:**
+- `p2p/stream_adapter.go` - GlueberryStreamAdapter and StreamRouter
+- `p2p/stream_adapter_test.go` - Adapter tests (17 tests)
+
+**GlueberryStreamAdapter:**
+- Bridges stream registry with glueberry's stream management
+- Provides encrypted stream names for PrepareStreams calls
+- Routes incoming messages to registered handlers
+- Manages stream configurations and handlers
+
+**Key Methods:**
+```go
+func (a *GlueberryStreamAdapter) GetEncryptedStreamNames() []string
+func (a *GlueberryStreamAdapter) RouteMessage(msg streams.IncomingMessage) error
+func (a *GlueberryStreamAdapter) RegisterStream(cfg StreamConfig) error
+func (a *GlueberryStreamAdapter) SetHandler(name string, handler StreamHandler) error
+```
+
+**ObservableStreamAdapter:**
+- Extends GlueberryStreamAdapter with registration callbacks
+- Notifies when streams are registered/unregistered
+- Enables dynamic updates for existing connections
+
+**StreamRouter:**
+- Routes messages with rate limiting and validation
+- Enforces MaxMessageSize limits
+- Integrates with RateLimiter for per-stream rate limiting
+
+**Test Coverage:**
+- Adapter creation and registry access
+- Encrypted stream name retrieval
+- Message routing (success, no handler, stream not found)
+- Stream registration/unregistration
+- Handler management
+- Owner-based operations
+- Observable adapter callbacks
+- Router with rate limiting and message size validation
+
+---
+
+### Phase 5.3: Plugin Stream Registration
+
+**Status:** Complete
+
+**Files Modified:**
+- `p2p/network.go` - Added stream registry integration and registration methods
+
+**Network Struct Updates:**
+```go
+type Network struct {
+    // ... existing fields ...
+    streamAdapter *GlueberryStreamAdapter  // Stream management
+}
+```
+
+**New Network Methods:**
+```go
+// Stream registration
+func (n *Network) RegisterStream(cfg StreamConfig, handler StreamHandler) error
+func (n *Network) UnregisterStream(name string) error
+func (n *Network) SetStreamHandler(name string, handler StreamHandler) error
+func (n *Network) GetStreamHandler(name string) StreamHandler
+
+// Stream queries
+func (n *Network) HasStream(name string) bool
+func (n *Network) GetStreamConfig(name string) *StreamConfig
+func (n *Network) RegisteredStreams() []string
+
+// Message routing
+func (n *Network) RouteMessage(msg streams.IncomingMessage) error
+
+// Registry access
+func (n *Network) StreamRegistry() StreamRegistry
+func (n *Network) StreamAdapter() *GlueberryStreamAdapter
+
+// Bulk operations
+func (n *Network) RegisterBuiltinStreams() error
+func (n *Network) UnregisterStreamsByOwner(owner string) int
+
+// MempoolNetwork interface
+func (n *Network) ConnectedPeers() []peer.ID
+```
+
+**Constructor Updates:**
+```go
+func NewNetwork(node *glueberry.Node) *Network  // Creates with default registry
+func NewNetworkWithRegistry(node *glueberry.Node, registry StreamRegistry) *Network
+```
+
+**PrepareStreams/CompleteHandshake Updates:**
+- Now uses streams from registry if available
+- Falls back to AllStreams() if registry is empty
+- Supports dynamic stream addition for future connections
+
+**Design Decisions:**
+- Stream adapter initialized in constructor
+- Handlers cleared before stream unregistration
+- Registry-first approach with fallback to defaults
+- Network implements MempoolNetwork interface via ConnectedPeers()
+
+---
+
+## Phase 5 Complete
+
+All Phase 5 tasks completed:
+- 5.1 Stream Registry Interface - Registry and InMemoryStreamRegistry
+- 5.2 Integration with Glueberry - GlueberryStreamAdapter and StreamRouter
+- 5.3 Plugin Stream Registration - Network integration methods
+
+The dynamic stream registry enables:
+1. **Plugin streams** - Consensus engines and mempools can register custom streams
+2. **Message routing** - Automatic routing to registered handlers
+3. **Rate limiting** - Per-stream rate limiting via StreamRouter
+4. **Owner tracking** - Bulk unregister by component owner
+5. **Runtime flexibility** - Add/remove streams without node restart
+
+---
+
 *Last Updated: January 2025*

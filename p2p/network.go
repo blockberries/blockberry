@@ -43,6 +43,9 @@ type Network struct {
 	peerManager *PeerManager
 	scorer      *PeerScorer
 
+	// Stream management
+	streamAdapter *GlueberryStreamAdapter
+
 	// Channels for incoming data
 	messages <-chan streams.IncomingMessage
 	events   <-chan glueberry.ConnectionEvent
@@ -56,11 +59,25 @@ type Network struct {
 // NewNetwork creates a new network instance wrapping a glueberry node.
 func NewNetwork(node *glueberry.Node) *Network {
 	pm := NewPeerManager()
+	registry := NewStreamRegistry()
 	return &Network{
-		node:        node,
-		peerManager: pm,
-		scorer:      NewPeerScorer(pm),
-		stopCh:      make(chan struct{}),
+		node:          node,
+		peerManager:   pm,
+		scorer:        NewPeerScorer(pm),
+		streamAdapter: NewGlueberryStreamAdapter(registry),
+		stopCh:        make(chan struct{}),
+	}
+}
+
+// NewNetworkWithRegistry creates a new network instance with a custom stream registry.
+func NewNetworkWithRegistry(node *glueberry.Node, registry StreamRegistry) *Network {
+	pm := NewPeerManager()
+	return &Network{
+		node:          node,
+		peerManager:   pm,
+		scorer:        NewPeerScorer(pm),
+		streamAdapter: NewGlueberryStreamAdapter(registry),
+		stopCh:        make(chan struct{}),
 	}
 }
 
@@ -235,8 +252,10 @@ func (n *Network) BroadcastBlock(height int64, data []byte) []error {
 }
 
 // PrepareStreams prepares encrypted streams for a peer after receiving their public key.
+// Uses streams from the stream registry if configured, otherwise uses default streams.
 func (n *Network) PrepareStreams(peerID peer.ID, peerPubKey ed25519.PublicKey) error {
-	return n.node.PrepareStreams(peerID, peerPubKey, AllStreams())
+	streamNames := n.getStreamNames()
+	return n.node.PrepareStreams(peerID, peerPubKey, streamNames)
 }
 
 // FinalizeHandshake completes the handshake and transitions to established state.
@@ -245,8 +264,22 @@ func (n *Network) FinalizeHandshake(peerID peer.ID) error {
 }
 
 // CompleteHandshake performs PrepareStreams and FinalizeHandshake in one step.
+// Uses streams from the stream registry if configured, otherwise uses default streams.
 func (n *Network) CompleteHandshake(peerID peer.ID, peerPubKey ed25519.PublicKey) error {
-	return n.node.CompleteHandshake(peerID, peerPubKey, AllStreams())
+	streamNames := n.getStreamNames()
+	return n.node.CompleteHandshake(peerID, peerPubKey, streamNames)
+}
+
+// getStreamNames returns stream names to use for handshake.
+// If the registry has streams registered, uses those. Otherwise uses defaults.
+func (n *Network) getStreamNames() []string {
+	if n.streamAdapter != nil {
+		names := n.streamAdapter.GetEncryptedStreamNames()
+		if len(names) > 0 {
+			return names
+		}
+	}
+	return AllStreams()
 }
 
 // BlacklistPeer blacklists a peer and disconnects them.
@@ -303,4 +336,139 @@ func (n *Network) ConnectionState(peerID peer.ID) glueberry.ConnectionState {
 // PeerCount returns the number of connected peers.
 func (n *Network) PeerCount() int {
 	return n.peerManager.PeerCount()
+}
+
+// StreamRegistry returns the stream registry.
+func (n *Network) StreamRegistry() StreamRegistry {
+	if n.streamAdapter != nil {
+		return n.streamAdapter.Registry()
+	}
+	return nil
+}
+
+// StreamAdapter returns the stream adapter for direct access.
+func (n *Network) StreamAdapter() *GlueberryStreamAdapter {
+	return n.streamAdapter
+}
+
+// RegisterStream registers a new stream with the network.
+// The stream will be included in future handshakes with new peers.
+// For existing peers, use RefreshPeerStreams to update their streams.
+// Returns ErrStreamAlreadyRegistered if the stream is already registered.
+func (n *Network) RegisterStream(cfg StreamConfig, handler StreamHandler) error {
+	if n.streamAdapter == nil {
+		return fmt.Errorf("stream adapter not initialized")
+	}
+
+	// Register the stream configuration
+	if err := n.streamAdapter.RegisterStream(cfg); err != nil {
+		return err
+	}
+
+	// Register the handler if provided
+	if handler != nil {
+		if err := n.streamAdapter.SetHandler(cfg.Name, handler); err != nil {
+			// Rollback stream registration on handler error
+			_ = n.streamAdapter.UnregisterStream(cfg.Name)
+			return err
+		}
+	}
+
+	return nil
+}
+
+// UnregisterStream removes a stream from the network.
+// Returns ErrStreamNotFound if the stream is not registered.
+// Returns ErrStreamInUse if the stream has an active handler.
+func (n *Network) UnregisterStream(name string) error {
+	if n.streamAdapter == nil {
+		return fmt.Errorf("stream adapter not initialized")
+	}
+
+	// Clear the handler first
+	if err := n.streamAdapter.SetHandler(name, nil); err != nil {
+		return err
+	}
+
+	// Then unregister the stream
+	return n.streamAdapter.UnregisterStream(name)
+}
+
+// SetStreamHandler sets the message handler for a registered stream.
+// Returns ErrStreamNotFound if the stream is not registered.
+func (n *Network) SetStreamHandler(name string, handler StreamHandler) error {
+	if n.streamAdapter == nil {
+		return fmt.Errorf("stream adapter not initialized")
+	}
+	return n.streamAdapter.SetHandler(name, handler)
+}
+
+// GetStreamHandler returns the handler for a stream.
+// Returns nil if no handler is registered.
+func (n *Network) GetStreamHandler(name string) StreamHandler {
+	if n.streamAdapter == nil {
+		return nil
+	}
+	return n.streamAdapter.Registry().GetHandler(name)
+}
+
+// HasStream returns true if the stream is registered.
+func (n *Network) HasStream(name string) bool {
+	if n.streamAdapter == nil {
+		return false
+	}
+	return n.streamAdapter.HasStream(name)
+}
+
+// GetStreamConfig returns the configuration for a stream.
+func (n *Network) GetStreamConfig(name string) *StreamConfig {
+	if n.streamAdapter == nil {
+		return nil
+	}
+	return n.streamAdapter.GetStreamConfig(name)
+}
+
+// RegisteredStreams returns all registered stream names.
+func (n *Network) RegisteredStreams() []string {
+	if n.streamAdapter == nil {
+		return AllStreams()
+	}
+	names := n.streamAdapter.GetAllStreamNames()
+	if len(names) == 0 {
+		return AllStreams()
+	}
+	return names
+}
+
+// RouteMessage routes an incoming message to its registered handler.
+// Returns an error if no handler is registered for the stream.
+func (n *Network) RouteMessage(msg streams.IncomingMessage) error {
+	if n.streamAdapter == nil {
+		return fmt.Errorf("stream adapter not initialized")
+	}
+	return n.streamAdapter.RouteMessage(msg)
+}
+
+// RegisterBuiltinStreams registers the core blockberry streams with handlers.
+// This is typically called during node initialization.
+func (n *Network) RegisterBuiltinStreams() error {
+	if n.streamAdapter == nil {
+		return fmt.Errorf("stream adapter not initialized")
+	}
+	return RegisterBuiltinStreams(n.streamAdapter.Registry())
+}
+
+// UnregisterStreamsByOwner removes all streams owned by the given owner.
+// Returns the number of streams unregistered.
+func (n *Network) UnregisterStreamsByOwner(owner string) int {
+	if n.streamAdapter == nil {
+		return 0
+	}
+	return n.streamAdapter.UnregisterByOwner(owner)
+}
+
+// ConnectedPeers returns the list of connected peer IDs.
+// This implements the MempoolNetwork interface.
+func (n *Network) ConnectedPeers() []peer.ID {
+	return n.peerManager.AllPeerIDs()
 }

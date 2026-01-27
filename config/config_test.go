@@ -47,6 +47,19 @@ func TestDefaultConfig(t *testing.T) {
 
 	// Housekeeping defaults
 	require.Equal(t, 60*time.Second, cfg.Housekeeping.LatencyProbeInterval.Duration())
+
+	// Role defaults
+	require.Equal(t, RoleFull, cfg.Role)
+
+	// Handlers defaults
+	require.Equal(t, 5*time.Second, cfg.Handlers.Transactions.RequestInterval.Duration())
+	require.Equal(t, int32(100), cfg.Handlers.Transactions.BatchSize)
+	require.Equal(t, 1000, cfg.Handlers.Transactions.MaxPending)
+	require.Equal(t, 60*time.Second, cfg.Handlers.Transactions.MaxPendingAge.Duration())
+	require.Equal(t, int64(22020096), cfg.Handlers.Blocks.MaxBlockSize)
+	require.Equal(t, 5*time.Second, cfg.Handlers.Sync.SyncInterval.Duration())
+	require.Equal(t, int32(100), cfg.Handlers.Sync.BatchSize)
+	require.Equal(t, 10, cfg.Handlers.Sync.MaxPendingBatches)
 }
 
 func TestDefaultConfigValidates(t *testing.T) {
@@ -667,4 +680,132 @@ func TestEnsureDataDirs(t *testing.T) {
 	require.NoError(t, err)
 	_, err = os.Stat(filepath.Join(tmpDir, "data", "state"))
 	require.NoError(t, err)
+}
+
+func TestNodeRole(t *testing.T) {
+	t.Run("valid roles", func(t *testing.T) {
+		require.True(t, RoleValidator.IsValid())
+		require.True(t, RoleFull.IsValid())
+		require.True(t, RoleSeed.IsValid())
+		require.True(t, RoleLight.IsValid())
+	})
+
+	t.Run("invalid role", func(t *testing.T) {
+		require.False(t, NodeRole("invalid").IsValid())
+		require.False(t, NodeRole("").IsValid())
+	})
+
+	t.Run("role validation in config", func(t *testing.T) {
+		cfg := DefaultConfig()
+
+		// Valid roles
+		for _, role := range ValidRoles {
+			cfg.Role = role
+			err := cfg.Validate()
+			require.NoError(t, err, "role %s should be valid", role)
+		}
+
+		// Invalid role
+		cfg.Role = "invalid"
+		err := cfg.Validate()
+		require.ErrorIs(t, err, ErrInvalidNodeRole)
+	})
+}
+
+func TestHandlersConfigValidation(t *testing.T) {
+	t.Run("valid config", func(t *testing.T) {
+		cfg := HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(5 * time.Second),
+				BatchSize:       100,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{
+				MaxBlockSize: 1024 * 1024,
+			},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(5 * time.Second),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		}
+		require.NoError(t, cfg.Validate())
+	})
+
+	t.Run("invalid transactions request_interval", func(t *testing.T) {
+		cfg := HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(0),
+				BatchSize:       100,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{MaxBlockSize: 1024},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(5 * time.Second),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		}
+		err := cfg.Validate()
+		require.ErrorIs(t, err, ErrInvalidTxRequestInterval)
+	})
+
+	t.Run("invalid transactions batch_size", func(t *testing.T) {
+		cfg := HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(5 * time.Second),
+				BatchSize:       0,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{MaxBlockSize: 1024},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(5 * time.Second),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		}
+		err := cfg.Validate()
+		require.ErrorIs(t, err, ErrInvalidTxBatchSize)
+	})
+
+	t.Run("invalid blocks max_block_size", func(t *testing.T) {
+		cfg := HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(5 * time.Second),
+				BatchSize:       100,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{MaxBlockSize: 0},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(5 * time.Second),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		}
+		err := cfg.Validate()
+		require.ErrorIs(t, err, ErrInvalidBlocksMaxSize)
+	})
+
+	t.Run("invalid sync sync_interval", func(t *testing.T) {
+		cfg := HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(5 * time.Second),
+				BatchSize:       100,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{MaxBlockSize: 1024},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(0),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		}
+		err := cfg.Validate()
+		require.ErrorIs(t, err, ErrInvalidSyncInterval)
+	})
 }

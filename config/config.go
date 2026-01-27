@@ -10,10 +10,43 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
+// NodeRole defines the role of a node in the network.
+type NodeRole string
+
+// Node role constants.
+const (
+	// RoleValidator is a node that participates in consensus.
+	RoleValidator NodeRole = "validator"
+
+	// RoleFull is a full node that stores all data but doesn't participate in consensus.
+	RoleFull NodeRole = "full"
+
+	// RoleSeed is a seed node that helps peers discover each other.
+	RoleSeed NodeRole = "seed"
+
+	// RoleLight is a light client that only stores block headers.
+	RoleLight NodeRole = "light"
+)
+
+// ValidRoles contains all valid node roles.
+var ValidRoles = []NodeRole{RoleValidator, RoleFull, RoleSeed, RoleLight}
+
+// IsValid returns true if the role is valid.
+func (r NodeRole) IsValid() bool {
+	for _, valid := range ValidRoles {
+		if r == valid {
+			return true
+		}
+	}
+	return false
+}
+
 // Config is the main configuration for a blockberry node.
 type Config struct {
 	Node         NodeConfig         `toml:"node"`
 	Network      NetworkConfig      `toml:"network"`
+	Role         NodeRole           `toml:"role"`
+	Handlers     HandlersConfig     `toml:"handlers"`
 	PEX          PEXConfig          `toml:"pex"`
 	Mempool      MempoolConfig      `toml:"mempool"`
 	BlockStore   BlockStoreConfig   `toml:"blockstore"`
@@ -113,6 +146,51 @@ type HousekeepingConfig struct {
 	LatencyProbeInterval Duration `toml:"latency_probe_interval"`
 }
 
+// HandlersConfig contains configuration for message handlers.
+type HandlersConfig struct {
+	// Transactions contains transaction handler configuration.
+	Transactions TransactionsHandlerConfig `toml:"transactions"`
+
+	// Blocks contains block handler configuration.
+	Blocks BlocksHandlerConfig `toml:"blocks"`
+
+	// Sync contains block sync handler configuration.
+	Sync SyncHandlerConfig `toml:"sync"`
+}
+
+// TransactionsHandlerConfig contains transaction handler configuration.
+type TransactionsHandlerConfig struct {
+	// RequestInterval is the time between transaction gossip requests.
+	RequestInterval Duration `toml:"request_interval"`
+
+	// BatchSize is the maximum number of transactions to request at once.
+	BatchSize int32 `toml:"batch_size"`
+
+	// MaxPending is the maximum number of pending transaction requests per peer.
+	MaxPending int `toml:"max_pending"`
+
+	// MaxPendingAge is the maximum age of a pending request before cleanup.
+	MaxPendingAge Duration `toml:"max_pending_age"`
+}
+
+// BlocksHandlerConfig contains block handler configuration.
+type BlocksHandlerConfig struct {
+	// MaxBlockSize is the maximum allowed block size in bytes.
+	MaxBlockSize int64 `toml:"max_block_size"`
+}
+
+// SyncHandlerConfig contains block sync handler configuration.
+type SyncHandlerConfig struct {
+	// SyncInterval is the time between sync status checks.
+	SyncInterval Duration `toml:"sync_interval"`
+
+	// BatchSize is the number of blocks to request per batch during sync.
+	BatchSize int32 `toml:"batch_size"`
+
+	// MaxPendingBatches is the maximum number of pending block batches.
+	MaxPendingBatches int `toml:"max_pending_batches"`
+}
+
 // MetricsConfig contains metrics configuration.
 type MetricsConfig struct {
 	// Enabled determines whether metrics collection is active.
@@ -179,6 +257,23 @@ func DefaultConfig() *Config {
 				Addrs: []string{},
 			},
 		},
+		Role: RoleFull, // Default to full node
+		Handlers: HandlersConfig{
+			Transactions: TransactionsHandlerConfig{
+				RequestInterval: Duration(5 * time.Second),
+				BatchSize:       100,
+				MaxPending:      1000,
+				MaxPendingAge:   Duration(60 * time.Second),
+			},
+			Blocks: BlocksHandlerConfig{
+				MaxBlockSize: 22020096, // ~21MB
+			},
+			Sync: SyncHandlerConfig{
+				SyncInterval:      Duration(5 * time.Second),
+				BatchSize:         100,
+				MaxPendingBatches: 10,
+			},
+		},
 		PEX: PEXConfig{
 			Enabled:                 true,
 			RequestInterval:         Duration(30 * time.Second),
@@ -236,30 +331,39 @@ func LoadConfig(path string) (*Config, error) {
 
 // Validation errors.
 var (
-	ErrEmptyChainID             = errors.New("chain_id cannot be empty")
-	ErrInvalidProtocolVersion   = errors.New("protocol_version must be positive")
-	ErrEmptyPrivateKeyPath      = errors.New("private_key_path cannot be empty")
-	ErrNoListenAddrs            = errors.New("at least one listen address is required")
-	ErrInvalidMaxInboundPeers   = errors.New("max_inbound_peers must be non-negative")
-	ErrInvalidMaxOutboundPeers  = errors.New("max_outbound_peers must be non-negative")
-	ErrInvalidHandshakeTimeout  = errors.New("handshake_timeout must be positive")
-	ErrInvalidDialTimeout       = errors.New("dial_timeout must be positive")
-	ErrEmptyAddressBookPath     = errors.New("address_book_path cannot be empty")
-	ErrInvalidRequestInterval   = errors.New("request_interval must be positive when pex is enabled")
-	ErrInvalidMaxAddresses      = errors.New("max_addresses_per_response must be positive when pex is enabled")
-	ErrInvalidMaxTxs            = errors.New("max_txs must be positive")
-	ErrInvalidMaxBytes          = errors.New("max_bytes must be positive")
-	ErrInvalidMempoolCacheSize  = errors.New("mempool cache_size must be non-negative")
-	ErrInvalidBlockStoreBackend = errors.New("blockstore backend must be 'leveldb' or 'badgerdb'")
-	ErrEmptyBlockStorePath      = errors.New("blockstore path cannot be empty")
-	ErrEmptyStateStorePath      = errors.New("statestore path cannot be empty")
-	ErrInvalidStateCacheSize    = errors.New("statestore cache_size must be non-negative")
-	ErrInvalidLatencyInterval   = errors.New("latency_probe_interval must be positive")
-	ErrEmptyMetricsNamespace    = errors.New("metrics namespace cannot be empty when enabled")
-	ErrEmptyMetricsListenAddr   = errors.New("metrics listen_addr cannot be empty when enabled")
-	ErrInvalidLogLevel          = errors.New("log level must be one of: debug, info, warn, error")
-	ErrInvalidLogFormat         = errors.New("log format must be 'text' or 'json'")
-	ErrEmptyLogOutput           = errors.New("log output cannot be empty")
+	ErrEmptyChainID                 = errors.New("chain_id cannot be empty")
+	ErrInvalidProtocolVersion       = errors.New("protocol_version must be positive")
+	ErrEmptyPrivateKeyPath          = errors.New("private_key_path cannot be empty")
+	ErrNoListenAddrs                = errors.New("at least one listen address is required")
+	ErrInvalidMaxInboundPeers       = errors.New("max_inbound_peers must be non-negative")
+	ErrInvalidMaxOutboundPeers      = errors.New("max_outbound_peers must be non-negative")
+	ErrInvalidHandshakeTimeout      = errors.New("handshake_timeout must be positive")
+	ErrInvalidDialTimeout           = errors.New("dial_timeout must be positive")
+	ErrEmptyAddressBookPath         = errors.New("address_book_path cannot be empty")
+	ErrInvalidNodeRole              = errors.New("role must be one of: validator, full, seed, light")
+	ErrInvalidTxRequestInterval     = errors.New("transactions request_interval must be positive")
+	ErrInvalidTxBatchSize           = errors.New("transactions batch_size must be positive")
+	ErrInvalidTxMaxPending          = errors.New("transactions max_pending must be non-negative")
+	ErrInvalidTxMaxPendingAge       = errors.New("transactions max_pending_age must be positive")
+	ErrInvalidBlocksMaxSize         = errors.New("blocks max_block_size must be positive")
+	ErrInvalidSyncInterval          = errors.New("sync sync_interval must be positive")
+	ErrInvalidSyncBatchSize         = errors.New("sync batch_size must be positive")
+	ErrInvalidSyncMaxPendingBatches = errors.New("sync max_pending_batches must be positive")
+	ErrInvalidRequestInterval       = errors.New("request_interval must be positive when pex is enabled")
+	ErrInvalidMaxAddresses          = errors.New("max_addresses_per_response must be positive when pex is enabled")
+	ErrInvalidMaxTxs                = errors.New("max_txs must be positive")
+	ErrInvalidMaxBytes              = errors.New("max_bytes must be positive")
+	ErrInvalidMempoolCacheSize      = errors.New("mempool cache_size must be non-negative")
+	ErrInvalidBlockStoreBackend     = errors.New("blockstore backend must be 'leveldb' or 'badgerdb'")
+	ErrEmptyBlockStorePath          = errors.New("blockstore path cannot be empty")
+	ErrEmptyStateStorePath          = errors.New("statestore path cannot be empty")
+	ErrInvalidStateCacheSize        = errors.New("statestore cache_size must be non-negative")
+	ErrInvalidLatencyInterval       = errors.New("latency_probe_interval must be positive")
+	ErrEmptyMetricsNamespace        = errors.New("metrics namespace cannot be empty when enabled")
+	ErrEmptyMetricsListenAddr       = errors.New("metrics listen_addr cannot be empty when enabled")
+	ErrInvalidLogLevel              = errors.New("log level must be one of: debug, info, warn, error")
+	ErrInvalidLogFormat             = errors.New("log format must be 'text' or 'json'")
+	ErrEmptyLogOutput               = errors.New("log output cannot be empty")
 )
 
 // Validate checks the configuration for errors.
@@ -269,6 +373,12 @@ func (c *Config) Validate() error {
 	}
 	if err := c.Network.Validate(); err != nil {
 		return fmt.Errorf("network config: %w", err)
+	}
+	if !c.Role.IsValid() {
+		return fmt.Errorf("config: %w", ErrInvalidNodeRole)
+	}
+	if err := c.Handlers.Validate(); err != nil {
+		return fmt.Errorf("handlers config: %w", err)
 	}
 	if err := c.PEX.Validate(); err != nil {
 		return fmt.Errorf("pex config: %w", err)
@@ -384,6 +494,59 @@ func (c *StateStoreConfig) Validate() error {
 func (c *HousekeepingConfig) Validate() error {
 	if c.LatencyProbeInterval.Duration() <= 0 {
 		return ErrInvalidLatencyInterval
+	}
+	return nil
+}
+
+// Validate checks the handlers configuration for errors.
+func (c *HandlersConfig) Validate() error {
+	if err := c.Transactions.Validate(); err != nil {
+		return fmt.Errorf("transactions: %w", err)
+	}
+	if err := c.Blocks.Validate(); err != nil {
+		return fmt.Errorf("blocks: %w", err)
+	}
+	if err := c.Sync.Validate(); err != nil {
+		return fmt.Errorf("sync: %w", err)
+	}
+	return nil
+}
+
+// Validate checks the transactions handler configuration for errors.
+func (c *TransactionsHandlerConfig) Validate() error {
+	if c.RequestInterval.Duration() <= 0 {
+		return ErrInvalidTxRequestInterval
+	}
+	if c.BatchSize <= 0 {
+		return ErrInvalidTxBatchSize
+	}
+	if c.MaxPending < 0 {
+		return ErrInvalidTxMaxPending
+	}
+	if c.MaxPendingAge.Duration() <= 0 {
+		return ErrInvalidTxMaxPendingAge
+	}
+	return nil
+}
+
+// Validate checks the blocks handler configuration for errors.
+func (c *BlocksHandlerConfig) Validate() error {
+	if c.MaxBlockSize <= 0 {
+		return ErrInvalidBlocksMaxSize
+	}
+	return nil
+}
+
+// Validate checks the sync handler configuration for errors.
+func (c *SyncHandlerConfig) Validate() error {
+	if c.SyncInterval.Duration() <= 0 {
+		return ErrInvalidSyncInterval
+	}
+	if c.BatchSize <= 0 {
+		return ErrInvalidSyncBatchSize
+	}
+	if c.MaxPendingBatches <= 0 {
+		return ErrInvalidSyncMaxPendingBatches
 	}
 	return nil
 }

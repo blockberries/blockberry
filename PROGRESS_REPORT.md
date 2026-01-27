@@ -689,4 +689,87 @@ func (ps *PeerScorer) applyDecayLocked(record *PenaltyRecord) {
 
 ---
 
+### 1.4 Configuration Overhaul
+**Status:** Complete
+
+**Files Modified:**
+- `config/config.go` - Added NodeRole enum, HandlersConfig, validation
+- `config/config_test.go` - Added tests for new config types
+
+**Key Changes:**
+
+1. **NodeRole Enum**: Defines node roles in the network:
+   ```go
+   type NodeRole string
+
+   const (
+       RoleValidator NodeRole = "validator"
+       RoleFull      NodeRole = "full"
+       RoleSeed      NodeRole = "seed"
+       RoleLight     NodeRole = "light"
+   )
+   ```
+
+2. **HandlersConfig**: Configuration for message handlers (previously hardcoded):
+   ```go
+   type HandlersConfig struct {
+       Transactions TransactionsHandlerConfig `toml:"transactions"`
+       Blocks       BlocksHandlerConfig       `toml:"blocks"`
+       Sync         SyncHandlerConfig         `toml:"sync"`
+   }
+
+   type TransactionsHandlerConfig struct {
+       RequestInterval Duration `toml:"request_interval"`
+       BatchSize       int32    `toml:"batch_size"`
+       MaxPending      int      `toml:"max_pending"`
+       MaxPendingAge   Duration `toml:"max_pending_age"`
+   }
+
+   type BlocksHandlerConfig struct {
+       MaxBlockSize int64 `toml:"max_block_size"`
+   }
+
+   type SyncHandlerConfig struct {
+       SyncInterval      Duration `toml:"sync_interval"`
+       BatchSize         int32    `toml:"batch_size"`
+       MaxPendingBatches int      `toml:"max_pending_batches"`
+   }
+   ```
+
+3. **Config Struct Updates**: Added Role and Handlers fields to main Config.
+
+4. **Validation**: Complete validation for all new configuration fields.
+
+5. **Default Values**: Sensible defaults for all handler configuration.
+
+**Test Coverage:**
+- `TestDefaultConfig` - Updated to verify new defaults
+- `TestNodeRole` - Tests role validation (valid, invalid, config integration)
+- `TestHandlersConfigValidation` - Tests handler config validation
+
+**Design Decisions:**
+- NodeRole enables role-based behavior (validators vs. full nodes vs. seeds)
+- HandlersConfig centralizes timing values previously hardcoded in node.go
+- All new config fields have validation with descriptive error messages
+- Backward compatible - existing configs work with new defaults
+
+---
+
+### 1.5 Remove Hardcoded Values
+**Status:** Complete (merged with 1.4)
+
+The HandlersConfig added in Phase 1.4 addresses this phase by making configurable:
+- Transaction gossip request interval (was hardcoded 5s in node.go:188)
+- Transaction batch size (was hardcoded 100 in node.go:189)
+- Sync interval (was hardcoded 5s in node.go:224)
+- Sync batch size (was hardcoded 100 in node.go:225)
+- Max pending transaction requests
+- Max pending age for cleanup
+- Max block size
+- Max pending sync batches
+
+All timing and size values are now in configuration with sensible defaults.
+
+---
+
 *Last Updated: January 2025*

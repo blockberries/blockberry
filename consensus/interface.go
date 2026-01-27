@@ -40,6 +40,7 @@ import (
 // consensus algorithm.
 type ConsensusEngine interface {
 	types.Component
+	types.Named
 
 	// Initialize sets up the consensus engine with its dependencies.
 	// This is called after construction but before Start().

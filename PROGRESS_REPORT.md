@@ -1299,13 +1299,77 @@ All timing and size values are now in configuration with sensible defaults.
 - Structure field verification for all types
 
 **Design Decisions:**
-- Interfaces embed `types.Component` for lifecycle management
+- Interfaces embed `types.Component` and `types.Named` for lifecycle and identification
 - BFTConsensus composes ConsensusEngine and BlockProducer
 - Dependencies passed via Initialize() rather than constructor injection
 - Safe callback invocations handle nil receivers and nil function pointers
 - StreamConfig includes Owner field for routing to correct component
 - ValidatorSet uses uint16 for index (matching BFT limitations)
 - VotingPower and ProposerPriority as int64 for future flexibility
+
+---
+
+### Phase 3.2: Consensus Factory
+
+**Status:** Complete
+
+**Files Created:**
+- `consensus/factory.go` - Consensus engine factory with registration
+- `consensus/factory_test.go` - Factory tests
+- `consensus/null.go` - NullConsensus implementation for full nodes
+- `consensus/null_test.go` - NullConsensus tests
+
+**Factory Implementation:**
+
+1. **ConsensusType Constants**:
+   ```go
+   const (
+       TypeNone ConsensusType = "none"
+   )
+   ```
+
+2. **Factory Struct**:
+   ```go
+   type Factory struct {
+       registry map[ConsensusType]ConsensusConstructor
+       mu       sync.RWMutex
+   }
+   ```
+
+3. **Factory Methods**:
+   - `NewFactory()` - Creates factory with built-in types registered
+   - `Register(type, constructor)` - Registers custom consensus engines
+   - `Unregister(type)` - Removes a consensus engine
+   - `Create(cfg)` - Creates engine from configuration
+   - `Has(type)` - Checks if type is registered
+   - `Types()` - Lists all registered types
+
+4. **Convenience Functions**:
+   - `DefaultFactory` - Global factory instance
+   - `CreateFromConfig(cfg)` - Creates engine using default factory
+   - `RegisterConsensus(type, constructor)` - Registers with default factory
+
+**NullConsensus Implementation:**
+
+A no-op consensus engine for full nodes that:
+- Receives and stores blocks without participating in consensus
+- Tracks height and round from processed blocks
+- Invokes OnBlockCommitted callback when blocks are processed
+- Returns false for IsValidator() and nil for ValidatorSet()
+- Thread-safe with atomic operations for state
+
+**Test Coverage:**
+- 13 factory tests covering registration, creation, unregistration, nil handling
+- 14 NullConsensus tests covering lifecycle, initialization, block processing
+- Concurrent access tests for both factory and NullConsensus
+- Interface compliance verification
+
+**Design Decisions:**
+- Factory pattern mirrors mempool.Factory for consistency
+- Default factory allows easy global registration of custom engines
+- NullConsensus useful for light clients and full nodes
+- Thread-safe registry with RWMutex
+- Atomic operations for NullConsensus state (height, round, running)
 
 ---
 

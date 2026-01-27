@@ -1373,4 +1373,73 @@ A no-op consensus engine for full nodes that:
 
 ---
 
+### Phase 3.3: Consensus Reactor Refactoring
+
+**Status:** Complete
+
+**Files Modified:**
+- `handlers/consensus.go` - Refactored to use ConsensusEngine interface
+- `handlers/consensus_test.go` - Added comprehensive tests for engine integration
+
+**Key Changes:**
+
+1. **New Constructor for Engine-based Reactor**:
+   ```go
+   func NewConsensusReactorWithEngine(
+       engine consensus.ConsensusEngine,
+       network *p2p.Network,
+       peerManager *p2p.PeerManager,
+   ) *ConsensusReactor
+   ```
+
+2. **Engine Management Methods**:
+   - `SetEngine(engine)` - Sets the consensus engine
+   - `GetEngine()` - Returns current engine
+   - `HasCustomStream(name)` - Checks custom stream registration
+   - `CustomStreams()` - Lists registered custom streams
+
+3. **Custom Stream Support**:
+   - Automatically registers streams from StreamAwareConsensus engines
+   - `HandleCustomStreamMessage()` routes to engine's HandleStreamMessage()
+
+4. **BFT Message Routing**:
+   - Detects BFTConsensus engines and parses message types
+   - Message type constants: MsgTypeProposal, MsgTypeVote, MsgTypeCommit, MsgTypeBlock
+   - Routes to HandleProposal(), HandleVote(), HandleCommit(), ProcessBlock()
+
+5. **Message Priority**:
+   - Engine takes priority over legacy handler when both are set
+   - Non-BFT engines receive raw data in Block.Data
+   - BFT engines get parsed proposals, votes, and commits
+
+6. **Backward Compatibility**:
+   - Legacy ConsensusHandler interface still supported
+   - SetHandler/GetHandler methods marked as deprecated
+   - Graceful fallback to handler when no engine is set
+
+**Test Coverage:**
+- `TestNewConsensusReactorWithEngine` - Engine-based constructor
+- `TestNewConsensusReactorWithEngine_StreamAware` - Stream registration
+- `TestConsensusReactor_SetEngine` - Engine management
+- `TestConsensusReactor_SetEngine_StreamAware` - Stream updates on engine change
+- `TestConsensusReactor_HandleMessageWithEngine` - Non-BFT message handling
+- `TestConsensusReactor_HandleMessageEngineOverHandler` - Priority verification
+- `TestConsensusReactor_HandleMessageBFTProposal` - Proposal routing
+- `TestConsensusReactor_HandleMessageBFTVote` - Vote routing
+- `TestConsensusReactor_HandleMessageBFTCommit` - Commit routing
+- `TestConsensusReactor_HandleMessageBFTBlock` - Block routing
+- `TestConsensusReactor_HandleMessageBFTUnknownType` - Unknown type error
+- `TestConsensusReactor_HandleCustomStreamMessage` - Custom stream handling
+- `TestConsensusReactor_HandleCustomStreamMessage_UnknownStream` - Unknown stream error
+- `TestConsensusReactor_StartStop` - Lifecycle with double-start protection
+
+**Design Decisions:**
+- Engine priority over handler for seamless migration path
+- Custom streams registered automatically during engine setup
+- BFT message parsing with placeholder implementations (TODO: cramberry)
+- Thread-safe operations with RWMutex
+- Non-BFT engines receive raw data for flexibility
+
+---
+
 *Last Updated: January 2025*

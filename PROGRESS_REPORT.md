@@ -1710,4 +1710,105 @@ type RoleCapabilities struct {
 
 ---
 
+### Phase 4.2: Role-Based Component Selection
+
+**Status:** Complete
+
+**Files Created:**
+- `node/role_builder.go` - Role-based node builder
+- `node/role_builder_test.go` - Builder tests
+- `mempool/noop.go` - No-op mempool for roles that don't need transactions
+- `mempool/noop_test.go` - No-op mempool tests
+- `blockstore/noop.go` - No-op blockstore for roles that don't store blocks
+- `blockstore/noop_test.go` - No-op blockstore tests
+- `blockstore/header_only.go` - Header-only blockstore for light clients
+- `blockstore/header_only_test.go` - Header-only blockstore tests
+
+**Files Modified:**
+- `node/node.go` - Added role field and Role() getter
+
+**RoleBasedBuilder:**
+- Extends NodeBuilder with role-aware component selection
+- Validates role requirements before build
+- Auto-selects components based on role capabilities:
+  - NoOpMempool for roles without mempool requirement
+  - NoOpBlockStore for roles without block storage
+  - HeaderOnlyBlockStore for light clients
+- Configures consensus engine via reactor after build
+- Fluent builder API with chaining
+
+**Role Validation:**
+- Validators require consensus engine
+- Block-storing roles require block validator
+- Helpful error messages for missing components
+
+**NoOpMempool:**
+- Returns ErrMempoolClosed for AddTx
+- Reports 0 size and empty state
+- For seed nodes and other minimal roles
+
+**NoOpBlockStore:**
+- Returns ErrStoreClosed for SaveBlock
+- Returns ErrBlockNotFound for Load operations
+- Reports 0 height and base
+
+**HeaderOnlyBlockStore:**
+- Stores hash only, discards block data
+- Thread-safe with RWMutex
+- GetHash() method for header-specific access
+- Deep copies hashes to prevent mutation
+
+**Helper Functions:**
+- IsValidatorRole(role) - Checks consensus participation
+- RoleRequiresFullSync(role) - Checks full block sync requirement
+- RoleAcceptsInbound(role) - Checks inbound connection acceptance
+
+**Errors:**
+- ErrMissingConsensusEngine - Validator without engine
+- ErrMissingBlockValidator - Block-storing role without validator
+- ErrIncompatibleComponent - Component doesn't match role
+
+**Test Coverage (35 tests across files):**
+
+Role Builder (14 tests):
+- NewRoleBasedBuilder with explicit role
+- Default role (full) when not set
+- WithRole valid/invalid
+- WithMempool/WithBlockStore
+- Validator requires engine
+- Full node requires block validator
+- Seed node minimal requirements
+- Capabilities for all roles
+- Helper functions (IsValidatorRole, etc.)
+
+NoOp Mempool (12 tests):
+- Interface compliance
+- AddTx returns error
+- All methods return empty/zero values
+- SetTxValidator no-op
+
+NoOp BlockStore (9 tests):
+- Interface compliance
+- SaveBlock returns error
+- Load methods return not found
+- Zero height/base
+
+Header-Only BlockStore (13 tests):
+- Interface compliance
+- Saves hash, discards data
+- Duplicate detection
+- Load returns hash without data
+- By-hash lookups
+- Height/base tracking
+- Close clears state
+- Hash copy verification
+
+**Design Decisions:**
+- Consensus engine set after build to access network
+- NoOp implementations for minimal resource usage
+- Header-only store separate from NoOp for light client functionality
+- Deep copies prevent external mutation
+
+---
+
 *Last Updated: January 2025*

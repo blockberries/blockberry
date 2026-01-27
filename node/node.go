@@ -48,6 +48,7 @@ type Node struct {
 	cfg        *config.Config
 	privateKey ed25519.PrivateKey
 	nodeID     string
+	role       types.NodeRole
 
 	// Core network
 	glueNode *glueberry.Node
@@ -395,6 +396,15 @@ func (n *Node) PeerID() peer.ID {
 // NodeID returns the node's hex-encoded public key ID.
 func (n *Node) NodeID() string {
 	return n.nodeID
+}
+
+// Role returns the node's role.
+// Returns the default role (full) if no role was explicitly set.
+func (n *Node) Role() types.NodeRole {
+	if n.role == "" {
+		return types.DefaultRole()
+	}
+	return n.role
 }
 
 // Network returns the network layer.

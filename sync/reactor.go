@@ -49,6 +49,14 @@ var AcceptAllBlockValidator BlockValidator = func(height int64, hash, data []byt
 	return nil
 }
 
+// PendingRequest tracks an in-flight block request.
+type PendingRequest struct {
+	PeerID    peer.ID
+	StartHeight int64
+	EndHeight   int64
+	RequestedAt time.Time
+}
+
 // SyncReactor handles block synchronization with peers.
 type SyncReactor struct {
 	// Dependencies
@@ -57,8 +65,10 @@ type SyncReactor struct {
 	peerManager *p2p.PeerManager
 
 	// Configuration
-	syncInterval time.Duration
-	batchSize    int32
+	syncInterval    time.Duration
+	batchSize       int32
+	maxParallel     int           // Maximum parallel requests
+	requestTimeout  time.Duration // Timeout for pending requests
 
 	// Block validation callback
 	validator BlockValidator
@@ -67,8 +77,9 @@ type SyncReactor struct {
 	state       SyncState
 	peerHeights map[peer.ID]int64
 
-	// Pending sync requests
-	pendingSince map[peer.ID]int64 // peerID -> requested since height
+	// Pending sync requests (parallel support)
+	pendingRequests map[peer.ID]*PendingRequest // peerID -> pending request
+	nextRequestHeight int64                     // Next height to request
 	lastRequest  time.Time
 
 	mu sync.RWMutex
@@ -82,6 +93,12 @@ type SyncReactor struct {
 	onSyncComplete func()
 }
 
+// Default parallel sync configuration.
+const (
+	DefaultMaxParallel    = 4
+	DefaultRequestTimeout = 30 * time.Second
+)
+
 // NewSyncReactor creates a new sync reactor.
 func NewSyncReactor(
 	blockStore blockstore.BlockStore,
@@ -91,16 +108,38 @@ func NewSyncReactor(
 	batchSize int32,
 ) *SyncReactor {
 	return &SyncReactor{
-		blockStore:   blockStore,
-		network:      network,
-		peerManager:  peerManager,
-		syncInterval: syncInterval,
-		batchSize:    batchSize,
-		state:        StateSynced,
-		peerHeights:  make(map[peer.ID]int64),
-		pendingSince: make(map[peer.ID]int64),
-		stop:         make(chan struct{}),
+		blockStore:      blockStore,
+		network:         network,
+		peerManager:     peerManager,
+		syncInterval:    syncInterval,
+		batchSize:       batchSize,
+		maxParallel:     DefaultMaxParallel,
+		requestTimeout:  DefaultRequestTimeout,
+		state:           StateSynced,
+		peerHeights:     make(map[peer.ID]int64),
+		pendingRequests: make(map[peer.ID]*PendingRequest),
+		stop:            make(chan struct{}),
 	}
+}
+
+// SetMaxParallel sets the maximum number of parallel block requests.
+func (r *SyncReactor) SetMaxParallel(n int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if n < 1 {
+		n = 1
+	}
+	r.maxParallel = n
+}
+
+// SetRequestTimeout sets the timeout for pending block requests.
+func (r *SyncReactor) SetRequestTimeout(d time.Duration) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if d < time.Second {
+		d = time.Second
+	}
+	r.requestTimeout = d
 }
 
 // Name returns the component name for identification.
@@ -259,30 +298,101 @@ func (r *SyncReactor) transitionToSyncing() {
 }
 
 // requestBlocks requests blocks from peers starting from our current height.
+// Supports parallel requests to multiple peers for faster sync.
 func (r *SyncReactor) requestBlocks(since int64) {
-	peers := r.getPeersWithHeight(since + 1)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	// Clean up timed out requests
+	r.cleanupTimedOutRequestsLocked()
+
+	// Initialize next request height if not set
+	if r.nextRequestHeight <= since {
+		r.nextRequestHeight = since + 1
+	}
+
+	// Get peers with blocks we need
+	peers := r.getPeersWithHeightLocked(r.nextRequestHeight)
 	if len(peers) == 0 {
 		return
 	}
 
-	// Request from first available peer
-	peerID := peers[0]
-
-	r.mu.Lock()
-	// Check if we already have a pending request from this peer
-	if _, pending := r.pendingSince[peerID]; pending {
-		r.mu.Unlock()
+	// Calculate how many more requests we can make
+	currentPending := len(r.pendingRequests)
+	available := r.maxParallel - currentPending
+	if available <= 0 {
 		return
 	}
-	r.pendingSince[peerID] = since + 1
-	r.lastRequest = time.Now()
-	r.mu.Unlock()
 
-	if err := r.SendBlocksRequest(peerID, since+1); err != nil {
-		r.mu.Lock()
-		delete(r.pendingSince, peerID)
-		r.mu.Unlock()
+	// Request from available peers in parallel
+	peerIdx := 0
+	for i := 0; i < available && peerIdx < len(peers); i++ {
+		// Find a peer without a pending request
+		var peerID peer.ID
+		for peerIdx < len(peers) {
+			candidate := peers[peerIdx]
+			peerIdx++
+			if _, pending := r.pendingRequests[candidate]; !pending {
+				peerID = candidate
+				break
+			}
+		}
+		if peerID == "" {
+			break
+		}
+
+		// Calculate the height range for this request
+		startHeight := r.nextRequestHeight
+		endHeight := startHeight + int64(r.batchSize) - 1
+
+		// Record pending request
+		r.pendingRequests[peerID] = &PendingRequest{
+			PeerID:      peerID,
+			StartHeight: startHeight,
+			EndHeight:   endHeight,
+			RequestedAt: time.Now(),
+		}
+
+		// Advance next request height
+		r.nextRequestHeight = endHeight + 1
+		r.lastRequest = time.Now()
+
+		// Send request (don't hold lock during network call)
+		go func(pid peer.ID, start int64) {
+			if err := r.SendBlocksRequest(pid, start); err != nil {
+				r.mu.Lock()
+				delete(r.pendingRequests, pid)
+				r.mu.Unlock()
+			}
+		}(peerID, startHeight)
 	}
+}
+
+// cleanupTimedOutRequestsLocked removes requests that have timed out.
+// Must be called with mutex held.
+func (r *SyncReactor) cleanupTimedOutRequestsLocked() {
+	now := time.Now()
+	for peerID, req := range r.pendingRequests {
+		if now.Sub(req.RequestedAt) > r.requestTimeout {
+			delete(r.pendingRequests, peerID)
+			// Reset next request height to re-request these blocks
+			if req.StartHeight < r.nextRequestHeight {
+				r.nextRequestHeight = req.StartHeight
+			}
+		}
+	}
+}
+
+// getPeersWithHeightLocked returns peers that have blocks above the given height.
+// Must be called with mutex held.
+func (r *SyncReactor) getPeersWithHeightLocked(minHeight int64) []peer.ID {
+	var peers []peer.ID
+	for peerID, height := range r.peerHeights {
+		if height >= minHeight {
+			peers = append(peers, peerID)
+		}
+	}
+	return peers
 }
 
 // getPeersWithHeight returns peers that have blocks above the given height.
@@ -435,7 +545,7 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 
 	// Clear pending request for this peer
 	r.mu.Lock()
-	delete(r.pendingSince, peerID)
+	delete(r.pendingRequests, peerID)
 	r.mu.Unlock()
 
 	if r.blockStore == nil {
@@ -558,7 +668,14 @@ func (r *SyncReactor) OnPeerDisconnected(peerID peer.ID) {
 	defer r.mu.Unlock()
 
 	delete(r.peerHeights, peerID)
-	delete(r.pendingSince, peerID)
+
+	// If this peer had a pending request, reset nextRequestHeight to re-request
+	if req, ok := r.pendingRequests[peerID]; ok {
+		if req.StartHeight < r.nextRequestHeight {
+			r.nextRequestHeight = req.StartHeight
+		}
+		delete(r.pendingRequests, peerID)
+	}
 }
 
 // encodeMessage encodes a message with its type ID prefix.

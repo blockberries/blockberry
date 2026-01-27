@@ -9,6 +9,7 @@ import (
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/exporters/zipkin"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -114,6 +115,36 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		exp, err := stdouttrace.New(stdouttrace.WithPrettyPrint())
 		if err != nil {
 			return nil, fmt.Errorf("creating stdout exporter: %w", err)
+		}
+		exporter = exp
+
+	case "jaeger":
+		// Jaeger now supports OTLP natively.
+		// Use OTLP gRPC to send to Jaeger's OTLP endpoint (default: localhost:4317).
+		// For older Jaeger setups, use "jaeger-thrift" if needed.
+		opts := []otlptracegrpc.Option{
+			otlptracegrpc.WithEndpoint(cfg.Endpoint),
+		}
+		if cfg.Insecure {
+			opts = append(opts, otlptracegrpc.WithInsecure())
+		}
+		exp, err := otlptrace.New(ctx, otlptracegrpc.NewClient(opts...))
+		if err != nil {
+			return nil, fmt.Errorf("creating Jaeger OTLP exporter: %w", err)
+		}
+		exporter = exp
+
+	case "zipkin":
+		// Zipkin exporter sends traces in Zipkin's native JSON format.
+		// Default endpoint: http://localhost:9411/api/v2/spans
+		endpoint := cfg.Endpoint
+		if endpoint == "" || endpoint == "localhost:4317" {
+			// Use default Zipkin endpoint if OTLP default was specified
+			endpoint = "http://localhost:9411/api/v2/spans"
+		}
+		exp, err := zipkin.New(endpoint)
+		if err != nil {
+			return nil, fmt.Errorf("creating Zipkin exporter: %w", err)
 		}
 		exporter = exp
 

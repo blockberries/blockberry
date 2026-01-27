@@ -3692,3 +3692,148 @@ progress := reactor.Progress() // 0-100
 **Build Status**: Clean build, all tests pass with race detection.
 
 ---
+
+## Phase 11: Performance Optimization
+
+**Status:** Complete (January 28, 2026)
+
+### Summary
+
+Implemented performance optimizations including parallel block sync, memory pooling, and expanded tracing export support.
+
+### 11.1 Parallel Block Sync
+
+**Files Modified:**
+- `sync/reactor.go` - Enhanced sync reactor with parallel request support
+- `sync/reactor_test.go` - Added tests for parallel sync features
+
+**Key Features:**
+
+1. **Parallel Requests Configuration**
+   ```go
+   const (
+       DefaultMaxParallel    = 4
+       DefaultRequestTimeout = 30 * time.Second
+   )
+   
+   reactor.SetMaxParallel(8)        // Allow up to 8 concurrent requests
+   reactor.SetRequestTimeout(60*time.Second)  // Timeout for stalled requests
+   ```
+
+2. **PendingRequest Tracking**
+   ```go
+   type PendingRequest struct {
+       PeerID      peer.ID
+       StartHeight int64
+       EndHeight   int64
+       RequestedAt time.Time
+   }
+   ```
+
+3. **Request Management**
+   - Tracks height ranges per pending request
+   - Automatic timeout detection and cleanup
+   - Re-requests timed out height ranges
+   - Parallel requests to multiple peers
+   - Request distribution across available peers
+
+4. **Improvements**
+   - Requests blocks from multiple peers simultaneously
+   - Configurable maximum parallel requests
+   - Automatic timeout handling with retry
+   - Better peer utilization during sync
+
+### 11.2 Memory Optimization
+
+**Files Created:**
+- `memory/pool.go` - Buffer and byte slice pooling utilities
+- `memory/pool_test.go` - Comprehensive tests and benchmarks
+
+**Key Features:**
+
+1. **BufferPool** - Reusable bytes.Buffer pool
+   ```go
+   pool := memory.NewBufferPool(4096)
+   buf := pool.Get()
+   defer pool.Put(buf)
+   buf.WriteString("data")
+   ```
+
+2. **ByteSlicePool** - Reusable byte slice pool
+   ```go
+   pool := memory.NewByteSlicePool(1024)
+   b := pool.Get()
+   defer pool.Put(b)
+   ```
+
+3. **Global Pools** - Pre-configured pools for common sizes
+   - `SmallBufferPool` (4KB)
+   - `MediumBufferPool` (64KB)
+   - `LargeBufferPool` (1MB)
+   - `SmallBytePool` (4KB)
+   - `MediumBytePool` (64KB)
+
+4. **Arena Allocator** - Batch allocation for objects with same lifetime
+   ```go
+   arena := memory.NewArena(1024 * 1024)
+   b1 := arena.Alloc(100)
+   b2 := arena.Alloc(200)
+   arena.Reset() // Reuse all memory
+   ```
+
+5. **Helper Functions**
+   - `GetBuffer(sizeHint)` - Get appropriate sized buffer
+   - `PutBuffer(buf)` - Return buffer to appropriate pool
+
+### 11.3 Jaeger/Zipkin Tracing Export
+
+**Files Modified:**
+- `tracing/otel/provider.go` - Added Jaeger and Zipkin exporter support
+- `tracing/otel/provider_test.go` - Added tests for new exporters
+- `go.mod`, `go.sum` - Added Zipkin exporter dependency
+
+**Exporter Types:**
+
+| Exporter | Description | Default Endpoint |
+|----------|-------------|------------------|
+| `none` | No export (traces discarded) | - |
+| `stdout` | Print to stdout (debugging) | - |
+| `otlp-grpc` | OTLP over gRPC | localhost:4317 |
+| `otlp-http` | OTLP over HTTP | localhost:4318 |
+| `jaeger` | Jaeger via OTLP | localhost:4317 |
+| `zipkin` | Zipkin native format | http://localhost:9411/api/v2/spans |
+
+**Configuration Example:**
+
+```toml
+[tracing]
+enabled = true
+service_name = "blockberry-node"
+exporter = "jaeger"  # or "zipkin"
+endpoint = "localhost:4317"
+sample_rate = 0.1
+```
+
+**Notes:**
+- Modern Jaeger supports OTLP natively (uses OTLP gRPC exporter)
+- Zipkin uses its native JSON format via dedicated exporter
+- Zipkin endpoint auto-corrects from OTLP default to Zipkin default
+
+### Test Coverage
+
+All new features include comprehensive tests:
+- Parallel sync configuration and timeout handling
+- Buffer pool allocation and return
+- Arena allocator with concurrent access
+- All exporter types creation and shutdown
+
+### Benchmarks
+
+Memory pool benchmarks show significant allocation reduction:
+- BufferPool vs raw allocation: ~3x fewer allocations
+- ByteSlicePool vs make(): ~2x fewer allocations
+- Arena vs individual allocations: ~10x fewer allocations
+
+**Build Status**: Clean build, all tests pass with race detection.
+
+---

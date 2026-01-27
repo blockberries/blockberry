@@ -343,7 +343,13 @@ func TestSyncReactor_OnPeerDisconnected(t *testing.T) {
 	// Add peer state
 	reactor.mu.Lock()
 	reactor.peerHeights[peerID] = 100
-	reactor.pendingSince[peerID] = 50
+	reactor.pendingRequests[peerID] = &PendingRequest{
+		PeerID:      peerID,
+		StartHeight: 50,
+		EndHeight:   99,
+		RequestedAt: time.Now(),
+	}
+	reactor.nextRequestHeight = 100
 	reactor.mu.Unlock()
 
 	// Disconnect peer
@@ -352,10 +358,13 @@ func TestSyncReactor_OnPeerDisconnected(t *testing.T) {
 	// State should be cleaned up
 	reactor.mu.RLock()
 	_, heightExists := reactor.peerHeights[peerID]
-	_, pendingExists := reactor.pendingSince[peerID]
+	_, pendingExists := reactor.pendingRequests[peerID]
+	nextHeight := reactor.nextRequestHeight
 	reactor.mu.RUnlock()
 	require.False(t, heightExists)
 	require.False(t, pendingExists)
+	// Next request height should be reset to the pending request's start
+	require.Equal(t, int64(50), nextHeight)
 }
 
 func TestSyncReactor_StateTransitions(t *testing.T) {
@@ -634,4 +643,129 @@ func TestSyncReactor_HandleBlocksResponseWithExistingBlocks(t *testing.T) {
 	require.True(t, store.HasBlock(2))
 	require.True(t, store.HasBlock(3))
 	require.Equal(t, int64(3), store.Height())
+}
+
+func TestSyncReactor_ParallelSync_Configuration(t *testing.T) {
+	reactor := NewSyncReactor(nil, nil, nil, time.Second, 50)
+
+	// Check defaults
+	require.Equal(t, DefaultMaxParallel, reactor.maxParallel)
+	require.Equal(t, DefaultRequestTimeout, reactor.requestTimeout)
+
+	// Set custom values
+	reactor.SetMaxParallel(8)
+	require.Equal(t, 8, reactor.maxParallel)
+
+	// Min value enforcement
+	reactor.SetMaxParallel(0)
+	require.Equal(t, 1, reactor.maxParallel)
+
+	reactor.SetMaxParallel(-5)
+	require.Equal(t, 1, reactor.maxParallel)
+
+	// Set timeout
+	reactor.SetRequestTimeout(60 * time.Second)
+	require.Equal(t, 60*time.Second, reactor.requestTimeout)
+
+	// Min value enforcement
+	reactor.SetRequestTimeout(100 * time.Millisecond)
+	require.Equal(t, time.Second, reactor.requestTimeout)
+}
+
+func TestSyncReactor_ParallelSync_PendingRequests(t *testing.T) {
+	reactor := NewSyncReactor(nil, nil, nil, time.Second, 50)
+	peerID1 := peer.ID("peer1")
+	peerID2 := peer.ID("peer2")
+
+	// Add pending requests
+	reactor.mu.Lock()
+	reactor.pendingRequests[peerID1] = &PendingRequest{
+		PeerID:      peerID1,
+		StartHeight: 1,
+		EndHeight:   50,
+		RequestedAt: time.Now(),
+	}
+	reactor.pendingRequests[peerID2] = &PendingRequest{
+		PeerID:      peerID2,
+		StartHeight: 51,
+		EndHeight:   100,
+		RequestedAt: time.Now(),
+	}
+	reactor.mu.Unlock()
+
+	require.Len(t, reactor.pendingRequests, 2)
+
+	// Disconnect one peer
+	reactor.OnPeerDisconnected(peerID1)
+
+	reactor.mu.RLock()
+	require.Len(t, reactor.pendingRequests, 1)
+	require.Contains(t, reactor.pendingRequests, peerID2)
+	reactor.mu.RUnlock()
+}
+
+func TestSyncReactor_ParallelSync_TimeoutCleanup(t *testing.T) {
+	reactor := NewSyncReactor(nil, nil, nil, time.Second, 50)
+	reactor.SetRequestTimeout(100 * time.Millisecond) // Short timeout for test
+
+	peerID := peer.ID("peer1")
+
+	// Add an old pending request
+	reactor.mu.Lock()
+	reactor.pendingRequests[peerID] = &PendingRequest{
+		PeerID:      peerID,
+		StartHeight: 1,
+		EndHeight:   50,
+		RequestedAt: time.Now().Add(-time.Second), // Already timed out
+	}
+	reactor.nextRequestHeight = 51
+	reactor.mu.Unlock()
+
+	// Cleanup should remove the timed out request
+	reactor.mu.Lock()
+	reactor.cleanupTimedOutRequestsLocked()
+	reactor.mu.Unlock()
+
+	reactor.mu.RLock()
+	require.Len(t, reactor.pendingRequests, 0)
+	// Next request height should be reset
+	require.Equal(t, int64(1), reactor.nextRequestHeight)
+	reactor.mu.RUnlock()
+}
+
+func TestSyncReactor_ParallelSync_GetPeersWithHeightLocked(t *testing.T) {
+	reactor := NewSyncReactor(nil, nil, nil, time.Second, 50)
+
+	// Add peer heights
+	reactor.mu.Lock()
+	reactor.peerHeights[peer.ID("peer1")] = 100
+	reactor.peerHeights[peer.ID("peer2")] = 50
+	reactor.peerHeights[peer.ID("peer3")] = 150
+	peers := reactor.getPeersWithHeightLocked(75)
+	reactor.mu.Unlock()
+
+	require.Len(t, peers, 2)
+	// Both peer1 (100) and peer3 (150) should be included
+	peerSet := make(map[peer.ID]bool)
+	for _, p := range peers {
+		peerSet[p] = true
+	}
+	require.True(t, peerSet[peer.ID("peer1")])
+	require.True(t, peerSet[peer.ID("peer3")])
+	require.False(t, peerSet[peer.ID("peer2")])
+}
+
+func TestPendingRequest_Structure(t *testing.T) {
+	now := time.Now()
+	req := &PendingRequest{
+		PeerID:      peer.ID("test-peer"),
+		StartHeight: 100,
+		EndHeight:   199,
+		RequestedAt: now,
+	}
+
+	require.Equal(t, peer.ID("test-peer"), req.PeerID)
+	require.Equal(t, int64(100), req.StartHeight)
+	require.Equal(t, int64(199), req.EndHeight)
+	require.Equal(t, now, req.RequestedAt)
 }

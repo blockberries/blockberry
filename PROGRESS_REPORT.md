@@ -1618,4 +1618,96 @@ Precommit -> PrecommitWait -> Commit -> (next height)
 
 ---
 
+## Phase 4: Node Role System
+
+### Phase 4.1: Node Role Definitions
+
+**Status:** Complete
+
+**Files Created:**
+- `types/role.go` - Node role definitions and capabilities
+- `types/role_test.go` - Comprehensive role tests
+
+**Files Modified:**
+- `config/config.go` - Updated to use types.NodeRole
+- `config/config_test.go` - Updated tests to use types.AllRoles()
+
+**NodeRole Type:**
+- String-based type for type safety
+- Five roles: validator, full, seed, light, archive
+- Validation via IsValid() method
+- Capabilities via Capabilities() method
+
+**RoleCapabilities Structure:**
+```go
+type RoleCapabilities struct {
+    CanPropose                bool  // Can propose blocks
+    CanVote                   bool  // Can vote in consensus
+    StoresFullBlocks          bool  // Stores full block data
+    StoresState               bool  // Stores application state
+    ParticipatesInPEX         bool  // Exchanges peer addresses
+    GossipsTransactions       bool  // Gossips transactions
+    AcceptsInboundConnections bool  // Accepts incoming connections
+    Prunes                    bool  // Prunes old data
+    RequiresConsensusEngine   bool  // Needs consensus engine
+    RequiresMempool           bool  // Needs mempool
+    RequiresBlockStore        bool  // Needs block store
+    RequiresStateStore        bool  // Needs state store
+}
+```
+
+**Role Capability Matrix:**
+
+| Role | Propose | Vote | Blocks | State | PEX | TxGossip | Inbound | Prunes |
+|------|---------|------|--------|-------|-----|----------|---------|--------|
+| validator | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ | ✓ | ✓ |
+| full | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| seed | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✓ | ✗ |
+| light | ✗ | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ | ✓ |
+| archive | ✗ | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ | ✗ |
+
+**Helper Functions:**
+- AllRoles() - Returns all valid roles
+- ParseRole(string) - Parses string to role with validation
+- ValidateRole(role) - Validates a role
+- RoleRequiresComponent(role, component) - Checks component requirements
+- DefaultRole() - Returns RoleFull as default
+
+**Config Integration:**
+- NodeRole type alias pointing to types.NodeRole
+- Re-exported role constants for convenience
+- Updated ErrInvalidNodeRole to include archive
+- Backward compatible - no breaking changes
+
+**Role-specific Errors:**
+- ErrInvalidRole - Unknown role string
+- ErrRoleCapabilityMismatch - Action not supported by role
+- ErrRoleChangeNotAllowed - Dynamic role change denied
+
+**Test Coverage (16 tests):**
+- String conversion
+- IsValid for all roles and invalid strings
+- Capabilities for each role type
+- Invalid role returns empty capabilities
+- ParseRole valid and invalid inputs
+- ValidateRole success and failure
+- AllRoles returns all 5 roles
+- DefaultRole returns full
+- RoleRequiresComponent for all combinations
+- Validator consensus capabilities
+- Non-validators cannot consensus
+- Archive never prunes
+- Seed minimal storage requirements
+- Error definitions verification
+
+**Design Decisions:**
+- Type alias in config for backward compatibility
+- Capabilities struct for extensibility
+- All roles participate in PEX for network health
+- Validators don't gossip transactions (may use DAG)
+- Light nodes don't accept inbound (client only)
+- Archive nodes never prune (historical data)
+
+---
+
 *Last Updated: January 2025*

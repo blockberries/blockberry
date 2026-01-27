@@ -8,38 +8,21 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/blockberries/blockberry/types"
 )
 
-// NodeRole defines the role of a node in the network.
-type NodeRole string
+// NodeRole is an alias for types.NodeRole for backward compatibility.
+type NodeRole = types.NodeRole
 
-// Node role constants.
+// Node role constants - re-exported from types for convenience.
 const (
-	// RoleValidator is a node that participates in consensus.
-	RoleValidator NodeRole = "validator"
-
-	// RoleFull is a full node that stores all data but doesn't participate in consensus.
-	RoleFull NodeRole = "full"
-
-	// RoleSeed is a seed node that helps peers discover each other.
-	RoleSeed NodeRole = "seed"
-
-	// RoleLight is a light client that only stores block headers.
-	RoleLight NodeRole = "light"
+	RoleValidator = types.RoleValidator
+	RoleFull      = types.RoleFull
+	RoleSeed      = types.RoleSeed
+	RoleLight     = types.RoleLight
+	RoleArchive   = types.RoleArchive
 )
-
-// ValidRoles contains all valid node roles.
-var ValidRoles = []NodeRole{RoleValidator, RoleFull, RoleSeed, RoleLight}
-
-// IsValid returns true if the role is valid.
-func (r NodeRole) IsValid() bool {
-	for _, valid := range ValidRoles {
-		if r == valid {
-			return true
-		}
-	}
-	return false
-}
 
 // Config is the main configuration for a blockberry node.
 type Config struct {
@@ -296,8 +279,8 @@ func DefaultConfig() *Config {
 			MaxTxs:          5000,
 			MaxBytes:        1073741824, // 1GB
 			CacheSize:       10000,
-			TTL:             Duration(time.Hour),               // Default 1 hour for TTL mempool
-			CleanupInterval: Duration(5 * time.Minute),         // Check every 5 minutes for TTL mempool
+			TTL:             Duration(time.Hour),       // Default 1 hour for TTL mempool
+			CleanupInterval: Duration(5 * time.Minute), // Check every 5 minutes for TTL mempool
 		},
 		BlockStore: BlockStoreConfig{
 			Backend: "leveldb",
@@ -355,7 +338,7 @@ var (
 	ErrInvalidHandshakeTimeout      = errors.New("handshake_timeout must be positive")
 	ErrInvalidDialTimeout           = errors.New("dial_timeout must be positive")
 	ErrEmptyAddressBookPath         = errors.New("address_book_path cannot be empty")
-	ErrInvalidNodeRole              = errors.New("role must be one of: validator, full, seed, light")
+	ErrInvalidNodeRole              = errors.New("role must be one of: validator, full, seed, light, archive")
 	ErrInvalidTxRequestInterval     = errors.New("transactions request_interval must be positive")
 	ErrInvalidTxBatchSize           = errors.New("transactions batch_size must be positive")
 	ErrInvalidTxMaxPending          = errors.New("transactions max_pending must be non-negative")

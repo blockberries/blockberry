@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/blockberries/blockberry/types"
 )
 
 func TestDefaultConfig(t *testing.T) {
@@ -699,7 +701,7 @@ func TestNodeRole(t *testing.T) {
 		cfg := DefaultConfig()
 
 		// Valid roles
-		for _, role := range ValidRoles {
+		for _, role := range types.AllRoles() {
 			cfg.Role = role
 			err := cfg.Validate()
 			require.NoError(t, err, "role %s should be valid", role)

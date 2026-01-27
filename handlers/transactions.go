@@ -25,9 +25,12 @@ const (
 const DefaultMaxPendingAge = 60 * time.Second
 
 // TransactionsReactor handles transaction gossiping between peers.
+// In passive mode (when using a DAG mempool), it only receives transactions
+// and routes them to the mempool without active gossip.
 type TransactionsReactor struct {
 	// Dependencies
 	mempool     mempool.Mempool
+	dagMempool  mempool.DAGMempool // Non-nil when using a DAG mempool
 	network     *p2p.Network
 	peerManager *p2p.PeerManager
 
@@ -36,6 +39,7 @@ type TransactionsReactor struct {
 	batchSize       int32
 	maxPending      int           // Max pending data requests per peer
 	maxPendingAge   time.Duration // Max age for pending requests before cleanup
+	passiveMode     bool          // True for DAG mempools (no active gossip)
 
 	// State tracking
 	pendingRequests map[peer.ID]map[string]time.Time // peerID -> txHash -> requestTime
@@ -48,15 +52,16 @@ type TransactionsReactor struct {
 }
 
 // NewTransactionsReactor creates a new transactions reactor.
+// If the mempool implements DAGMempool, passive mode is automatically enabled.
 func NewTransactionsReactor(
-	mempool mempool.Mempool,
+	mp mempool.Mempool,
 	network *p2p.Network,
 	peerManager *p2p.PeerManager,
 	requestInterval time.Duration,
 	batchSize int32,
 ) *TransactionsReactor {
-	return &TransactionsReactor{
-		mempool:         mempool,
+	r := &TransactionsReactor{
+		mempool:         mp,
 		network:         network,
 		peerManager:     peerManager,
 		requestInterval: requestInterval,
@@ -66,6 +71,14 @@ func NewTransactionsReactor(
 		pendingRequests: make(map[peer.ID]map[string]time.Time),
 		stop:            make(chan struct{}),
 	}
+
+	// Auto-detect passive mode based on mempool type
+	if dagMp, ok := mp.(mempool.DAGMempool); ok {
+		r.dagMempool = dagMp
+		r.passiveMode = true
+	}
+
+	return r
 }
 
 // Name returns the component name for identification.
@@ -74,6 +87,8 @@ func (r *TransactionsReactor) Name() string {
 }
 
 // Start begins the transaction gossip loop.
+// In passive mode, the gossip loop is not started since the DAG mempool
+// handles its own transaction propagation.
 func (r *TransactionsReactor) Start() error {
 	r.mu.Lock()
 	if r.running {
@@ -84,8 +99,11 @@ func (r *TransactionsReactor) Start() error {
 	r.stop = make(chan struct{})
 	r.mu.Unlock()
 
-	r.wg.Add(1)
-	go r.gossipLoop()
+	// Skip gossip loop in passive mode - DAG mempool handles propagation
+	if !r.passiveMode {
+		r.wg.Add(1)
+		go r.gossipLoop()
+	}
 
 	return nil
 }
@@ -110,6 +128,28 @@ func (r *TransactionsReactor) IsRunning() bool {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.running
+}
+
+// IsPassiveMode returns true if the reactor is in passive mode.
+// In passive mode, the reactor only receives transactions and routes them
+// to the mempool without active gossip.
+func (r *TransactionsReactor) IsPassiveMode() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.passiveMode
+}
+
+// SetPassiveMode enables or disables passive mode.
+// This should typically be set before Start() is called.
+func (r *TransactionsReactor) SetPassiveMode(passive bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.passiveMode = passive
+}
+
+// DAGMempool returns the DAG mempool if one is configured, nil otherwise.
+func (r *TransactionsReactor) DAGMempool() mempool.DAGMempool {
+	return r.dagMempool
 }
 
 // gossipLoop periodically requests transactions from peers.
@@ -164,6 +204,9 @@ func (r *TransactionsReactor) SendTransactionsRequest(peerID peer.ID) error {
 }
 
 // HandleMessage processes incoming transaction messages.
+// In passive mode, only transaction data responses are processed and routed
+// to the mempool. Active gossip requests/responses are ignored since the
+// DAG mempool handles its own propagation.
 func (r *TransactionsReactor) HandleMessage(peerID peer.ID, data []byte) error {
 	if len(data) == 0 {
 		return types.ErrInvalidMessage
@@ -178,6 +221,21 @@ func (r *TransactionsReactor) HandleMessage(peerID peer.ID, data []byte) error {
 
 	// Get remaining data after type ID
 	remaining := reader.Remaining()
+
+	// In passive mode, only process incoming transaction data
+	// Skip gossip-related messages (request/response for hashes)
+	if r.passiveMode {
+		switch typeID {
+		case TypeIDTransactionDataResponse:
+			return r.handleTransactionDataResponse(peerID, remaining)
+		case TypeIDTransactionsRequest, TypeIDTransactionsResponse,
+			TypeIDTransactionDataRequest:
+			// Ignore gossip messages in passive mode
+			return nil
+		default:
+			return types.ErrUnknownMessageType
+		}
+	}
 
 	switch typeID {
 	case TypeIDTransactionsRequest:
@@ -492,7 +550,13 @@ func (r *TransactionsReactor) OnPeerDisconnected(peerID peer.ID) {
 }
 
 // BroadcastTx broadcasts a new transaction to all peers.
+// In passive mode, this is a no-op since the DAG mempool handles its own propagation.
 func (r *TransactionsReactor) BroadcastTx(tx []byte) error {
+	// In passive mode, DAG mempool handles propagation
+	if r.passiveMode {
+		return nil
+	}
+
 	if r.network == nil || r.peerManager == nil {
 		return nil
 	}

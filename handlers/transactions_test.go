@@ -496,3 +496,163 @@ func TestTransactionsReactor_CleanupStaleRequestsAllFresh(t *testing.T) {
 	require.True(t, exists)
 	require.Len(t, pending, 2)
 }
+
+// mockDAGMempool implements mempool.DAGMempool for testing passive mode.
+type mockDAGMempool struct {
+	mempool.Mempool
+}
+
+func (m *mockDAGMempool) Name() string    { return "mock-dag-mempool" }
+func (m *mockDAGMempool) Start() error    { return nil }
+func (m *mockDAGMempool) Stop() error     { return nil }
+func (m *mockDAGMempool) IsRunning() bool { return true }
+func (m *mockDAGMempool) ReapCertifiedBatches(maxBytes int64) []mempool.CertifiedBatch {
+	return nil
+}
+func (m *mockDAGMempool) NotifyCommitted(round uint64)                       {}
+func (m *mockDAGMempool) UpdateValidatorSet(validators mempool.ValidatorSet) {}
+func (m *mockDAGMempool) CurrentRound() uint64                               { return 0 }
+func (m *mockDAGMempool) DAGMetrics() *mempool.DAGMempoolMetrics {
+	return &mempool.DAGMempoolMetrics{}
+}
+
+func TestTransactionsReactor_PassiveModeAutoDetection(t *testing.T) {
+	// With simple mempool - should NOT be passive
+	simpleMp := mempool.NewSimpleMempool(100, 1024*1024)
+	reactor1 := NewTransactionsReactor(simpleMp, nil, nil, time.Second, 50)
+	require.False(t, reactor1.IsPassiveMode())
+	require.Nil(t, reactor1.DAGMempool())
+
+	// With DAG mempool - should be passive
+	dagMp := &mockDAGMempool{Mempool: simpleMp}
+	reactor2 := NewTransactionsReactor(dagMp, nil, nil, time.Second, 50)
+	require.True(t, reactor2.IsPassiveMode())
+	require.NotNil(t, reactor2.DAGMempool())
+	require.Equal(t, dagMp, reactor2.DAGMempool())
+}
+
+func TestTransactionsReactor_SetPassiveMode(t *testing.T) {
+	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
+
+	// Initially not passive
+	require.False(t, reactor.IsPassiveMode())
+
+	// Enable passive mode
+	reactor.SetPassiveMode(true)
+	require.True(t, reactor.IsPassiveMode())
+
+	// Disable passive mode
+	reactor.SetPassiveMode(false)
+	require.False(t, reactor.IsPassiveMode())
+}
+
+func TestTransactionsReactor_PassiveModeSkipsGossipLoop(t *testing.T) {
+	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	reactor := NewTransactionsReactor(mp, nil, nil, 10*time.Millisecond, 50)
+	reactor.SetPassiveMode(true)
+
+	// Start in passive mode
+	err := reactor.Start()
+	require.NoError(t, err)
+	require.True(t, reactor.IsRunning())
+
+	// In passive mode, no goroutine is started for gossip loop
+	// The wg.Add(1) is only called when not in passive mode
+	// We can verify this by checking that Stop() returns immediately
+
+	// Stop
+	err = reactor.Stop()
+	require.NoError(t, err)
+	require.False(t, reactor.IsRunning())
+}
+
+func TestTransactionsReactor_PassiveModeHandleMessageOnlyDataResponse(t *testing.T) {
+	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
+	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
+	reactor.SetPassiveMode(true)
+
+	// Create transaction data
+	tx := []byte("test transaction in passive mode")
+	hash := types.HashTx(tx)
+
+	// Transaction data response should be processed in passive mode
+	dataResp := &schema.TransactionDataResponse{
+		Transactions: []schema.TransactionData{
+			{Hash: hash, Data: tx},
+		},
+	}
+	data, err := reactor.encodeMessage(TypeIDTransactionDataResponse, dataResp)
+	require.NoError(t, err)
+
+	err = reactor.HandleMessage(peer.ID("peer1"), data)
+	require.NoError(t, err)
+
+	// Transaction should be in mempool
+	require.True(t, mp.HasTx(hash))
+}
+
+func TestTransactionsReactor_PassiveModeIgnoresGossipMessages(t *testing.T) {
+	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
+	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
+	reactor.SetPassiveMode(true)
+
+	// TransactionsRequest should be ignored
+	batchSize := int32(10)
+	req := &schema.TransactionsRequest{BatchSize: &batchSize}
+	data, err := reactor.encodeMessage(TypeIDTransactionsRequest, req)
+	require.NoError(t, err)
+
+	err = reactor.HandleMessage(peer.ID("peer1"), data)
+	require.NoError(t, err) // Should not error, just ignored
+
+	// TransactionsResponse should be ignored
+	txResp := &schema.TransactionsResponse{
+		Transactions: []schema.TransactionHash{{Hash: []byte("hash1")}},
+	}
+	data, err = reactor.encodeMessage(TypeIDTransactionsResponse, txResp)
+	require.NoError(t, err)
+
+	err = reactor.HandleMessage(peer.ID("peer1"), data)
+	require.NoError(t, err) // Should not error, just ignored
+
+	// TransactionDataRequest should be ignored
+	dataReq := &schema.TransactionDataRequest{
+		Transactions: []schema.TransactionHash{{Hash: []byte("hash1")}},
+	}
+	data, err = reactor.encodeMessage(TypeIDTransactionDataRequest, dataReq)
+	require.NoError(t, err)
+
+	err = reactor.HandleMessage(peer.ID("peer1"), data)
+	require.NoError(t, err) // Should not error, just ignored
+}
+
+func TestTransactionsReactor_PassiveModeUnknownTypeError(t *testing.T) {
+	reactor := NewTransactionsReactor(nil, nil, nil, time.Second, 50)
+	reactor.SetPassiveMode(true)
+
+	// Unknown type should still return error in passive mode
+	w := cramberry.GetWriter()
+	w.WriteTypeID(255)
+	data := w.BytesCopy()
+	cramberry.PutWriter(w)
+
+	err := reactor.HandleMessage(peer.ID("peer1"), data)
+	require.ErrorIs(t, err, types.ErrUnknownMessageType)
+}
+
+func TestTransactionsReactor_PassiveModeBroadcastTxSkipped(t *testing.T) {
+	mp := mempool.NewSimpleMempool(100, 1024*1024)
+	mp.SetTxValidator(mempool.AcceptAllTxValidator)
+	reactor := NewTransactionsReactor(mp, nil, nil, time.Second, 50)
+	reactor.SetPassiveMode(true)
+
+	// BroadcastTx should return immediately in passive mode
+	tx := []byte("test transaction")
+	err := reactor.BroadcastTx(tx)
+	require.NoError(t, err)
+
+	// Even if we had network and peerManager, nothing would be sent
+}

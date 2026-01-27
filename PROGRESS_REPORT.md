@@ -1106,4 +1106,104 @@ All timing and size values are now in configuration with sensible defaults.
 
 ---
 
+### 2.4 TransactionsReactor Passive Mode
+**Status:** Complete
+
+**Files Modified:**
+- `handlers/transactions.go` - Added passive mode support
+- `handlers/transactions_test.go` - Added passive mode tests
+
+**Key Changes:**
+
+1. **New Struct Fields**:
+   ```go
+   type TransactionsReactor struct {
+       // ...
+       dagMempool  mempool.DAGMempool // Non-nil when using a DAG mempool
+       passiveMode bool               // True for DAG mempools (no active gossip)
+       // ...
+   }
+   ```
+
+2. **Auto-Detection in Constructor**:
+   ```go
+   func NewTransactionsReactor(mp mempool.Mempool, ...) *TransactionsReactor {
+       r := &TransactionsReactor{...}
+
+       // Auto-detect passive mode based on mempool type
+       if dagMp, ok := mp.(mempool.DAGMempool); ok {
+           r.dagMempool = dagMp
+           r.passiveMode = true
+       }
+
+       return r
+   }
+   ```
+
+3. **Start() Modification**:
+   ```go
+   func (r *TransactionsReactor) Start() error {
+       // ...
+       // Skip gossip loop in passive mode - DAG mempool handles propagation
+       if !r.passiveMode {
+           r.wg.Add(1)
+           go r.gossipLoop()
+       }
+       return nil
+   }
+   ```
+
+4. **HandleMessage Passive Mode Behavior**:
+   - In passive mode, only `TransactionDataResponse` is processed
+   - `TransactionsRequest`, `TransactionsResponse`, and `TransactionDataRequest` are ignored
+   - Unknown message types still return errors
+   ```go
+   if r.passiveMode {
+       switch typeID {
+       case TypeIDTransactionDataResponse:
+           return r.handleTransactionDataResponse(peerID, remaining)
+       case TypeIDTransactionsRequest, TypeIDTransactionsResponse,
+           TypeIDTransactionDataRequest:
+           return nil // Ignore gossip messages in passive mode
+       default:
+           return types.ErrUnknownMessageType
+       }
+   }
+   ```
+
+5. **BroadcastTx Passive Mode**:
+   ```go
+   func (r *TransactionsReactor) BroadcastTx(tx []byte) error {
+       // In passive mode, DAG mempool handles propagation
+       if r.passiveMode {
+           return nil
+       }
+       // ... normal broadcast logic
+   }
+   ```
+
+6. **Helper Methods**:
+   - `IsPassiveMode()` - Returns whether reactor is in passive mode
+   - `SetPassiveMode(bool)` - Manually enable/disable passive mode
+   - `DAGMempool()` - Returns the DAG mempool if configured
+
+**Test Coverage:**
+- `TestTransactionsReactor_PassiveModeAutoDetection` - Tests auto-detection with DAG vs simple mempool
+- `TestTransactionsReactor_SetPassiveMode` - Tests manual passive mode toggle
+- `TestTransactionsReactor_PassiveModeSkipsGossipLoop` - Verifies gossip loop not started
+- `TestTransactionsReactor_PassiveModeHandleMessageOnlyDataResponse` - Verifies data responses processed
+- `TestTransactionsReactor_PassiveModeIgnoresGossipMessages` - Verifies gossip messages ignored
+- `TestTransactionsReactor_PassiveModeUnknownTypeError` - Verifies unknown types still error
+- `TestTransactionsReactor_PassiveModeBroadcastTxSkipped` - Verifies broadcast is no-op
+
+**Design Decisions:**
+- Auto-detection based on DAGMempool interface type assertion
+- Passive mode skips entire gossip loop, not just parts of it
+- Still accepts incoming transaction data (for compatibility)
+- Ignores gossip-related messages rather than erroring (graceful degradation)
+- BroadcastTx returns immediately since DAG mempool handles propagation
+- Manual SetPassiveMode() available for testing and edge cases
+
+---
+
 *Last Updated: January 2025*

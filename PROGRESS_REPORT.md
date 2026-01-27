@@ -1442,4 +1442,86 @@ A no-op consensus engine for full nodes that:
 
 ---
 
+### Phase 3.4: Reference BFT Implementation Skeleton
+
+**Status:** Complete
+
+**Files Created:**
+- `consensus/bft/tendermint.go` - Reference Tendermint-style BFT implementation
+- `consensus/bft/tendermint_test.go` - BFT engine tests
+- `consensus/bft/types.go` - Supporting types (PrivValidator, WAL, vote tracking)
+- `consensus/bft/types_test.go` - Vote tracking tests
+
+**RoundStep State Machine:**
+```
+NewHeight -> NewRound -> Propose -> Prevote -> PrevoteWait ->
+Precommit -> PrecommitWait -> Commit -> (next height)
+```
+
+**TendermintBFT Engine:**
+- Implements ConsensusEngine, BFTConsensus, BlockProducer interfaces
+- Round-based consensus with locked value mechanism
+- Configurable timeouts (propose, prevote, precommit, commit)
+- Integration points for:
+  - PrivValidator (signing)
+  - WAL (crash recovery)
+  - TimeoutTicker (timeout management)
+  - ValidatorSet (proposer selection)
+
+**Supporting Types:**
+
+1. **PrivValidator Interface**:
+   - GetAddress/GetPublicKey for identity
+   - SignVote/SignProposal for signing
+
+2. **WAL Interface**:
+   - Write/WriteSync for message logging
+   - SearchForEndHeight for replay
+   - Start/Stop/Flush for lifecycle
+
+3. **HeightVoteSet**:
+   - Tracks votes for a specific height
+   - Per-round vote sets
+   - 2f+1 majority detection
+
+4. **RoundVoteSet**:
+   - Tracks votes for a specific round
+   - Voting power accumulation
+   - Block hash vote counts
+
+5. **TimeoutTicker Interface**:
+   - ScheduleTimeout for timeout management
+   - Chan for timeout events
+
+**Skeleton Methods (TODO):**
+- Block validation and execution
+- WAL write operations
+- Vote signature verification
+- Proposer signature verification
+- Equivocation detection
+- State sync triggering
+
+**Test Coverage:**
+- Config defaults and custom config
+- Engine lifecycle (start/stop)
+- Initialize with dependencies
+- Proposal handling (nil, past/current height)
+- Vote/commit handling (nil checks)
+- Timeout handling (stale vs current)
+- Block production
+- Proposer detection
+- HeightVoteSet/RoundVoteSet operations
+- 2f+1 majority detection
+- Interface compliance verification
+
+**Design Decisions:**
+- Skeleton design for easy customization
+- nolint directive for intentional TODOs
+- Comprehensive state machine with all steps
+- Modular timeout management via TimeoutTicker
+- WAL interface for crash recovery
+- Atomic operations for thread-safe state
+
+---
+
 *Last Updated: January 2025*

@@ -227,10 +227,10 @@ func TestLifecycleAwareInterface(t *testing.T) {
 
 // Verify interfaces are satisfied at compile time.
 var (
-	_ Component              = (*mockComponent)(nil)
-	_ ConfigurableComponent  = (*mockConfigurableComponent)(nil)
-	_ Named                  = (*mockFullComponent)(nil)
-	_ Dependent              = (*mockFullComponent)(nil)
-	_ HealthChecker          = (*mockFullComponent)(nil)
-	_ LifecycleAware         = (*mockFullComponent)(nil)
+	_ Component             = (*mockComponent)(nil)
+	_ ConfigurableComponent = (*mockConfigurableComponent)(nil)
+	_ Named                 = (*mockFullComponent)(nil)
+	_ Dependent             = (*mockFullComponent)(nil)
+	_ HealthChecker         = (*mockFullComponent)(nil)
+	_ LifecycleAware        = (*mockFullComponent)(nil)
 )

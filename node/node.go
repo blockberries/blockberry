@@ -66,6 +66,9 @@ type Node struct {
 	pexReactor          *pex.Reactor
 	syncReactor         *bsync.SyncReactor
 
+	// Callbacks for event notifications
+	callbacks *types.NodeCallbacks
+
 	// Lifecycle
 	started  bool
 	stopping atomic.Bool // true when shutdown is in progress
@@ -108,6 +111,15 @@ func WithBlockValidator(v bsync.BlockValidator) Option {
 		if n.syncReactor != nil {
 			n.syncReactor.SetValidator(v)
 		}
+	}
+}
+
+// WithCallbacks sets the node callbacks for event notifications.
+// Callbacks allow external code to react to node events without
+// tight coupling to internal components.
+func WithCallbacks(cb *types.NodeCallbacks) Option {
+	return func(n *Node) {
+		n.callbacks = cb
 	}
 }
 
@@ -405,6 +417,23 @@ func (n *Node) PeerCount() int {
 	return n.network.PeerCount()
 }
 
+// Callbacks returns the current node callbacks.
+// Returns nil if no callbacks are set.
+func (n *Node) Callbacks() *types.NodeCallbacks {
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+	return n.callbacks
+}
+
+// SetCallbacks sets the node callbacks for event notifications.
+// Can be called at any time, including after the node has started.
+// Pass nil to remove callbacks.
+func (n *Node) SetCallbacks(cb *types.NodeCallbacks) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.callbacks = cb
+}
+
 // eventLoop handles incoming events and messages.
 func (n *Node) eventLoop() {
 	defer n.wg.Done()
@@ -468,6 +497,9 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		n.network.OnPeerConnected(peerID, isOutbound)
 		_ = n.handshakeHandler.OnPeerConnected(peerID, isOutbound)
 
+		// Invoke callback
+		n.callbacks.InvokePeerConnected(peerID, isOutbound)
+
 	case glueberry.StateEstablished:
 		// Peer is fully connected, notify reactors
 		info := n.handshakeHandler.GetPeerInfo(peerID)
@@ -484,9 +516,20 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 				peerMultiaddr = fmt.Sprintf("%s/p2p/%s", addrs[0].String(), peerID.String())
 			}
 			n.pexReactor.OnPeerConnected(peerID, peerMultiaddr, isOutbound)
+
+			// Invoke callback with peer info
+			n.callbacks.InvokePeerHandshaked(peerID, &types.PeerInfo{
+				NodeID:          info.PeerNodeID,
+				ChainID:         info.PeerChainID,
+				ProtocolVersion: info.PeerVersion,
+				Height:          info.PeerHeight,
+			})
 		}
 
 	case glueberry.StateDisconnected:
+		// Invoke callback before cleanup
+		n.callbacks.InvokePeerDisconnected(peerID)
+
 		// Clean up peer state
 		n.network.OnPeerDisconnected(peerID)
 		n.handshakeHandler.OnPeerDisconnected(peerID)
@@ -523,6 +566,8 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 	case p2p.StreamBlocks:
 		err = n.blocksReactor.HandleMessage(peerID, data)
 	case p2p.StreamConsensus:
+		// Invoke callback for consensus messages (allows pluggable consensus)
+		n.callbacks.InvokeConsensusMessage(peerID, data)
 		err = n.consensusReactor.HandleMessage(peerID, data)
 	case p2p.StreamHousekeeping:
 		err = n.housekeepingReactor.HandleMessage(peerID, data)
@@ -532,6 +577,8 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 		// Add penalty for invalid messages
 		_ = n.network.AddPenalty(peerID, p2p.PenaltyInvalidMessage, p2p.ReasonInvalidMessage,
 			fmt.Sprintf("error handling %s message: %v", stream, err))
+		// Invoke penalty callback
+		n.callbacks.InvokePeerPenalized(peerID, p2p.PenaltyInvalidMessage, string(p2p.ReasonInvalidMessage))
 	}
 }
 

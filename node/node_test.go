@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/require"
 
 	"github.com/blockberries/blockberry/types"
@@ -183,4 +184,43 @@ func TestGetComponent_Unknown(t *testing.T) {
 	_, err := n.GetComponent("unknown-component")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "component not found")
+}
+
+func TestCallbacks_Nil(t *testing.T) {
+	n := &Node{}
+
+	// Callbacks should be nil by default
+	require.Nil(t, n.Callbacks())
+}
+
+func TestCallbacks_SetAndGet(t *testing.T) {
+	n := &Node{}
+
+	cb := &types.NodeCallbacks{
+		OnPeerConnected: func(peerID peer.ID, isOutbound bool) {},
+	}
+
+	n.SetCallbacks(cb)
+	require.Equal(t, cb, n.Callbacks())
+}
+
+func TestCallbacks_SetNil(t *testing.T) {
+	n := &Node{}
+
+	cb := &types.NodeCallbacks{}
+	n.SetCallbacks(cb)
+	require.NotNil(t, n.Callbacks())
+
+	n.SetCallbacks(nil)
+	require.Nil(t, n.Callbacks())
+}
+
+func TestOption_WithCallbacks(t *testing.T) {
+	cb := &types.NodeCallbacks{}
+	opt := WithCallbacks(cb)
+
+	n := &Node{}
+	opt(n)
+
+	require.Equal(t, cb, n.callbacks)
 }

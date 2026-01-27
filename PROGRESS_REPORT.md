@@ -596,4 +596,97 @@ func (ps *PeerScorer) applyDecayLocked(record *PenaltyRecord) {
 
 ---
 
+### 1.3 Callback-Based Extensibility
+**Status:** Complete
+
+**Files Created:**
+- `types/callbacks.go` - NodeCallbacks struct with event callbacks and safe invocation helpers
+- `types/callbacks_test.go` - Comprehensive tests for callbacks
+
+**Files Modified:**
+- `node/node.go` - Added callbacks field, SetCallbacks/Callbacks methods, WithCallbacks option, callback invocations in event handlers
+- `node/node_test.go` - Added tests for callback methods
+- `types/component_test.go` - Fixed formatting
+
+**Key Changes:**
+
+1. **NodeCallbacks Struct**: Defines callbacks for all node events:
+   ```go
+   type NodeCallbacks struct {
+       // Transaction callbacks
+       OnTxReceived     func(peerID peer.ID, tx []byte)
+       OnTxValidated    func(tx []byte, err error)
+       OnTxBroadcast    func(tx []byte, peers []peer.ID)
+       OnTxAdded        func(txHash []byte, tx []byte)
+       OnTxRemoved      func(txHash []byte, reason string)
+
+       // Block callbacks
+       OnBlockReceived  func(peerID peer.ID, height int64, hash, data []byte)
+       OnBlockValidated func(height int64, hash []byte, err error)
+       OnBlockCommitted func(height int64, hash []byte)
+       OnBlockStored    func(height int64, hash []byte)
+
+       // Peer callbacks
+       OnPeerConnected    func(peerID peer.ID, isOutbound bool)
+       OnPeerHandshaked   func(peerID peer.ID, info *PeerInfo)
+       OnPeerDisconnected func(peerID peer.ID)
+       OnPeerPenalized    func(peerID peer.ID, points int64, reason string)
+
+       // Consensus callbacks
+       OnConsensusMessage func(peerID peer.ID, data []byte)
+       OnProposalReady    func(height int64) ([]byte, error)
+       OnVoteReady        func(height int64, round int32, voteType VoteType) ([]byte, error)
+
+       // Sync callbacks
+       OnSyncStarted   func(startHeight, targetHeight int64)
+       OnSyncProgress  func(currentHeight, targetHeight int64)
+       OnSyncCompleted func(height int64)
+   }
+   ```
+
+2. **Safe Invocation Helpers**: Methods like `InvokeTxReceived()`, `InvokePeerConnected()` etc. that check for nil before calling.
+
+3. **Helper Methods**:
+   - `DefaultCallbacks()` - Returns empty callbacks struct
+   - `Clone()` - Creates a copy of callbacks
+   - `Merge()` - Merges callbacks, overwriting with non-nil values
+
+4. **Node Integration**:
+   - `WithCallbacks(cb)` option for node creation
+   - `SetCallbacks(cb)` method for runtime callback changes
+   - `Callbacks()` getter method
+   - Event handlers invoke appropriate callbacks
+
+5. **PeerInfo Struct**: For handshake callback:
+   ```go
+   type PeerInfo struct {
+       NodeID          string
+       ChainID         string
+       ProtocolVersion int32
+       Height          int64
+   }
+   ```
+
+**Test Coverage:**
+- `TestVoteTypeConstants` - Verifies vote type constants
+- `TestDefaultCallbacks` - Verifies default callbacks are nil
+- `TestCallbacks_Clone` - Tests cloning behavior
+- `TestCallbacks_Merge` - Tests merging behavior
+- `TestCallbacks_SafeInvocation` - Tests nil-safe invocation
+- `TestPeerInfo` - Tests PeerInfo struct
+- `TestCallbacks_AllInvokers` - Tests all invoker methods
+- `TestCallbacks_Nil/SetAndGet/SetNil` - Node callback integration tests
+- `TestOption_WithCallbacks` - Tests WithCallbacks option
+
+**Design Decisions:**
+- All callbacks are optional (nil-safe)
+- Safe invocation helpers prevent nil pointer panics
+- Clone and Merge enable callback composition
+- Callbacks are invoked at appropriate points in event handling
+- Consensus callback allows pluggable consensus engines
+- PeerInfo provides handshake details to applications
+- Callbacks can be changed at runtime via SetCallbacks
+
+---
+
 *Last Updated: January 2025*

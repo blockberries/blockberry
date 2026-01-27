@@ -842,4 +842,268 @@ All timing and size values are now in configuration with sensible defaults.
 
 ---
 
+## Phase 2: Mempool Plugin System
+
+### 2.1 Extended Mempool Interface
+**Status:** Complete
+
+**Files Created:**
+- `mempool/interface.go` - Extended mempool interfaces for DAG and network-aware mempools
+- `mempool/interface_test.go` - Comprehensive tests for extended interfaces
+
+**Key Changes:**
+
+1. **ValidatingMempool Interface**: Extends base Mempool with explicit validation:
+   ```go
+   type ValidatingMempool interface {
+       Mempool
+       SetTxValidator(validator TxValidator)
+   }
+   ```
+
+2. **DAGMempool Interface**: For DAG-based mempools like looseberry:
+   ```go
+   type DAGMempool interface {
+       ValidatingMempool
+       types.Component
+       ReapCertifiedBatches(maxBytes int64) []CertifiedBatch
+       NotifyCommitted(round uint64)
+       UpdateValidatorSet(validators ValidatorSet)
+       CurrentRound() uint64
+       DAGMetrics() *DAGMempoolMetrics
+   }
+   ```
+
+3. **NetworkAwareMempool Interface**: For mempools needing custom network streams:
+   ```go
+   type NetworkAwareMempool interface {
+       Mempool
+       StreamConfigs() []StreamConfig
+       SetNetwork(network MempoolNetwork)
+   }
+   ```
+
+4. **CertifiedBatch Struct**: Represents a batch with a certificate from a DAG mempool:
+   ```go
+   type CertifiedBatch struct {
+       Batch          []byte
+       Certificate    []byte
+       Round          uint64
+       ValidatorIndex uint16
+       Hash           []byte
+   }
+   ```
+
+5. **ValidatorSet Interface**: For validator management:
+   ```go
+   type ValidatorSet interface {
+       Count() int
+       GetPublicKey(index uint16) []byte
+       F() int
+       Quorum() int
+       VerifySignature(index uint16, digest []byte, sig []byte) bool
+   }
+   ```
+
+6. **StreamConfig Struct**: For network stream configuration:
+   ```go
+   type StreamConfig struct {
+       Name           string
+       Encrypted      bool
+       RateLimit      int
+       MaxMessageSize int
+       Owner          string
+   }
+   ```
+
+7. **Additional Interfaces**:
+   - `PrioritizedMempool` - For priority-based transaction ordering
+   - `ExpirableMempool` - For TTL-based transaction expiration
+   - `MempoolIterator` and `IterableMempool` - For transaction iteration
+
+**Test Coverage:**
+- Mock implementations for DAGMempool, NetworkAwareMempool, ValidatorSet
+- Tests for CertifiedBatch, StreamConfig struct fields
+- Tests for PrioritizedMempool and ExpirableMempool
+- Interface compliance verification
+
+---
+
+### 2.2 Mempool Factory
+**Status:** Complete
+
+**Files Created:**
+- `mempool/factory.go` - Mempool factory for plugin registration
+- `mempool/factory_test.go` - Comprehensive tests for factory
+
+**Files Modified:**
+- `config/config.go` - Added Type, TTL, CleanupInterval to MempoolConfig
+
+**Key Changes:**
+
+1. **MempoolType Constants**:
+   ```go
+   const (
+       TypeSimple     MempoolType = "simple"
+       TypePriority   MempoolType = "priority"
+       TypeTTL        MempoolType = "ttl"
+       TypeLooseberry MempoolType = "looseberry"
+   )
+   ```
+
+2. **MempoolConstructor Function Type**:
+   ```go
+   type MempoolConstructor func(cfg *config.MempoolConfig) (Mempool, error)
+   ```
+
+3. **Factory Struct**: Registry for mempool implementations:
+   ```go
+   type Factory struct {
+       registry map[MempoolType]MempoolConstructor
+       mu       sync.RWMutex
+   }
+   ```
+
+4. **Factory Methods**:
+   - `Register(mempoolType, constructor)` - Register new mempool type
+   - `Unregister(mempoolType)` - Remove mempool type
+   - `Create(cfg)` - Create mempool instance from config
+   - `Has(mempoolType)` - Check if type is registered
+   - `Types()` - List registered types
+
+5. **DefaultFactory**: Global factory instance with built-in types registered.
+
+6. **Helper Functions**:
+   - `CreateFromConfig(cfg)` - Create mempool using default factory
+   - `RegisterMempool(type, constructor)` - Register on default factory
+
+7. **MempoolConfig Updates**:
+   ```go
+   type MempoolConfig struct {
+       Type            string   `toml:"type"`
+       MaxTxs          int      `toml:"max_txs"`
+       MaxBytes        int64    `toml:"max_bytes"`
+       CacheSize       int      `toml:"cache_size"`
+       TTL             Duration `toml:"ttl"`
+       CleanupInterval Duration `toml:"cleanup_interval"`
+   }
+   ```
+
+**Test Coverage:**
+- `TestNewFactory` - Built-in types registered
+- `TestFactory_Register` - Custom mempool registration
+- `TestFactory_Unregister` - Type removal
+- `TestFactory_Create_*` - Creation for each type
+- `TestFactory_Types` - Type listing
+- `TestFactory_Override` - Type override
+- `TestDefaultFactory` - Global factory
+- `TestFactory_ConcurrentAccess` - Thread safety
+
+---
+
+### 2.3 Looseberry Integration
+**Status:** Complete
+
+**Files Created:**
+- `mempool/looseberry/adapter.go` - Adapter wrapping looseberry.Looseberry
+- `mempool/looseberry/validator_adapter.go` - ValidatorSet adapter
+- `mempool/looseberry/network_adapter.go` - Network adapter bridging MempoolNetwork to looseberry
+- `mempool/looseberry/adapter_test.go` - Comprehensive tests
+
+**Files Modified:**
+- `go.mod` - Added looseberry dependency with replace directive
+
+**Key Changes:**
+
+1. **Adapter Struct**: Wraps looseberry.Looseberry to implement blockberry interfaces:
+   ```go
+   type Adapter struct {
+       lb           *looseberry.Looseberry
+       cfg          *Config
+       network      mempool.MempoolNetwork
+       txValidator  mempool.TxValidator
+       validatorSet mempool.ValidatorSet
+       running      atomic.Bool
+       stopCh       chan struct{}
+       wg           sync.WaitGroup
+       mu           sync.RWMutex
+   }
+   ```
+
+2. **Interface Implementations**:
+   - `mempool.Mempool` - Basic mempool operations
+   - `mempool.DAGMempool` - DAG-specific operations
+   - `mempool.NetworkAwareMempool` - Custom stream configuration
+
+3. **Config Struct**:
+   ```go
+   type Config struct {
+       ValidatorIndex   uint16
+       Signer           Signer
+       LooseberryConfig *looseberry.Config
+   }
+   ```
+
+4. **Signer Interface**: For cryptographic operations:
+   ```go
+   type Signer interface {
+       Sign(digest []byte) ([]byte, error)
+       PublicKey() []byte
+   }
+   ```
+
+5. **ValidatorSet Adapter**: Converts blockberry's ValidatorSet to looseberry's:
+   ```go
+   type looseberryValidatorSet struct {
+       bb mempool.ValidatorSet
+   }
+   ```
+
+6. **Network Adapter**: Bridges MempoolNetwork to looseberry's Network interface:
+   ```go
+   type networkAdapter struct {
+       network        mempool.MempoolNetwork
+       validatorIndex uint16
+       validatorSet   *validatorSetAdapter
+       // Message channels for each message type
+   }
+   ```
+
+7. **Stream Configurations**: Three streams for looseberry:
+   - `looseberry-batches` - Batch messages (10MB max)
+   - `looseberry-headers` - Header messages (1MB max)
+   - `looseberry-sync` - Sync messages (50MB max)
+
+8. **Encoding Functions**: Placeholder implementations for cramberry serialization.
+
+**Test Coverage:**
+- `TestNewAdapter_*` - Construction tests (nil config, nil looseberry config, success)
+- `TestAdapter_StartStop` - Lifecycle tests (start, double start, stop, double stop)
+- `TestAdapter_AddTx` - Transaction addition
+- `TestAdapter_HasTx` - Transaction lookup
+- `TestAdapter_GetTx_NotSupported` - DAG mempool limitation
+- `TestAdapter_RemoveTxs_NoOp` - No-op for DAG mempool
+- `TestAdapter_Flush` - Mempool clearing
+- `TestAdapter_TxHashes` - Hash listing
+- `TestAdapter_ReapTxs` - Transaction reaping
+- `TestAdapter_ReapCertifiedBatches` - Batch reaping
+- `TestAdapter_CurrentRound` - Round tracking
+- `TestAdapter_NotifyCommitted` - Commit notification
+- `TestAdapter_DAGMetrics` - Metrics retrieval
+- `TestAdapter_StreamConfigs` - Stream configuration
+- `TestAdapter_SetNetwork` - Network setup
+- `TestAdapter_SetTxValidator` - Validator setup
+- `TestAdapter_UpdateValidatorSet` - Validator set updates
+- `TestAdapter_InterfaceCompliance` - Interface verification
+
+**Design Decisions:**
+- Adapter pattern for clean interface separation
+- Placeholder encoding functions ready for cramberry integration
+- Network adapter bridges different network abstractions
+- ValidatorSet adapter handles type conversion between frameworks
+- All three blockberry interfaces implemented for full compatibility
+- Tests use mock network and validator set for isolation
+
+---
+
 *Last Updated: January 2025*

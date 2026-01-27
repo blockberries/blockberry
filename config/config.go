@@ -112,6 +112,11 @@ type PEXConfig struct {
 
 // MempoolConfig contains transaction mempool configuration.
 type MempoolConfig struct {
+	// Type selects the mempool implementation.
+	// Valid values: "simple", "priority", "ttl", "looseberry"
+	// Default: "simple"
+	Type string `toml:"type"`
+
 	// MaxTxs is the maximum number of transactions in the mempool.
 	MaxTxs int `toml:"max_txs"`
 
@@ -120,6 +125,13 @@ type MempoolConfig struct {
 
 	// CacheSize is the size of the recent transaction hash cache.
 	CacheSize int `toml:"cache_size"`
+
+	// TTL is the time-to-live for transactions (TTL mempool only).
+	// Transactions older than this are automatically removed.
+	TTL Duration `toml:"ttl"`
+
+	// CleanupInterval is how often to check for expired transactions (TTL mempool only).
+	CleanupInterval Duration `toml:"cleanup_interval"`
 }
 
 // BlockStoreConfig contains block storage configuration.
@@ -280,9 +292,12 @@ func DefaultConfig() *Config {
 			MaxAddressesPerResponse: 100,
 		},
 		Mempool: MempoolConfig{
-			MaxTxs:    5000,
-			MaxBytes:  1073741824, // 1GB
-			CacheSize: 10000,
+			Type:            "simple",
+			MaxTxs:          5000,
+			MaxBytes:        1073741824, // 1GB
+			CacheSize:       10000,
+			TTL:             Duration(time.Hour),               // Default 1 hour for TTL mempool
+			CleanupInterval: Duration(5 * time.Minute),         // Check every 5 minutes for TTL mempool
 		},
 		BlockStore: BlockStoreConfig{
 			Backend: "leveldb",

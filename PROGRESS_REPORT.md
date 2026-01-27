@@ -1524,4 +1524,98 @@ Precommit -> PrecommitWait -> Commit -> (next height)
 
 ---
 
+### Phase 3.5: Validator Set Management
+
+**Status:** Complete
+
+**Files Created:**
+- `consensus/validators.go` - Validator set implementations and storage
+- `consensus/validators_test.go` - Comprehensive validator set tests
+
+**SimpleValidatorSet:**
+- Basic ValidatorSet implementation with O(n) lookups
+- Thread-safe with RWMutex
+- Deep copy semantics for validators (prevents external mutation)
+- Validation on construction (nil checks, duplicate detection, voting power)
+- Methods: Count, GetByIndex, GetByAddress, Contains, GetProposer, TotalVotingPower, Quorum, F, VerifyCommit, Validators, Copy
+
+**IndexedValidatorSet:**
+- Optimized ValidatorSet with O(1) address lookups via hash map
+- Embeds SimpleValidatorSet for shared functionality
+- Maintains address-to-validator index for fast lookups
+- Suitable for larger validator sets
+
+**WeightedProposerSelection:**
+- PoS-style proposer selection weighted by voting power
+- Priority-based algorithm (validators with more stake propose more often)
+- GetProposer finds highest priority validator
+- IncrementProposerPriority updates priorities after each round:
+  - All validators: priority += votingPower
+  - Proposer: priority -= totalPower
+
+**ValidatorSetStore Interface:**
+- SaveValidatorSet(height, valSet) - Persist at height
+- LoadValidatorSet(height) - Retrieve at specific height
+- LatestValidatorSet() - Most recent set
+- ValidatorSetAtHeight(height) - Active set at given height (epoch support)
+
+**InMemoryValidatorSetStore:**
+- In-memory implementation for testing
+- Tracks latest height
+- ValidatorSetAtHeight finds most recent set at or before height
+
+**Commit Verification:**
+- VerifyCommit validates commits against validator set
+- Ed25519 signature verification
+- Quorum calculation: 2/3 * totalPower + 1
+- Skips absent validators (nil signature)
+- Height and block hash validation
+
+**Common Errors:**
+- ErrValidatorNotFound
+- ErrDuplicateValidator
+- ErrInvalidVotingPower
+- ErrInvalidPublicKey
+- ErrInvalidSignature
+- ErrInsufficientQuorum
+- ErrValidatorSetNotFound
+
+**Helper Functions:**
+- makeCommitSignBytes - Creates canonical sign bytes for commits
+
+**Test Coverage (32 tests):**
+- NewSimpleValidatorSet creation and validation
+- Empty validator set handling
+- Nil validator detection
+- Invalid voting power rejection
+- Duplicate address detection
+- GetByIndex valid/invalid cases
+- GetByAddress valid/invalid cases
+- Contains membership testing
+- GetProposer deterministic selection
+- GetProposer empty set handling
+- Quorum calculation (2f+1)
+- F calculation (Byzantine tolerance)
+- VerifyCommit nil/height/hash mismatches
+- VerifyCommit valid signatures (Ed25519)
+- VerifyCommit insufficient quorum
+- Validators deep copy verification
+- Copy deep copy verification
+- IndexedValidatorSet O(1) lookups
+- IndexedValidatorSet copy with index
+- WeightedProposerSelection creation/empty
+- IncrementProposerPriority weighted selection
+- ValidatorSetStore save/load/latest
+- ValidatorSetAtHeight epoch support
+
+**Design Decisions:**
+- Pointer embedding for IndexedValidatorSet to avoid mutex copy issues
+- Deep copy for all public validator accessors (prevents external mutation)
+- Standard library slices.Sort for modern Go idioms
+- Interface compliance verified via compile-time checks
+- Sentinel errors for consistent error handling
+- nolint for safe int-to-uint16 conversions (validator count bounded)
+
+---
+
 *Last Updated: January 2025*

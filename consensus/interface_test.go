@@ -178,6 +178,16 @@ func (m *mockValidatorSet) Quorum() int64 {
 	return int64(2*f + 1)
 }
 
+func (m *mockValidatorSet) F() int {
+	return (len(m.validators) - 1) / 3
+}
+
+func (m *mockValidatorSet) Validators() []*Validator {
+	result := make([]*Validator, len(m.validators))
+	copy(result, m.validators)
+	return result
+}
+
 func (m *mockValidatorSet) VerifyCommit(height int64, blockHash []byte, commit *Commit) error {
 	if commit == nil {
 		return errors.New("nil commit")

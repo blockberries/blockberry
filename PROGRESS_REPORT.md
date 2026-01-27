@@ -1811,4 +1811,86 @@ Header-Only BlockStore (13 tests):
 
 ---
 
+### Phase 4.3: Validator Detection
+
+**Status:** Complete
+
+**Files Created:**
+- `consensus/detector.go` - Validator detection implementations
+- `consensus/detector_test.go` - Comprehensive detector tests
+
+**Files Modified:**
+- `consensus/interface.go` - Added F() and Validators() to ValidatorSet interface
+- `consensus/interface_test.go` - Updated mockValidatorSet with new methods
+- `consensus/bft/tendermint_test.go` - Updated mockValidatorSet with new methods
+
+**ValidatorDetector Interface:**
+```go
+type ValidatorDetector interface {
+    IsValidator(valSet ValidatorSet) bool
+    ValidatorIndex(valSet ValidatorSet) int
+    GetValidator(valSet ValidatorSet) *Validator
+}
+```
+
+**KeyBasedDetector:**
+- Detects validator status by public key
+- Deep copies key to prevent external mutation
+- Returns index or -1 if not a validator
+- PublicKey() getter for retrieval
+
+**AddressBasedDetector:**
+- Detects validator status by address
+- Uses ValidatorSet.Contains() for O(1) lookup with IndexedValidatorSet
+- Address() getter for retrieval
+
+**ValidatorStatusTracker:**
+- Monitors validator set changes
+- Notifies via callback on status changes
+- Thread-safe with RWMutex
+- Detects both joining and leaving validator set
+- Tracks validator index changes
+
+**ValidatorSet Interface Updates:**
+- Added F() - Returns max Byzantine validators tolerated
+- Added Validators() - Returns all validators in set
+
+**Test Coverage (25 tests):**
+
+Detector Tests:
+- Interface compliance for both detectors
+- IsValidator valid/invalid/nil cases
+- ValidatorIndex finding and not found
+- GetValidator retrieval
+- Key/Address deep copy verification
+
+Status Tracker Tests:
+- Creation and initial state
+- Becoming validator (callback invoked)
+- No change (callback not re-invoked)
+- Leaving validator set
+- Validator info retrieval
+- SetCallback updates
+- Nil callback handling
+- Concurrent access safety
+- Index change detection
+
+**Design Decisions:**
+- Two detector types for different identity models
+- Status tracker separates detection from monitoring
+- Callback invoked outside lock to prevent deadlocks
+- Deep copies for all byte slice returns
+- Interface extends ValidatorSet for complete functionality
+
+---
+
+## Phase 4 Complete
+
+All Phase 4 tasks completed:
+- 4.1 Node Role Definitions - Role types and capabilities
+- 4.2 Role-Based Component Selection - Builder and NoOp components
+- 4.3 Validator Detection - Detection and status tracking
+
+---
+
 *Last Updated: January 2025*

@@ -355,6 +355,12 @@ type ValidatorSet interface {
 	// Quorum returns the quorum size (2f+1 for BFT).
 	Quorum() int64
 
+	// F returns the maximum number of Byzantine validators tolerated.
+	F() int
+
+	// Validators returns all validators in the set.
+	Validators() []*Validator
+
 	// VerifyCommit verifies a commit against this validator set.
 	VerifyCommit(height int64, blockHash []byte, commit *Commit) error
 }

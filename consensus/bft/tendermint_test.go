@@ -267,7 +267,23 @@ func (m *mockValidatorSet) Quorum() int64 {
 	return int64((2*f + 1) * 100)
 }
 
-func (m *mockValidatorSet) VerifyCommit(height int64, blockHash []byte, commit *consensus.Commit) error {
+func (m *mockValidatorSet) F() int {
+	return (m.count - 1) / 3
+}
+
+func (m *mockValidatorSet) Validators() []*consensus.Validator {
+	validators := make([]*consensus.Validator, m.count)
+	for i := range m.count {
+		validators[i] = &consensus.Validator{
+			Index:       uint16(i),
+			Address:     []byte{byte(i)},
+			VotingPower: 100,
+		}
+	}
+	return validators
+}
+
+func (m *mockValidatorSet) VerifyCommit(_ int64, _ []byte, _ *consensus.Commit) error {
 	return nil
 }
 

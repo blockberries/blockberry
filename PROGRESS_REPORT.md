@@ -1206,4 +1206,107 @@ All timing and size values are now in configuration with sensible defaults.
 
 ---
 
+## Phase 3: Consensus Engine Framework
+
+### Phase 3.1: Consensus Engine Interface
+
+**Status:** Complete
+
+**Files Created:**
+- `consensus/interface.go` - Core consensus engine interfaces and types
+- `consensus/interface_test.go` - Comprehensive tests for interfaces
+
+**Key Interfaces Defined:**
+
+1. **ConsensusEngine** - Main interface for all consensus implementations:
+   ```go
+   type ConsensusEngine interface {
+       types.Component
+       Initialize(deps ConsensusDependencies) error
+       ProcessBlock(block *Block) error
+       GetHeight() int64
+       GetRound() int32
+       IsValidator() bool
+       ValidatorSet() ValidatorSet
+   }
+   ```
+
+2. **BFTConsensus** - Extended interface for BFT-style consensus:
+   ```go
+   type BFTConsensus interface {
+       ConsensusEngine
+       BlockProducer
+       HandleProposal(proposal *Proposal) error
+       HandleVote(vote *Vote) error
+       HandleCommit(commit *Commit) error
+       OnTimeout(height int64, round int32, step TimeoutStep) error
+   }
+   ```
+
+3. **StreamAwareConsensus** - For consensus engines needing custom network streams:
+   ```go
+   type StreamAwareConsensus interface {
+       ConsensusEngine
+       StreamConfigs() []StreamConfig
+       HandleStreamMessage(stream string, peerID peer.ID, data []byte) error
+   }
+   ```
+
+4. **BlockProducer** - For engines that can create blocks:
+   ```go
+   type BlockProducer interface {
+       ProduceBlock(height int64) (*Block, error)
+       ShouldPropose(height int64, round int32) bool
+   }
+   ```
+
+5. **ValidatorSet** - Interface for validator management:
+   ```go
+   type ValidatorSet interface {
+       Count() int
+       GetByIndex(index uint16) *Validator
+       GetByAddress(address []byte) *Validator
+       Contains(address []byte) bool
+       GetProposer(height int64, round int32) *Validator
+       TotalVotingPower() int64
+       Quorum() int64
+       VerifyCommit(height int64, blockHash []byte, commit *Commit) error
+   }
+   ```
+
+**Supporting Types:**
+
+- `ConsensusDependencies` - Node components provided to consensus engines
+- `ConsensusCallbacks` - Event notifications from consensus to node
+- `ConsensusConfig` - Configuration with timeouts and custom params
+- `Block`, `Proposal`, `Vote`, `Commit`, `CommitSig` - BFT message types
+- `Validator` - Validator information struct
+- `StreamConfig` - Custom stream configuration
+- `VoteType`, `TimeoutStep` - Type constants
+
+**Safe Callback Invocation Methods:**
+- `InvokeOnBlockProposed()` - Safely invoke block proposed callback
+- `InvokeOnBlockCommitted()` - Safely invoke block committed callback
+- `InvokeOnValidatorSetChanged()` - Safely invoke validator set change callback
+- `InvokeOnStateSync()` - Safely invoke state sync callback
+- `InvokeOnConsensusError()` - Safely invoke error callback
+
+**Test Coverage:**
+- 26 test functions covering all interfaces and types
+- Mock implementations for ConsensusEngine, BFTConsensus, StreamAwareConsensus, ValidatorSet
+- Callback invocation tests including nil safety
+- Type constant verification
+- Structure field verification for all types
+
+**Design Decisions:**
+- Interfaces embed `types.Component` for lifecycle management
+- BFTConsensus composes ConsensusEngine and BlockProducer
+- Dependencies passed via Initialize() rather than constructor injection
+- Safe callback invocations handle nil receivers and nil function pointers
+- StreamConfig includes Owner field for routing to correct component
+- ValidatorSet uses uint16 for index (matching BFT limitations)
+- VotingPower and ProposerPriority as int64 for future flexibility
+
+---
+
 *Last Updated: January 2025*

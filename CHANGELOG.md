@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-01-29
+
+### Security
+
+- **statestore/snapshot.go**: Fixed critical memory exhaustion vulnerabilities in snapshot deserialization:
+  - `decodeSnapshotMetadata`: Added size limits for hash (64B), app hash (64B), metadata (1MB), and chunks (100K max)
+  - `decodeExportNode`: Added size limits for IAVL keys (4KB) and values (10MB)
+  - These fixes prevent denial-of-service attacks where malicious peers send crafted snapshots with extremely large length fields
+
 ## [0.1.1] - 2026-01-29
 
 ### Security

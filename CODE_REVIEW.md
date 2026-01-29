@@ -246,16 +246,67 @@ The following issues were identified and fixed in previous code review cycles (P
 
 ---
 
+## Review Iteration 3 - January 29, 2026
+
+### 19. Memory Exhaustion in decodeSnapshotMetadata
+
+**File:** `statestore/snapshot.go`
+**Lines:** 492-540
+**Status:** FIXED
+
+**Issue:** The `decodeSnapshotMetadata` function read length fields from untrusted input and allocated slices without bounds validation. An attacker could send a malicious snapshot with `hashLen=0xFFFFFFFF` causing a 4GB allocation attempt, leading to memory exhaustion or OOM kill.
+
+Affected fields:
+- `hashLen` - unbounded hash allocation
+- `appHashLen` - unbounded app hash allocation
+- `metadataLen` - unbounded metadata allocation
+- `numChunks` - unbounded chunks slice allocation
+
+**Fix:** Added constants and validation:
+```go
+const (
+    maxSnapshotHashSize     = 64              // SHA-512 maximum
+    maxSnapshotMetadataSize = 1024 * 1024     // 1MB limit
+    maxSnapshotChunks       = 100000          // Reasonable chunk limit
+)
+```
+Each field is validated against these limits before allocation.
+
+---
+
+### 20. Memory Exhaustion in decodeExportNode
+
+**File:** `statestore/snapshot.go`
+**Lines:** 545-590
+**Status:** FIXED
+
+**Issue:** The `decodeExportNode` function read `keyLen` and `valueLen` from untrusted input and allocated slices without bounds validation. Same memory exhaustion attack vector as #19.
+
+**Fix:** Added constants and validation:
+```go
+const (
+    maxIAVLKeySize   = 4 * 1024           // 4KB key limit
+    maxIAVLValueSize = 10 * 1024 * 1024   // 10MB value limit
+)
+```
+Both fields are validated against these limits before allocation.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
-| CRITICAL | 2 | 2 | 0 |
+| CRITICAL | 4 | 4 | 0 |
 | HIGH | 8 | 8 | 0 |
 | MEDIUM | 8 | 8 | 0 |
-| **Total** | **18** | **18** | **0** |
+| **Total** | **20** | **20** | **0** |
 
 All identified issues have been fixed. The codebase is now production-ready.
+
+### Files Modified in Review Iteration 3 (January 29, 2026)
+
+- `statestore/snapshot.go` - Added size validation in decodeSnapshotMetadata and decodeExportNode to prevent memory exhaustion attacks
 
 ### Files Modified in Review Iteration 2 (January 29, 2026)
 

@@ -509,6 +509,13 @@ func encodeSnapshotMetadata(s *Snapshot) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Maximum sizes for snapshot metadata fields to prevent memory exhaustion attacks.
+const (
+	maxSnapshotHashSize     = 64              // SHA-512 maximum
+	maxSnapshotMetadataSize = 1024 * 1024     // 1MB reasonable limit for metadata
+	maxSnapshotChunks       = 100000          // Reasonable limit for number of chunks
+)
+
 func decodeSnapshotMetadata(data []byte) (*Snapshot, error) {
 	r := bytes.NewReader(data)
 	s := &Snapshot{}
@@ -528,6 +535,9 @@ func decodeSnapshotMetadata(data []byte) (*Snapshot, error) {
 	if err := binary.Read(r, binary.BigEndian, &hashLen); err != nil {
 		return nil, err
 	}
+	if hashLen > maxSnapshotHashSize {
+		return nil, fmt.Errorf("hash length %d exceeds maximum %d", hashLen, maxSnapshotHashSize)
+	}
 	s.Hash = make([]byte, hashLen)
 	if _, err := io.ReadFull(r, s.Hash); err != nil {
 		return nil, err
@@ -545,12 +555,18 @@ func decodeSnapshotMetadata(data []byte) (*Snapshot, error) {
 	if err := binary.Read(r, binary.BigEndian, &chunks); err != nil {
 		return nil, err
 	}
+	if chunks > maxSnapshotChunks {
+		return nil, fmt.Errorf("chunk count %d exceeds maximum %d", chunks, maxSnapshotChunks)
+	}
 	s.Chunks = int(chunks)
 
 	// AppHash
 	var appHashLen uint32
 	if err := binary.Read(r, binary.BigEndian, &appHashLen); err != nil {
 		return nil, err
+	}
+	if appHashLen > maxSnapshotHashSize {
+		return nil, fmt.Errorf("app hash length %d exceeds maximum %d", appHashLen, maxSnapshotHashSize)
 	}
 	s.AppHash = make([]byte, appHashLen)
 	if _, err := io.ReadFull(r, s.AppHash); err != nil {
@@ -568,6 +584,9 @@ func decodeSnapshotMetadata(data []byte) (*Snapshot, error) {
 	var metadataLen uint32
 	if err := binary.Read(r, binary.BigEndian, &metadataLen); err != nil {
 		return nil, err
+	}
+	if metadataLen > maxSnapshotMetadataSize {
+		return nil, fmt.Errorf("metadata length %d exceeds maximum %d", metadataLen, maxSnapshotMetadataSize)
 	}
 	s.Metadata = make([]byte, metadataLen)
 	if _, err := io.ReadFull(r, s.Metadata); err != nil {
@@ -610,6 +629,12 @@ func encodeExportNode(w io.Writer, node *iavl.ExportNode) error {
 	return nil
 }
 
+// Maximum sizes for IAVL export node fields to prevent memory exhaustion attacks.
+const (
+	maxIAVLKeySize   = 4 * 1024           // 4KB reasonable key size limit
+	maxIAVLValueSize = 10 * 1024 * 1024   // 10MB value limit
+)
+
 func decodeExportNode(r io.Reader) (*iavl.ExportNode, error) {
 	node := &iavl.ExportNode{}
 
@@ -617,6 +642,9 @@ func decodeExportNode(r io.Reader) (*iavl.ExportNode, error) {
 	var keyLen uint32
 	if err := binary.Read(r, binary.BigEndian, &keyLen); err != nil {
 		return nil, err
+	}
+	if keyLen > maxIAVLKeySize {
+		return nil, fmt.Errorf("key length %d exceeds maximum %d", keyLen, maxIAVLKeySize)
 	}
 	node.Key = make([]byte, keyLen)
 	if _, err := io.ReadFull(r, node.Key); err != nil {
@@ -628,6 +656,9 @@ func decodeExportNode(r io.Reader) (*iavl.ExportNode, error) {
 	var valueLen uint32
 	if err := binary.Read(r, binary.BigEndian, &valueLen); err != nil {
 		return nil, err
+	}
+	if valueLen > maxIAVLValueSize {
+		return nil, fmt.Errorf("value length %d exceeds maximum %d", valueLen, maxIAVLValueSize)
 	}
 	if valueLen > 0 {
 		node.Value = make([]byte, valueLen)

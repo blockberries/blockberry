@@ -293,16 +293,47 @@ Both fields are validated against these limits before allocation.
 
 ---
 
+## Review Iteration 4 - January 29, 2026
+
+### 21. Deadlock in StateSyncReactor.requestMissingChunks
+
+**File:** `sync/statesync.go`
+**Lines:** 336, 376
+**Status:** FIXED
+
+**Issue:** The `requestMissingChunks` function acquired the mutex at line 336 via `r.mu.Lock()`. At line 376, when the retry limit was exceeded, it called `failWithError` which also tried to acquire the mutex at line 454. Since Go's `sync.Mutex` is not reentrant, this caused a deadlock.
+
+**Fix:** Changed the call at line 376 to use `r.transitionToFailed()` directly (which expects the lock to be held and handles the unlock/relock for callback execution) instead of `failWithError`. Also removed the now-unused `failWithError` function.
+
+---
+
+### 22. Importer Not Closed on Commit Failure
+
+**File:** `statestore/snapshot.go`
+**Lines:** 435-437
+**Status:** FIXED
+
+**Issue:** In the `Import` function, if `importer.Commit()` failed, the function returned without calling `importer.Close()`, potentially leaking resources.
+
+**Fix:** Added `importer.Close()` call before returning on commit failure.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
-| CRITICAL | 4 | 4 | 0 |
+| CRITICAL | 5 | 5 | 0 |
 | HIGH | 8 | 8 | 0 |
-| MEDIUM | 8 | 8 | 0 |
-| **Total** | **20** | **20** | **0** |
+| MEDIUM | 9 | 9 | 0 |
+| **Total** | **22** | **22** | **0** |
 
 All identified issues have been fixed. The codebase is now production-ready.
+
+### Files Modified in Review Iteration 4 (January 29, 2026)
+
+- `sync/statesync.go` - Fixed deadlock by calling transitionToFailed directly, removed unused failWithError function
+- `statestore/snapshot.go` - Added importer.Close() on commit failure
 
 ### Files Modified in Review Iteration 3 (January 29, 2026)
 

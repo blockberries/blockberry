@@ -373,7 +373,8 @@ func (r *StateSyncReactor) requestMissingChunks() {
 
 		// Check retry limit
 		if r.chunkRetries[idx] >= r.maxChunkRetries {
-			r.failWithError(fmt.Errorf("chunk %d exceeded max retries", idx))
+			// Call transitionToFailed directly since we already hold the lock
+			r.transitionToFailed(fmt.Errorf("chunk %d exceeded max retries", idx))
 			return
 		}
 
@@ -447,13 +448,6 @@ func (r *StateSyncReactor) applySnapshotLocked() {
 	}
 
 	r.mu.Lock()
-}
-
-// failWithError transitions to failed state with an error.
-func (r *StateSyncReactor) failWithError(err error) {
-	r.mu.Lock()
-	r.transitionToFailed(err)
-	r.mu.Unlock()
 }
 
 // transitionToFailed transitions to failed state with an error.

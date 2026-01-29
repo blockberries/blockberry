@@ -433,6 +433,7 @@ func (s *FileSnapshotStore) Import(snapshot *Snapshot, chunkProvider ChunkProvid
 	}
 
 	if err := importer.Commit(); err != nil {
+		importer.Close() // Clean up on commit failure
 		return fmt.Errorf("committing import: %w", err)
 	}
 

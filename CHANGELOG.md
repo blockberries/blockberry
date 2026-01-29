@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-01-29
+
+### Fixed
+
+- **sync/statesync.go**: Fixed critical deadlock in `requestMissingChunks` where calling `failWithError` attempted to acquire an already-held mutex. Changed to call `transitionToFailed` directly.
+- **statestore/snapshot.go**: Fixed resource leak where IAVL importer was not closed if `Commit()` failed.
+
+### Removed
+
+- **sync/statesync.go**: Removed unused `failWithError` function (now using `transitionToFailed` directly).
+
 ## [0.1.2] - 2026-01-29
 
 ### Security

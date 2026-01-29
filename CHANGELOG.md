@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.7] - 2026-01-29
+
+### Security
+
+- **consensus/validators.go**: Fixed `GetProposer()` methods in `SimpleValidatorSet` and `WeightedProposerSelection` returning direct references to internal validators, allowing callers to corrupt internal state.
+- **handlers/consensus.go**: Fixed decode functions (`decodeVote`, `decodeCommit`, `decodeBlock`) storing slices pointing to input data buffer without defensive copies, preventing potential corruption if network layer reuses buffers.
+
+### Fixed
+
+- **consensus/validators.go**: Fixed `NewWeightedProposerSelection` storing external validator slice without defensive copy, preventing external mutation of internal state.
+
 ## [0.1.6] - 2026-01-29
 
 ### Security

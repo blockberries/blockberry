@@ -354,9 +354,10 @@ func (r *ConsensusReactor) decodeVote(data []byte) (*consensus.Vote, error) {
 		if len(data) < 16+hashLen {
 			return nil, fmt.Errorf("vote data too short for hash length %d", hashLen)
 		}
-		vote.BlockHash = data[16 : 16+hashLen]
+		// Make defensive copy to prevent corruption if input data is reused
+		vote.BlockHash = append([]byte(nil), data[16:16+hashLen]...)
 		if len(data) > 16+hashLen {
-			vote.Signature = data[16+hashLen:]
+			vote.Signature = append([]byte(nil), data[16+hashLen:]...)
 		}
 	}
 
@@ -387,7 +388,8 @@ func (r *ConsensusReactor) decodeCommit(data []byte) (*consensus.Commit, error) 
 		if len(data) < 13+hashLen {
 			return nil, fmt.Errorf("commit data too short for hash length %d", hashLen)
 		}
-		commit.BlockHash = data[13 : 13+hashLen]
+		// Make defensive copy to prevent corruption if input data is reused
+		commit.BlockHash = append([]byte(nil), data[13:13+hashLen]...)
 		// TODO: Parse signatures from data[13+hashLen:]
 	}
 
@@ -406,7 +408,8 @@ func (r *ConsensusReactor) decodeBlock(data []byte) (*consensus.Block, error) {
 		Height:    int64(binary.BigEndian.Uint64(data[0:8])),
 		Round:     int32(binary.BigEndian.Uint32(data[8:12])),
 		Timestamp: int64(binary.BigEndian.Uint64(data[12:20])),
-		Data:      data[20:],
+		// Make defensive copy to prevent corruption if input data is reused
+		Data: append([]byte(nil), data[20:]...),
 	}
 
 	return block, nil

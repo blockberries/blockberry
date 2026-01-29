@@ -716,4 +716,110 @@ All identified issues have been fixed.
 
 All tests pass with race detection enabled.
 
+---
+
+## Review Iteration 8 - January 29, 2026
+
+### 44. GetProposer Returns Internal Reference (SimpleValidatorSet)
+
+**File:** `consensus/validators.go`
+**Lines:** 136-150
+**Status:** FIXED
+
+**Issue:** The `SimpleValidatorSet.GetProposer()` method returned a direct pointer to an internal validator (`return vs.validators[idx]`), allowing callers to mutate the internal validator set state. This is inconsistent with `GetByIndex()` and `GetByAddress()` which properly return deep copies.
+
+**Fix:** Changed to return a deep copy consistent with other getter methods:
+```go
+v := vs.validators[idx]
+return &Validator{
+    Index:            v.Index,
+    Address:          append([]byte(nil), v.Address...),
+    PublicKey:        append([]byte(nil), v.PublicKey...),
+    VotingPower:      v.VotingPower,
+    ProposerPriority: v.ProposerPriority,
+}
+```
+
+---
+
+### 45. GetProposer Returns Internal Reference (WeightedProposerSelection)
+
+**File:** `consensus/validators.go`
+**Lines:** 386-406
+**Status:** FIXED
+
+**Issue:** Same issue as #44 - `WeightedProposerSelection.GetProposer()` returned a direct pointer to internal state.
+
+**Fix:** Added deep copy on return, same pattern as #44.
+
+---
+
+### 46. NewWeightedProposerSelection Stores External Reference
+
+**File:** `consensus/validators.go`
+**Lines:** 370-383
+**Status:** FIXED
+
+**Issue:** The constructor stored the provided `validators` slice directly without making a defensive copy. If the caller retained a reference and mutated the slice after construction, the internal state would be corrupted.
+
+**Fix:** Added defensive copies of all validators:
+```go
+valCopy := make([]*Validator, len(validators))
+for i, v := range validators {
+    totalPower += v.VotingPower
+    valCopy[i] = &Validator{
+        Index:            v.Index,
+        Address:          append([]byte(nil), v.Address...),
+        PublicKey:        append([]byte(nil), v.PublicKey...),
+        VotingPower:      v.VotingPower,
+        ProposerPriority: v.ProposerPriority,
+    }
+}
+```
+
+---
+
+### 47. Consensus Decode Functions Store External References
+
+**File:** `handlers/consensus.go`
+**Lines:** 357, 390, 409
+**Status:** FIXED
+
+**Issue:** The `decodeVote()`, `decodeCommit()`, and `decodeBlock()` functions stored slices pointing directly into the input `data` buffer without making defensive copies:
+- `vote.BlockHash = data[16:16+hashLen]`
+- `commit.BlockHash = data[13:13+hashLen]`
+- `block.Data = data[20:]`
+
+If the network layer reuses message buffers, the decoded structs' fields could become corrupted when the next message arrives.
+
+**Fix:** Added defensive copies for all slice fields:
+```go
+vote.BlockHash = append([]byte(nil), data[16:16+hashLen]...)
+vote.Signature = append([]byte(nil), data[16+hashLen:]...)
+commit.BlockHash = append([]byte(nil), data[13:13+hashLen]...)
+block.Data = append([]byte(nil), data[20:]...)
+```
+
+---
+
+## Summary
+
+| Severity | Total | Fixed | Remaining |
+|----------|-------|-------|-----------|
+| CRITICAL | 5 | 5 | 0 |
+| HIGH | 24 | 24 | 0 |
+| MEDIUM | 18 | 18 | 0 |
+| **Total** | **47** | **47** | **0** |
+
+All identified issues have been fixed.
+
+### Files Modified in Review Iteration 8 (January 29, 2026)
+
+- `consensus/validators.go` - Fixed GetProposer to return deep copies, added defensive copy in NewWeightedProposerSelection
+- `handlers/consensus.go` - Added defensive copies in decodeVote, decodeCommit, and decodeBlock
+
+### Test Coverage
+
+All tests pass with race detection enabled.
+
 *Last Updated: January 29, 2026*

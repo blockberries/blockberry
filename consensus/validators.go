@@ -135,6 +135,7 @@ func (vs *SimpleValidatorSet) Contains(address []byte) bool {
 
 // GetProposer returns the proposer for the given height and round.
 // Uses a simple round-robin algorithm based on proposer priority.
+// The returned struct is a deep copy; callers may safely modify it.
 func (vs *SimpleValidatorSet) GetProposer(height int64, round int32) *Validator {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
@@ -146,7 +147,14 @@ func (vs *SimpleValidatorSet) GetProposer(height int64, round int32) *Validator 
 	// Simple deterministic selection: (height + round) mod n
 	// For production, use weighted proposer selection with priority
 	idx := int((height + int64(round))) % len(vs.validators)
-	return vs.validators[idx]
+	v := vs.validators[idx]
+	return &Validator{
+		Index:            v.Index,
+		Address:          append([]byte(nil), v.Address...),
+		PublicKey:        append([]byte(nil), v.PublicKey...),
+		VotingPower:      v.VotingPower,
+		ProposerPriority: v.ProposerPriority,
+	}
 }
 
 // TotalVotingPower returns the sum of all voting power.
@@ -360,15 +368,26 @@ type WeightedProposerSelection struct {
 }
 
 // NewWeightedProposerSelection creates a new weighted proposer selection.
+// Makes defensive copies of the validators to prevent external mutation.
 func NewWeightedProposerSelection(validators []*Validator) *WeightedProposerSelection {
 	priorities := make([]int64, len(validators))
 	var totalPower int64
-	for _, v := range validators {
+
+	// Make defensive copies of validators
+	valCopy := make([]*Validator, len(validators))
+	for i, v := range validators {
 		totalPower += v.VotingPower
+		valCopy[i] = &Validator{
+			Index:            v.Index,
+			Address:          append([]byte(nil), v.Address...),
+			PublicKey:        append([]byte(nil), v.PublicKey...),
+			VotingPower:      v.VotingPower,
+			ProposerPriority: v.ProposerPriority,
+		}
 	}
 
 	return &WeightedProposerSelection{
-		validators:   validators,
+		validators:   valCopy,
 		totalPower:   totalPower,
 		priorities:   priorities,
 		lastProposer: -1,
@@ -377,6 +396,7 @@ func NewWeightedProposerSelection(validators []*Validator) *WeightedProposerSele
 
 // GetProposer returns the proposer for the current state.
 // Call IncrementProposerPriority after each round to update.
+// The returned struct is a deep copy; callers may safely modify it.
 func (wps *WeightedProposerSelection) GetProposer() *Validator {
 	wps.mu.RLock()
 	defer wps.mu.RUnlock()
@@ -395,7 +415,14 @@ func (wps *WeightedProposerSelection) GetProposer() *Validator {
 		}
 	}
 
-	return wps.validators[maxIdx]
+	v := wps.validators[maxIdx]
+	return &Validator{
+		Index:            v.Index,
+		Address:          append([]byte(nil), v.Address...),
+		PublicKey:        append([]byte(nil), v.PublicKey...),
+		VotingPower:      v.VotingPower,
+		ProposerPriority: v.ProposerPriority,
+	}
 }
 
 // IncrementProposerPriority updates priorities after a round.

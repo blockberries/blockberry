@@ -95,27 +95,47 @@ func NewSimpleValidatorSet(validators []Validator, epoch uint64) *SimpleValidato
 }
 
 // Validators returns all validators in the set.
+// Returns deep copies to prevent external mutation.
 func (vs *SimpleValidatorSet) Validators() []Validator {
 	result := make([]Validator, len(vs.validators))
-	copy(result, vs.validators)
+	for i, v := range vs.validators {
+		result[i] = Validator{
+			Address:     append([]byte(nil), v.Address...),
+			PublicKey:   append([]byte(nil), v.PublicKey...),
+			VotingPower: v.VotingPower,
+			Index:       v.Index,
+		}
+	}
 	return result
 }
 
 // GetByIndex returns the validator at the given index.
+// Returns a deep copy to prevent external mutation.
 func (vs *SimpleValidatorSet) GetByIndex(index uint16) *Validator {
 	if int(index) >= len(vs.validators) {
 		return nil
 	}
 	v := vs.validators[index]
-	return &v
+	return &Validator{
+		Address:     append([]byte(nil), v.Address...),
+		PublicKey:   append([]byte(nil), v.PublicKey...),
+		VotingPower: v.VotingPower,
+		Index:       v.Index,
+	}
 }
 
 // GetByAddress returns the validator with the given address.
+// Returns a deep copy to prevent external mutation.
 func (vs *SimpleValidatorSet) GetByAddress(addr []byte) *Validator {
 	for i := range vs.validators {
 		if bytes.Equal(vs.validators[i].Address, addr) {
 			v := vs.validators[i]
-			return &v
+			return &Validator{
+				Address:     append([]byte(nil), v.Address...),
+				PublicKey:   append([]byte(nil), v.PublicKey...),
+				VotingPower: v.VotingPower,
+				Index:       v.Index,
+			}
 		}
 	}
 	return nil
@@ -132,13 +152,19 @@ func (vs *SimpleValidatorSet) TotalVotingPower() int64 {
 }
 
 // Proposer returns the proposer for the given height and round using round-robin.
+// Returns a deep copy to prevent external mutation.
 func (vs *SimpleValidatorSet) Proposer(height uint64, round uint32) *Validator {
 	if len(vs.validators) == 0 {
 		return nil
 	}
 	idx := (height + uint64(round)) % uint64(len(vs.validators))
 	v := vs.validators[idx]
-	return &v
+	return &Validator{
+		Address:     append([]byte(nil), v.Address...),
+		PublicKey:   append([]byte(nil), v.PublicKey...),
+		VotingPower: v.VotingPower,
+		Index:       v.Index,
+	}
 }
 
 // VerifySignature verifies a signature from a validator.

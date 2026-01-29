@@ -458,16 +458,113 @@ All tests pass with race detection enabled.
 
 ---
 
+## Review Iteration 6 - January 29, 2026
+
+### 31. HTTP Server Missing ReadHeaderTimeout (Slowloris Vulnerability)
+
+**File:** `rpc/jsonrpc/server.go`
+**Lines:** 97-102
+**Status:** FIXED
+
+**Issue:** The HTTP server was configured with `ReadTimeout` and `WriteTimeout` but missing `ReadHeaderTimeout`, making it vulnerable to Slowloris attacks where attackers send HTTP headers very slowly to keep connections open and exhaust server resources.
+
+**Fix:** Added `ReadHeaderTimeout: 10 * time.Second` to the server configuration.
+
+---
+
+### 32. HTTP Server Missing IdleTimeout (Resource Exhaustion)
+
+**File:** `rpc/jsonrpc/server.go`
+**Lines:** 97-102
+**Status:** FIXED
+
+**Issue:** The HTTP server was missing `IdleTimeout`, which can lead to resource exhaustion from idle keep-alive connections that remain open indefinitely.
+
+**Fix:** Added `IdleTimeout: 120 * time.Second` to the server configuration.
+
+---
+
+### 33. Hash Comparison Timing Attacks in State Sync
+
+**File:** `sync/statesync.go`
+**Lines:** 293, 645, 661
+**Status:** FIXED
+
+**Issue:** The state sync code used `bytes.Equal()` for cryptographic hash comparisons instead of constant-time comparison, potentially leaking timing information about hash values through timing side-channels.
+
+Affected comparisons:
+- Line 293: `bytes.Equal(offer.AppHash, r.trustHash)` - App hash comparison
+- Line 645: `bytes.Equal(resp.SnapshotHash, r.selectedOffer.Hash)` - Snapshot hash comparison
+- Line 661: `bytes.Equal(computedHash[:], resp.ChunkHash)` - Chunk hash comparison
+
+**Fix:** Replaced all `bytes.Equal()` calls with `types.HashEqual()` which uses `crypto/subtle.ConstantTimeCompare()`.
+
+---
+
+### 34. Mempool AddTx Stores External Reference Without Copy
+
+**Files:** `mempool/simple_mempool.go`, `mempool/priority_mempool.go`, `mempool/ttl_mempool.go`
+**Status:** FIXED
+
+**Issue:** All three mempool implementations stored the provided transaction slice directly without making a defensive copy. If the caller retained a reference and mutated it after calling AddTx, the internal mempool state would be corrupted.
+
+**Fix:** Added defensive copies in all AddTx implementations using `append([]byte(nil), tx...)`.
+
+---
+
+### 35. Mempool GetTx/ReapTxs Return Internal References
+
+**Files:** `mempool/simple_mempool.go`, `mempool/priority_mempool.go`, `mempool/ttl_mempool.go`
+**Status:** FIXED
+
+**Issue:** GetTx and ReapTxs returned transaction slices that shared underlying data with internal state, allowing callers to corrupt mempool state by modifying returned transactions.
+
+**Fix:** All getter methods now return defensive copies of transaction data.
+
+---
+
+### 36. Mempool TxHashes Returns Shallow Copies
+
+**Files:** `mempool/simple_mempool.go`, `mempool/priority_mempool.go`, `mempool/ttl_mempool.go`
+**Status:** FIXED
+
+**Issue:** TxHashes returned hash slices that shared underlying byte arrays with internal state.
+
+**Fix:** All TxHashes implementations now deep copy individual hashes before returning.
+
+---
+
+### 37. abi/validator.go Shallow Copies in Getters
+
+**File:** `abi/validator.go`
+**Lines:** 98-101, 105-110, 114-121, 135-142
+**Status:** FIXED
+
+**Issue:** The `Validators()`, `GetByIndex()`, `GetByAddress()`, and `Proposer()` methods returned validators where the `Address` and `PublicKey` byte slices shared underlying arrays with internal state, allowing callers to corrupt validator set state.
+
+**Fix:** All getter methods now return deep copies with byte slices copied using `append([]byte(nil), ...)`.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
 | CRITICAL | 5 | 5 | 0 |
-| HIGH | 10 | 10 | 0 |
+| HIGH | 17 | 17 | 0 |
 | MEDIUM | 15 | 15 | 0 |
-| **Total** | **30** | **30** | **0** |
+| **Total** | **37** | **37** | **0** |
 
 All identified issues have been fixed.
+
+### Files Modified in Review Iteration 6 (January 29, 2026)
+
+- `rpc/jsonrpc/server.go` - Added ReadHeaderTimeout and IdleTimeout for security
+- `sync/statesync.go` - Replaced bytes.Equal with types.HashEqual for constant-time comparison
+- `mempool/simple_mempool.go` - Defensive copies in AddTx, GetTx, ReapTxs, TxHashes
+- `mempool/priority_mempool.go` - Defensive copies in AddTx, GetTx, ReapTxs, TxHashes
+- `mempool/ttl_mempool.go` - Defensive copies in AddTx, GetTx, ReapTxs, TxHashes
+- `abi/validator.go` - Deep copies in Validators, GetByIndex, GetByAddress, Proposer
 
 ### Files Modified in Review Iteration 5 (January 29, 2026)
 

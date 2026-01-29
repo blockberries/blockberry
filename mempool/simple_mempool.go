@@ -86,8 +86,9 @@ func (m *SimpleMempool) AddTx(tx []byte) error {
 		return types.ErrMempoolFull
 	}
 
-	// Add transaction
-	m.txs[hashKey] = tx
+	// Add transaction with defensive copy to prevent external mutation
+	txCopy := append([]byte(nil), tx...)
+	m.txs[hashKey] = txCopy
 	m.order = append(m.order, hash)
 	m.sizeBytes += txSize
 
@@ -118,6 +119,7 @@ func (m *SimpleMempool) RemoveTxs(hashes [][]byte) {
 }
 
 // ReapTxs returns up to maxBytes worth of transactions in insertion order.
+// Returns defensive copies to prevent external mutation.
 func (m *SimpleMempool) ReapTxs(maxBytes int64) [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -141,7 +143,8 @@ func (m *SimpleMempool) ReapTxs(maxBytes int64) [][]byte {
 			break
 		}
 
-		result = append(result, tx)
+		// Return defensive copy to prevent external mutation
+		result = append(result, append([]byte(nil), tx...))
 		totalBytes += txSize
 	}
 
@@ -158,6 +161,7 @@ func (m *SimpleMempool) HasTx(hash []byte) bool {
 }
 
 // GetTx retrieves a transaction by its hash.
+// Returns a defensive copy to prevent external mutation.
 func (m *SimpleMempool) GetTx(hash []byte) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -166,7 +170,7 @@ func (m *SimpleMempool) GetTx(hash []byte) ([]byte, error) {
 	if !exists {
 		return nil, types.ErrTxNotFound
 	}
-	return tx, nil
+	return append([]byte(nil), tx...), nil
 }
 
 // Size returns the number of transactions in the mempool.
@@ -196,12 +200,15 @@ func (m *SimpleMempool) Flush() {
 }
 
 // TxHashes returns all transaction hashes in the mempool.
+// Returns defensive copies to prevent external mutation.
 func (m *SimpleMempool) TxHashes() [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	result := make([][]byte, len(m.order))
-	copy(result, m.order)
+	for i, hash := range m.order {
+		result[i] = append([]byte(nil), hash...)
+	}
 	return result
 }
 

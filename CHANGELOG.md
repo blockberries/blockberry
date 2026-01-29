@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-01-29
+
+### Security
+
+- **rpc/jsonrpc/server.go**: Fixed Slowloris attack vulnerability by adding `ReadHeaderTimeout` (10s) to HTTP server.
+- **rpc/jsonrpc/server.go**: Fixed resource exhaustion vulnerability by adding `IdleTimeout` (120s) to HTTP server.
+- **sync/statesync.go**: Fixed timing attack vulnerabilities by replacing `bytes.Equal()` with constant-time `types.HashEqual()` for all hash comparisons.
+
+### Fixed
+
+- **mempool/simple_mempool.go**: Fixed potential state corruption by making defensive copies in `AddTx`, `GetTx`, `ReapTxs`, and `TxHashes`.
+- **mempool/priority_mempool.go**: Fixed potential state corruption by making defensive copies in `AddTx`, `GetTx`, `ReapTxs`, and `TxHashes`.
+- **mempool/ttl_mempool.go**: Fixed potential state corruption by making defensive copies in `AddTx`, `GetTx`, `ReapTxs`, and `TxHashes`.
+- **abi/validator.go**: Fixed shallow copy in `Validators()`, `GetByIndex()`, `GetByAddress()`, and `Proposer()` that exposed internal byte slices to callers.
+
 ## [0.1.4] - 2026-01-29
 
 ### Security

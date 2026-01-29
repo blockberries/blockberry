@@ -229,10 +229,10 @@ func (m *TTLMempool) AddTxWithTTL(tx []byte, ttl time.Duration) error {
 		}
 	}
 
-	// Add transaction
+	// Add transaction with defensive copies to prevent external mutation
 	mtx := &ttlTx{
-		hash:      hash,
-		tx:        tx,
+		hash:      append([]byte(nil), hash...),
+		tx:        append([]byte(nil), tx...),
 		priority:  priority,
 		addedAt:   now,
 		expiresAt: now.Add(ttl),
@@ -329,7 +329,8 @@ func (m *TTLMempool) ReapTxs(maxBytes int64) [][]byte {
 		if maxBytes > 0 && totalBytes+txSize > maxBytes {
 			break
 		}
-		result = append(result, mtx.tx)
+		// Return defensive copy to prevent external mutation
+		result = append(result, append([]byte(nil), mtx.tx...))
 		totalBytes += txSize
 	}
 
@@ -349,6 +350,7 @@ func (m *TTLMempool) HasTx(hash []byte) bool {
 }
 
 // GetTx retrieves a non-expired transaction by its hash.
+// Returns a defensive copy to prevent external mutation.
 func (m *TTLMempool) GetTx(hash []byte) ([]byte, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -360,7 +362,7 @@ func (m *TTLMempool) GetTx(hash []byte) ([]byte, error) {
 	if time.Now().After(mtx.expiresAt) {
 		return nil, types.ErrTxNotFound
 	}
-	return mtx.tx, nil
+	return append([]byte(nil), mtx.tx...), nil
 }
 
 // Size returns the number of transactions in the mempool (including expired).
@@ -405,13 +407,14 @@ func (m *TTLMempool) Flush() {
 }
 
 // TxHashes returns all transaction hashes in the mempool.
+// Returns defensive copies to prevent external mutation.
 func (m *TTLMempool) TxHashes() [][]byte {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	result := make([][]byte, 0, len(m.txs))
 	for _, mtx := range m.txs {
-		result = append(result, mtx.hash)
+		result = append(result, append([]byte(nil), mtx.hash...))
 	}
 	return result
 }

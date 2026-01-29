@@ -1,7 +1,6 @@
 package sync
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"sync"
@@ -290,7 +289,7 @@ func (r *StateSyncReactor) selectBestSnapshot() {
 
 		// If we have trust hash, verify it matches at trust height
 		if offer.Height == r.trustHeight && len(r.trustHash) > 0 {
-			if !bytes.Equal(offer.AppHash, r.trustHash) {
+			if !types.HashEqual(offer.AppHash, r.trustHash) {
 				continue
 			}
 		}
@@ -641,8 +640,8 @@ func (r *StateSyncReactor) handleChunkResponse(peerID peer.ID, data []byte) erro
 		return nil
 	}
 
-	// Verify this is for our selected snapshot
-	if !bytes.Equal(resp.SnapshotHash, r.selectedOffer.Hash) {
+	// Verify this is for our selected snapshot (constant-time comparison)
+	if !types.HashEqual(resp.SnapshotHash, r.selectedOffer.Hash) {
 		return nil
 	}
 
@@ -656,9 +655,9 @@ func (r *StateSyncReactor) handleChunkResponse(peerID peer.ID, data []byte) erro
 		return nil
 	}
 
-	// Verify chunk hash
+	// Verify chunk hash (constant-time comparison)
 	computedHash := sha256.Sum256(resp.Data)
-	if !bytes.Equal(computedHash[:], resp.ChunkHash) {
+	if !types.HashEqual(computedHash[:], resp.ChunkHash) {
 		if r.network != nil {
 			_ = r.network.AddPenalty(peerID, p2p.PenaltyInvalidBlock, p2p.ReasonInvalidBlock, "chunk hash mismatch")
 		}

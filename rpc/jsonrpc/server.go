@@ -95,10 +95,12 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/", s.handleHTTP)
 
 	s.httpServer = &http.Server{
-		Handler:        mux,
-		MaxHeaderBytes: s.config.MaxHeaderBytes,
-		ReadTimeout:    30 * time.Second,
-		WriteTimeout:   30 * time.Second,
+		Handler:           mux,
+		MaxHeaderBytes:    s.config.MaxHeaderBytes,
+		ReadTimeout:       30 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second, // Prevents Slowloris attacks
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second, // Prevents resource exhaustion from idle keep-alive connections
 	}
 
 	go func() {

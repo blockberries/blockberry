@@ -373,19 +373,35 @@ func (r *TransactionsReactor) sendTransactionDataRequest(peerID peer.ID, txHashe
 		return nil
 	}
 
-	// Track pending requests
+	// Track pending requests with limit enforcement
 	r.mu.Lock()
 	if r.pendingRequests[peerID] == nil {
 		r.pendingRequests[peerID] = make(map[string]time.Time)
 	}
+	pending := r.pendingRequests[peerID]
 	now := time.Now()
+
+	// Limit how many new requests we add to enforce maxPending
+	var toRequest []schema.TransactionHash
 	for _, txHash := range txHashes {
-		r.pendingRequests[peerID][string(txHash.Hash)] = now
+		if len(pending) >= r.maxPending {
+			break // Hit per-peer limit
+		}
+		hashKey := string(txHash.Hash)
+		if _, exists := pending[hashKey]; exists {
+			continue // Already pending
+		}
+		pending[hashKey] = now
+		toRequest = append(toRequest, txHash)
 	}
 	r.mu.Unlock()
 
+	if len(toRequest) == 0 {
+		return nil
+	}
+
 	req := &schema.TransactionDataRequest{
-		Transactions: txHashes,
+		Transactions: toRequest,
 	}
 
 	data, err := r.encodeMessage(TypeIDTransactionDataRequest, req)

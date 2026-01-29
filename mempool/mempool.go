@@ -74,7 +74,35 @@ type TxInfo struct {
 	Timestamp int64
 }
 
+// Mempool type constants.
+const (
+	MempoolTypeSimple   = "simple"
+	MempoolTypePriority = "priority"
+	MempoolTypeTTL      = "ttl"
+)
+
 // NewMempool creates a new mempool with the given configuration.
+// Supported types: "simple", "priority", "ttl".
+// Note: "looseberry" requires a separate adapter and cannot be created via this function.
 func NewMempool(cfg config.MempoolConfig) Mempool {
-	return NewSimpleMempool(cfg.MaxTxs, cfg.MaxBytes)
+	switch cfg.Type {
+	case MempoolTypePriority:
+		return NewPriorityMempool(PriorityMempoolConfig{
+			MaxTxs:   cfg.MaxTxs,
+			MaxBytes: cfg.MaxBytes,
+		})
+	case MempoolTypeTTL:
+		return NewTTLMempool(TTLMempoolConfig{
+			MaxTxs:          cfg.MaxTxs,
+			MaxBytes:        cfg.MaxBytes,
+			TTL:             cfg.TTL.Duration(),
+			CleanupInterval: cfg.CleanupInterval.Duration(),
+		})
+	case MempoolTypeSimple, "":
+		// Default to simple mempool
+		return NewSimpleMempool(cfg.MaxTxs, cfg.MaxBytes)
+	default:
+		// Fall back to simple mempool for unknown types
+		return NewSimpleMempool(cfg.MaxTxs, cfg.MaxBytes)
+	}
 }

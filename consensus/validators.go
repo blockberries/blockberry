@@ -350,7 +350,9 @@ func (vs *IndexedValidatorSet) Copy() *IndexedValidatorSet {
 
 // WeightedProposerSelection implements proposer selection weighted by voting power.
 // This is used for PoS systems where validators with more stake propose more often.
+// All public methods are safe for concurrent use.
 type WeightedProposerSelection struct {
+	mu           sync.RWMutex
 	validators   []*Validator
 	totalPower   int64
 	priorities   []int64 // Per-validator proposer priority
@@ -376,6 +378,9 @@ func NewWeightedProposerSelection(validators []*Validator) *WeightedProposerSele
 // GetProposer returns the proposer for the current state.
 // Call IncrementProposerPriority after each round to update.
 func (wps *WeightedProposerSelection) GetProposer() *Validator {
+	wps.mu.RLock()
+	defer wps.mu.RUnlock()
+
 	if len(wps.validators) == 0 {
 		return nil
 	}
@@ -396,6 +401,9 @@ func (wps *WeightedProposerSelection) GetProposer() *Validator {
 // IncrementProposerPriority updates priorities after a round.
 // Should be called after each block is committed.
 func (wps *WeightedProposerSelection) IncrementProposerPriority() {
+	wps.mu.Lock()
+	defer wps.mu.Unlock()
+
 	if len(wps.validators) == 0 {
 		return
 	}

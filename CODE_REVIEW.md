@@ -580,4 +580,140 @@ All identified issues have been fixed.
 
 All tests pass with race detection enabled.
 
+---
+
+## Review Iteration 7 - January 29, 2026
+
+### 38. Race Condition in Node Callback Invocation
+
+**File:** `node/node.go`
+**Lines:** 312-340, 382-420
+**Status:** FIXED
+
+**Issue:** In `handleConnectionEvent()` and `handleMessage()`, the `n.callbacks` field was accessed without synchronization while it could be concurrently modified by `SetCallbacks()`. This created a race condition where the callbacks pointer could change between checking it and invoking methods on it.
+
+**Fix:** Added mutex-protected copy of the callbacks before invoking any methods:
+```go
+n.mu.RLock()
+cb := n.callbacks
+n.mu.RUnlock()
+// Use cb instead of n.callbacks for all invocations
+```
+
+---
+
+### 39. WeightedProposerSelection Missing Thread Synchronization
+
+**File:** `consensus/validators.go`
+**Lines:** 353-420
+**Status:** FIXED
+
+**Issue:** The `WeightedProposerSelection` struct was documented as being for use in PoS systems but had no synchronization for its mutable fields (`priorities` and `lastProposer`). Concurrent calls to `GetProposer()` and `IncrementProposerPriority()` would cause data races.
+
+**Fix:** Added `sync.RWMutex` to the struct. `GetProposer()` now uses RLock (read-only access) and `IncrementProposerPriority()` uses Lock (write access).
+
+---
+
+### 40. MemoryBlockStore Missing Defensive Copies
+
+**File:** `blockstore/memory.go`
+**Lines:** 49, 71, 85
+**Status:** FIXED
+
+**Issue:** `SaveBlock()` stored hash and data slices directly without copying, allowing callers to corrupt stored data by modifying the slices after calling SaveBlock. Similarly, `LoadBlock()` and `LoadBlockByHash()` returned internal slices, allowing callers to corrupt stored data.
+
+**Fix:** Added defensive copies in `SaveBlock()`:
+```go
+m.blocks[height] = blockEntry{
+    hash: append([]byte(nil), hash...),
+    data: append([]byte(nil), data...),
+}
+```
+And in `LoadBlock()`/`LoadBlockByHash()` for returned values.
+
+---
+
+### 41. Looseberry Adapter ReapTxs Returns Shallow Copies
+
+**File:** `mempool/looseberry/adapter.go`
+**Lines:** 154-172
+**Status:** FIXED
+
+**Issue:** The `ReapTxs()` method appended transaction slices directly from batches without making defensive copies. If the underlying looseberry implementation reused or modified these slices, callers would see corrupted data.
+
+**Fix:** Changed to return defensive copies:
+```go
+txs = append(txs, append([]byte(nil), tx...))
+```
+
+---
+
+### 42. TransactionsReactor pendingRequests Unbounded Growth
+
+**File:** `handlers/transactions.go`
+**Lines:** 376-385
+**Status:** FIXED
+
+**Issue:** The `sendTransactionDataRequest()` function added entries to the `pendingRequests` map without enforcing the `maxPending` limit (field defined at line 40 but never used). A malicious peer could send many `TransactionsResponse` messages with unique hashes, causing unbounded memory growth.
+
+**Fix:** Added enforcement of `maxPending` limit:
+```go
+for _, txHash := range txHashes {
+    if len(pending) >= r.maxPending {
+        break // Hit per-peer limit
+    }
+    // ... add to pending
+}
+```
+
+---
+
+### 43. NewMempool Factory Ignores cfg.Type
+
+**File:** `mempool/mempool.go`
+**Lines:** 78-80
+**Status:** FIXED
+
+**Issue:** The `NewMempool()` factory function always returned a `SimpleMempool` regardless of the `cfg.Type` field value. The configuration supported "simple", "priority", "ttl", and "looseberry" but only "simple" was ever created.
+
+**Fix:** Added switch statement to create the appropriate mempool type based on configuration:
+```go
+switch cfg.Type {
+case MempoolTypePriority:
+    return NewPriorityMempool(...)
+case MempoolTypeTTL:
+    return NewTTLMempool(...)
+case MempoolTypeSimple, "":
+    return NewSimpleMempool(...)
+default:
+    return NewSimpleMempool(...)
+}
+```
+
+---
+
+## Summary
+
+| Severity | Total | Fixed | Remaining |
+|----------|-------|-------|-----------|
+| CRITICAL | 5 | 5 | 0 |
+| HIGH | 20 | 20 | 0 |
+| MEDIUM | 18 | 18 | 0 |
+| **Total** | **43** | **43** | **0** |
+
+All identified issues have been fixed.
+
+### Files Modified in Review Iteration 7 (January 29, 2026)
+
+- `node/node.go` - Fixed race condition in callback invocation
+- `consensus/validators.go` - Added mutex to WeightedProposerSelection
+- `blockstore/memory.go` - Added defensive copies in Save/Load methods
+- `mempool/looseberry/adapter.go` - Added defensive copies in ReapTxs
+- `handlers/transactions.go` - Added maxPending limit enforcement
+- `mempool/mempool.go` - Implemented mempool type selection in factory function
+
+### Test Coverage
+
+All tests pass with race detection enabled.
+
 *Last Updated: January 29, 2026*

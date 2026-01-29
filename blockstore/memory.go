@@ -46,7 +46,11 @@ func (m *MemoryBlockStore) SaveBlock(height int64, hash, data []byte) error {
 		return fmt.Errorf("%w: hash already exists at height %d", types.ErrBlockAlreadyExists, existingHeight)
 	}
 
-	m.blocks[height] = blockEntry{hash: hash, data: data}
+	// Store defensive copies to prevent external mutation
+	m.blocks[height] = blockEntry{
+		hash: append([]byte(nil), hash...),
+		data: append([]byte(nil), data...),
+	}
 	m.byHash[string(hash)] = height
 
 	if m.base == 0 || height < m.base {
@@ -60,6 +64,7 @@ func (m *MemoryBlockStore) SaveBlock(height int64, hash, data []byte) error {
 }
 
 // LoadBlock retrieves a block by height.
+// Returns defensive copies to prevent external mutation of stored data.
 func (m *MemoryBlockStore) LoadBlock(height int64) (hash, data []byte, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -68,10 +73,11 @@ func (m *MemoryBlockStore) LoadBlock(height int64) (hash, data []byte, err error
 	if !exists {
 		return nil, nil, types.ErrBlockNotFound
 	}
-	return entry.hash, entry.data, nil
+	return append([]byte(nil), entry.hash...), append([]byte(nil), entry.data...), nil
 }
 
 // LoadBlockByHash retrieves a block by its hash.
+// Returns defensive copy to prevent external mutation of stored data.
 func (m *MemoryBlockStore) LoadBlockByHash(hash []byte) (height int64, data []byte, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -82,7 +88,7 @@ func (m *MemoryBlockStore) LoadBlockByHash(hash []byte) (height int64, data []by
 	}
 
 	entry := m.blocks[h]
-	return h, entry.data, nil
+	return h, append([]byte(nil), entry.data...), nil
 }
 
 // HasBlock checks if a block exists at the given height.

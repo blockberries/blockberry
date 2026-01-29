@@ -480,6 +480,11 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 
 	peerID := event.PeerID
 
+	// Capture callbacks under lock to avoid race with SetCallbacks
+	n.mu.RLock()
+	cb := n.callbacks
+	n.mu.RUnlock()
+
 	switch event.State {
 	case glueberry.StateConnected:
 		// Query actual connection direction from Glueberry
@@ -508,7 +513,7 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		_ = n.handshakeHandler.OnPeerConnected(peerID, isOutbound)
 
 		// Invoke callback
-		n.callbacks.InvokePeerConnected(peerID, isOutbound)
+		cb.InvokePeerConnected(peerID, isOutbound)
 
 	case glueberry.StateEstablished:
 		// Peer is fully connected, notify reactors
@@ -528,7 +533,7 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 			n.pexReactor.OnPeerConnected(peerID, peerMultiaddr, isOutbound)
 
 			// Invoke callback with peer info
-			n.callbacks.InvokePeerHandshaked(peerID, &types.PeerInfo{
+			cb.InvokePeerHandshaked(peerID, &types.PeerInfo{
 				NodeID:          info.PeerNodeID,
 				ChainID:         info.PeerChainID,
 				ProtocolVersion: info.PeerVersion,
@@ -538,7 +543,7 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 
 	case glueberry.StateDisconnected:
 		// Invoke callback before cleanup
-		n.callbacks.InvokePeerDisconnected(peerID)
+		cb.InvokePeerDisconnected(peerID)
 
 		// Clean up peer state
 		n.network.OnPeerDisconnected(peerID)
@@ -563,6 +568,11 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 	data := msg.Data
 	stream := msg.StreamName
 
+	// Capture callbacks under lock to avoid race with SetCallbacks
+	n.mu.RLock()
+	cb := n.callbacks
+	n.mu.RUnlock()
+
 	var err error
 	switch stream {
 	case p2p.StreamHandshake:
@@ -577,7 +587,7 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 		err = n.blocksReactor.HandleMessage(peerID, data)
 	case p2p.StreamConsensus:
 		// Invoke callback for consensus messages (allows pluggable consensus)
-		n.callbacks.InvokeConsensusMessage(peerID, data)
+		cb.InvokeConsensusMessage(peerID, data)
 		err = n.consensusReactor.HandleMessage(peerID, data)
 	case p2p.StreamHousekeeping:
 		err = n.housekeepingReactor.HandleMessage(peerID, data)
@@ -588,7 +598,7 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 		_ = n.network.AddPenalty(peerID, p2p.PenaltyInvalidMessage, p2p.ReasonInvalidMessage,
 			fmt.Sprintf("error handling %s message: %v", stream, err))
 		// Invoke penalty callback
-		n.callbacks.InvokePeerPenalized(peerID, p2p.PenaltyInvalidMessage, string(p2p.ReasonInvalidMessage))
+		cb.InvokePeerPenalized(peerID, p2p.PenaltyInvalidMessage, string(p2p.ReasonInvalidMessage))
 	}
 }
 

@@ -151,6 +151,7 @@ func (a *Adapter) RemoveTxs(hashes [][]byte) {
 
 // ReapTxs returns transactions for block building.
 // For non-DAG consumers, this extracts transactions from certified batches.
+// Returns defensive copies to prevent external mutation.
 func (a *Adapter) ReapTxs(maxBytes int64) [][]byte {
 	batches := a.lb.ReapCertifiedBatches(maxBytes)
 
@@ -163,7 +164,8 @@ func (a *Adapter) ReapTxs(maxBytes int64) [][]byte {
 			if maxBytes > 0 && totalBytes+txSize > maxBytes {
 				return txs
 			}
-			txs = append(txs, tx)
+			// Return defensive copy to prevent external mutation
+			txs = append(txs, append([]byte(nil), tx...))
 			totalBytes += txSize
 		}
 	}

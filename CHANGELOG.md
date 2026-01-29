@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-01-29
+
+### Security
+
+- **node/node.go**: Fixed race condition in callback invocation by capturing callbacks under RLock before invoking.
+- **consensus/validators.go**: Added `sync.RWMutex` to `WeightedProposerSelection` to prevent data races in concurrent access.
+- **handlers/transactions.go**: Fixed unbounded memory growth by enforcing `maxPending` limit for pending transaction requests.
+
+### Fixed
+
+- **blockstore/memory.go**: Added defensive copies in `SaveBlock`, `LoadBlock`, and `LoadBlockByHash` to prevent external mutation of stored data.
+- **mempool/looseberry/adapter.go**: Fixed `ReapTxs` returning shallow copies by adding defensive copies.
+- **mempool/mempool.go**: Fixed `NewMempool` factory to respect `cfg.Type` configuration, now properly creates `PriorityMempool` and `TTLMempool` when configured.
+
 ## [0.1.5] - 2026-01-29
 
 ### Security

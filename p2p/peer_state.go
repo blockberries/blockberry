@@ -89,10 +89,11 @@ func NewPeerState(peerID peer.ID, isOutbound bool) *PeerState {
 }
 
 // SetPublicKey sets the peer's public key after handshake.
+// Makes a defensive copy of the provided slice.
 func (ps *PeerState) SetPublicKey(pubKey []byte) {
 	ps.mu.Lock()
 	defer ps.mu.Unlock()
-	ps.PublicKey = pubKey
+	ps.PublicKey = append([]byte(nil), pubKey...)
 }
 
 // MarkTxSent records that we sent a transaction to this peer.

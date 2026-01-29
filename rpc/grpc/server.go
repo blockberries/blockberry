@@ -129,6 +129,7 @@ func (s *Server) Start() error {
 	if s.config.TLS != nil {
 		creds, err := credentials.NewServerTLSFromFile(s.config.TLS.CertFile, s.config.TLS.KeyFile)
 		if err != nil {
+			listener.Close() // Close listener to prevent resource leak
 			s.running.Store(false)
 			return fmt.Errorf("failed to load TLS credentials: %w", err)
 		}

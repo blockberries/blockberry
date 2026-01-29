@@ -279,9 +279,14 @@ func TestHandleHelloResponseValidation(t *testing.T) {
 
 	t.Run("creates state if needed", func(t *testing.T) {
 		accepted := true
+		// Use valid 32-byte ed25519 public key
+		validPubKey := make([]byte, 32)
+		for i := range validPubKey {
+			validPubKey[i] = byte(i)
+		}
 		resp := &schema.HelloResponse{
 			Accepted:  &accepted,
-			PublicKey: []byte("peer-pubkey"),
+			PublicKey: validPubKey,
 		}
 
 		data, err := resp.MarshalCramberry()

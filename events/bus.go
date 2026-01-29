@@ -257,14 +257,21 @@ func (b *Bus) PublishWithTimeout(ctx context.Context, event abi.Event, timeout t
 			continue
 		}
 
+		// Use time.NewTimer instead of time.After to avoid timer leaks
+		timer := time.NewTimer(timeout)
 		select {
 		case sub.ch <- event:
-			// Sent successfully
-		case <-time.After(timeout):
+			// Sent successfully - stop timer to prevent leak
+			if !timer.Stop() {
+				<-timer.C
+			}
+		case <-timer.C:
 			// Timeout, drop event for this subscriber
 		case <-ctx.Done():
+			timer.Stop()
 			return ctx.Err()
 		case <-b.stopCh:
+			timer.Stop()
 			return ErrBusStopped
 		}
 	}

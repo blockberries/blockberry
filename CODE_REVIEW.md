@@ -358,4 +358,129 @@ All identified issues have been fixed. The codebase is now production-ready.
 
 All tests pass with race detection enabled.
 
+---
+
+## Review Iteration 5 - January 29, 2026
+
+### 23. Race Condition in gRPC Rate Limiter Exempt Maps
+
+**File:** `rpc/grpc/ratelimit.go`
+**Lines:** 180-197
+**Status:** FIXED
+
+**Issue:** The `AddExemptClient`, `RemoveExemptClient`, `AddExemptMethod`, and `RemoveExemptMethod` methods modified the `exemptClients` and `exemptMethods` maps without synchronization, while these maps were read concurrently in `checkLimit()`.
+
+**Fix:** Added `sync.RWMutex` to protect map access. Read lock used in `checkLimit()`, write lock used in add/remove methods.
+
+---
+
+### 24. Listener Resource Leak on TLS Failure
+
+**File:** `rpc/grpc/server.go`
+**Lines:** 96-134
+**Status:** FIXED
+
+**Issue:** In `Start()`, a TCP listener was created at line 96. If TLS credential loading failed at line 130-133, the function returned without closing the listener.
+
+**Fix:** Added `listener.Close()` before returning on TLS failure.
+
+---
+
+### 25. Timer Leak in Event Bus PublishWithTimeout
+
+**File:** `events/bus.go`
+**Lines:** 260-269
+**Status:** FIXED
+
+**Issue:** The `PublishWithTimeout` method used `time.After()` inside a select statement. If the send succeeded or context was cancelled before the timeout, the timer leaked until it expired.
+
+**Fix:** Changed to `time.NewTimer()` with explicit `Stop()` and drain on all non-timeout paths.
+
+---
+
+### 26. Shallow Copy in HandshakeHandler.GetPeerInfo
+
+**File:** `handlers/handshake.go`
+**Lines:** 599-610
+**Status:** FIXED
+
+**Issue:** `GetPeerInfo` performed a shallow copy using `copy := *state`, but `PeerHandshakeState` contains a `PeerPubKey []byte` field. The returned copy shared the underlying byte array with the internal state, allowing callers to corrupt the peer's cryptographic public key.
+
+**Fix:** Changed to deep copy all fields, using `append([]byte(nil), ...)` for the PeerPubKey slice.
+
+---
+
+### 27. Shallow Copy in ValidatorSet GetByIndex/GetByAddress
+
+**File:** `consensus/validators.go`
+**Lines:** 93-101, 104-114
+**Status:** FIXED
+
+**Issue:** `GetByIndex` and `GetByAddress` returned direct pointers to internal validator structs. Callers could modify the returned validators (including `Address` and `PublicKey` slices), corrupting the internal validator set state.
+
+**Fix:** Both methods now return deep copies of validators, consistent with the `Validators()` method behavior.
+
+---
+
+### 28. Missing Public Key Length Validation in Handshake
+
+**File:** `handlers/handshake.go`
+**Lines:** 398-436
+**Status:** FIXED
+
+**Issue:** In `handleHelloResponse()`, the peer's public key from `resp.PublicKey` was stored and passed to `PrepareStreams()` without validating its length. Ed25519 public keys must be exactly 32 bytes; malformed keys could cause panics or undefined behavior in the encryption layer.
+
+**Fix:** Added validation that `len(resp.PublicKey) == ed25519.PublicKeySize` before proceeding with the handshake.
+
+---
+
+### 29. Temp File Not Cleaned on Address Book Rename Failure
+
+**File:** `pex/address_book.go`
+**Lines:** 138-145
+**Status:** FIXED
+
+**Issue:** In `Save()`, if `os.Rename()` failed after writing the temp file, the temp file was left on disk, accumulating over time.
+
+**Fix:** Added `os.Remove(tmpPath)` before returning on rename failure.
+
+---
+
+### 30. SetPublicKey Stores External Reference Without Copy
+
+**File:** `p2p/peer_state.go`
+**Lines:** 92-96
+**Status:** FIXED
+
+**Issue:** `SetPublicKey` stored the provided `pubKey` slice directly without making a defensive copy. The caller retained a reference to the same underlying array and could corrupt the peer's stored public key.
+
+**Fix:** Changed to make a defensive copy: `ps.PublicKey = append([]byte(nil), pubKey...)`.
+
+---
+
+## Summary
+
+| Severity | Total | Fixed | Remaining |
+|----------|-------|-------|-----------|
+| CRITICAL | 5 | 5 | 0 |
+| HIGH | 10 | 10 | 0 |
+| MEDIUM | 15 | 15 | 0 |
+| **Total** | **30** | **30** | **0** |
+
+All identified issues have been fixed.
+
+### Files Modified in Review Iteration 5 (January 29, 2026)
+
+- `rpc/grpc/ratelimit.go` - Added mutex protection for exempt maps
+- `rpc/grpc/server.go` - Fixed listener leak on TLS failure
+- `events/bus.go` - Fixed timer leak by using time.NewTimer
+- `handlers/handshake.go` - Deep copy in GetPeerInfo, public key length validation
+- `consensus/validators.go` - Deep copy in GetByIndex and GetByAddress
+- `pex/address_book.go` - Temp file cleanup on rename failure
+- `p2p/peer_state.go` - Defensive copy in SetPublicKey
+
+### Test Coverage
+
+All tests pass with race detection enabled.
+
 *Last Updated: January 29, 2026*

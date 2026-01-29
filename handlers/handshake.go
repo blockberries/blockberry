@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"sync"
 	"time"
@@ -413,6 +414,15 @@ func (h *HandshakeHandler) handleHelloResponse(peerID peer.ID, data []byte) erro
 		return fmt.Errorf("%w: peer rejected handshake", types.ErrHandshakeFailed)
 	}
 
+	// Validate public key length (must be ed25519.PublicKeySize = 32 bytes)
+	if len(resp.PublicKey) != ed25519.PublicKeySize {
+		if h.network != nil {
+			_ = h.network.Disconnect(peerID)
+		}
+		return fmt.Errorf("%w: invalid public key length %d (expected %d)",
+			types.ErrHandshakeFailed, len(resp.PublicKey), ed25519.PublicKeySize)
+	}
+
 	// Get state
 	state := h.getOrCreateState(peerID)
 
@@ -596,6 +606,7 @@ func (h *HandshakeHandler) PeerCount() int {
 }
 
 // GetPeerInfo returns the full handshake info for a peer.
+// The returned struct is a deep copy; callers may safely modify it.
 func (h *HandshakeHandler) GetPeerInfo(peerID peer.ID) *PeerHandshakeState {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -604,7 +615,21 @@ func (h *HandshakeHandler) GetPeerInfo(peerID peer.ID) *PeerHandshakeState {
 	if !ok {
 		return nil
 	}
-	// Return a copy
-	copy := *state
-	return &copy
+	// Return a deep copy to prevent callers from mutating internal state
+	return &PeerHandshakeState{
+		State:            state.State,
+		StartedAt:        state.StartedAt,
+		PeerPubKey:       append([]byte(nil), state.PeerPubKey...),
+		PeerNodeID:       state.PeerNodeID,
+		PeerHeight:       state.PeerHeight,
+		PeerVersion:      state.PeerVersion,
+		PeerChainID:      state.PeerChainID,
+		SentRequest:      state.SentRequest,
+		ReceivedRequest:  state.ReceivedRequest,
+		SentResponse:     state.SentResponse,
+		ReceivedResponse: state.ReceivedResponse,
+		StreamsPrepared:  state.StreamsPrepared,
+		SentFinalize:     state.SentFinalize,
+		ReceivedFinalize: state.ReceivedFinalize,
+	}
 }

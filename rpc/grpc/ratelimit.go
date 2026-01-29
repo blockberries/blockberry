@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"google.golang.org/grpc"
@@ -57,12 +58,14 @@ func DefaultRateLimitConfig() RateLimitConfig {
 }
 
 // RateLimiter handles rate limiting for gRPC requests.
+// All public methods are safe for concurrent use.
 type RateLimiter struct {
 	config         RateLimitConfig
 	globalLimiter  abi.RateLimiter
 	clientLimiter  abi.RateLimiter
 	exemptMethods  map[string]struct{}
 	exemptClients  map[string]struct{}
+	mu             sync.RWMutex // Protects exemptMethods and exemptClients
 }
 
 // NewRateLimiter creates a new rate limiter.
@@ -133,15 +136,15 @@ func (rl *RateLimiter) StreamInterceptor() grpc.StreamServerInterceptor {
 
 // checkLimit checks if the request should be rate limited.
 func (rl *RateLimiter) checkLimit(ctx context.Context, method string) error {
-	// Check if method is exempt
-	if _, ok := rl.exemptMethods[method]; ok {
-		return nil
-	}
-
 	clientIP := rl.getClientIP(ctx)
 
-	// Check if client is exempt
-	if _, ok := rl.exemptClients[clientIP]; ok {
+	// Check if method or client is exempt (read lock for map access)
+	rl.mu.RLock()
+	_, methodExempt := rl.exemptMethods[method]
+	_, clientExempt := rl.exemptClients[clientIP]
+	rl.mu.RUnlock()
+
+	if methodExempt || clientExempt {
 		return nil
 	}
 
@@ -178,21 +181,29 @@ func (rl *RateLimiter) Close() {
 
 // AddExemptClient adds a client IP to the exempt list.
 func (rl *RateLimiter) AddExemptClient(clientIP string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 	rl.exemptClients[clientIP] = struct{}{}
 }
 
 // RemoveExemptClient removes a client IP from the exempt list.
 func (rl *RateLimiter) RemoveExemptClient(clientIP string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 	delete(rl.exemptClients, clientIP)
 }
 
 // AddExemptMethod adds a method to the exempt list.
 func (rl *RateLimiter) AddExemptMethod(method string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 	rl.exemptMethods[method] = struct{}{}
 }
 
 // RemoveExemptMethod removes a method from the exempt list.
 func (rl *RateLimiter) RemoveExemptMethod(method string) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
 	delete(rl.exemptMethods, method)
 }
 

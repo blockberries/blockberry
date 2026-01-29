@@ -141,6 +141,8 @@ func (ab *AddressBook) Save() error {
 	}
 
 	if err := os.Rename(tmpPath, ab.path); err != nil {
+		// Clean up temp file on rename failure
+		os.Remove(tmpPath)
 		return fmt.Errorf("renaming address book: %w", err)
 	}
 

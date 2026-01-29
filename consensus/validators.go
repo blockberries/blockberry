@@ -90,6 +90,7 @@ func (vs *SimpleValidatorSet) Count() int {
 }
 
 // GetByIndex returns the validator at the given index.
+// The returned struct is a deep copy; callers may safely modify it.
 func (vs *SimpleValidatorSet) GetByIndex(index uint16) *Validator {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
@@ -97,17 +98,31 @@ func (vs *SimpleValidatorSet) GetByIndex(index uint16) *Validator {
 	if int(index) >= len(vs.validators) {
 		return nil
 	}
-	return vs.validators[index]
+	v := vs.validators[index]
+	return &Validator{
+		Index:            v.Index,
+		Address:          append([]byte(nil), v.Address...),
+		PublicKey:        append([]byte(nil), v.PublicKey...),
+		VotingPower:      v.VotingPower,
+		ProposerPriority: v.ProposerPriority,
+	}
 }
 
 // GetByAddress returns the validator with the given address.
+// The returned struct is a deep copy; callers may safely modify it.
 func (vs *SimpleValidatorSet) GetByAddress(address []byte) *Validator {
 	vs.mu.RLock()
 	defer vs.mu.RUnlock()
 
 	for _, v := range vs.validators {
 		if bytes.Equal(v.Address, address) {
-			return v
+			return &Validator{
+				Index:            v.Index,
+				Address:          append([]byte(nil), v.Address...),
+				PublicKey:        append([]byte(nil), v.PublicKey...),
+				VotingPower:      v.VotingPower,
+				ProposerPriority: v.ProposerPriority,
+			}
 		}
 	}
 	return nil

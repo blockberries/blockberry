@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-01-29
+
+### Security
+
+- **rpc/grpc/ratelimit.go**: Fixed race condition where exempt client/method maps were accessed without synchronization. Added `sync.RWMutex` protection.
+- **handlers/handshake.go**: Added ed25519 public key length validation (must be 32 bytes) to prevent panics or undefined behavior in crypto operations.
+
+### Fixed
+
+- **rpc/grpc/server.go**: Fixed TCP listener resource leak when TLS credential loading fails during server startup.
+- **events/bus.go**: Fixed timer leak in `PublishWithTimeout` by replacing `time.After()` with `time.NewTimer()` and proper cleanup.
+- **handlers/handshake.go**: Fixed shallow copy in `GetPeerInfo` that exposed internal `PeerPubKey` slice to callers.
+- **consensus/validators.go**: Fixed `GetByIndex` and `GetByAddress` returning internal pointers instead of deep copies, allowing callers to corrupt validator set state.
+- **pex/address_book.go**: Fixed temp file not being cleaned up when atomic rename fails in `Save()`.
+- **p2p/peer_state.go**: Fixed `SetPublicKey` storing external reference without defensive copy.
+
+### Changed
+
+- Updated dependency versions:
+  - `github.com/blockberries/glueberry`: v1.2.9 → v1.2.10
+  - `github.com/blockberries/cramberry`: v1.5.3 → v1.5.5
+
 ## [0.1.3] - 2026-01-29
 
 ### Fixed

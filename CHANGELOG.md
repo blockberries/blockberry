@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-01-29
+
+### Security
+
+- **handlers/consensus.go**: Fixed potential out-of-bounds slice access in `decodeVote` and `decodeCommit` functions. Hash length is now validated to be at most 64 bytes and data length is verified before slicing.
+
+### Fixed
+
+- **statestore/snapshot.go**: Fixed resource leak where gzReader was never closed in the `Import` function.
+
+### Changed
+
+- Updated ARCHITECTURE.md dependency versions to match actual versions (glueberry v1.2.9, cramberry v1.5.3)
+
 ## [0.1.0] - 2026-01-29
 
 ### Added

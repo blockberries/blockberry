@@ -143,8 +143,4 @@ require (
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
 
-replace (
-	github.com/blockberries/cramberry => ../cramberry
-	github.com/blockberries/glueberry => ../glueberry
-	github.com/blockberries/looseberry => ../looseberry
-)
+replace github.com/blockberries/looseberry => ../looseberry

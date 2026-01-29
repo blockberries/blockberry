@@ -346,8 +346,16 @@ func (r *ConsensusReactor) decodeVote(data []byte) (*consensus.Vote, error) {
 	// Remaining data is block hash and signature
 	if len(data) > 15 {
 		hashLen := int(data[15])
+		// Validate hashLen: must be reasonable (max 64 bytes for SHA-512)
+		// and data must be long enough to contain the hash
+		if hashLen > 64 {
+			return nil, fmt.Errorf("invalid hash length: %d (max 64)", hashLen)
+		}
+		if len(data) < 16+hashLen {
+			return nil, fmt.Errorf("vote data too short for hash length %d", hashLen)
+		}
+		vote.BlockHash = data[16 : 16+hashLen]
 		if len(data) > 16+hashLen {
-			vote.BlockHash = data[16 : 16+hashLen]
 			vote.Signature = data[16+hashLen:]
 		}
 	}
@@ -371,10 +379,16 @@ func (r *ConsensusReactor) decodeCommit(data []byte) (*consensus.Commit, error) 
 	// Remaining data contains block hash and signatures
 	if len(data) > 12 {
 		hashLen := int(data[12])
-		if len(data) > 13+hashLen {
-			commit.BlockHash = data[13 : 13+hashLen]
-			// TODO: Parse signatures
+		// Validate hashLen: must be reasonable (max 64 bytes for SHA-512)
+		// and data must be long enough to contain the hash
+		if hashLen > 64 {
+			return nil, fmt.Errorf("invalid hash length: %d (max 64)", hashLen)
 		}
+		if len(data) < 13+hashLen {
+			return nil, fmt.Errorf("commit data too short for hash length %d", hashLen)
+		}
+		commit.BlockHash = data[13 : 13+hashLen]
+		// TODO: Parse signatures from data[13+hashLen:]
 	}
 
 	return commit, nil

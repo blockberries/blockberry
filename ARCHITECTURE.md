@@ -54,8 +54,8 @@ Blockberry is a modular blockchain node framework written in Go. It provides the
 
 ```
 github.com/blockberries/blockberry
-    ├── github.com/blockberries/glueberry v1.0.1   (P2P networking)
-    ├── github.com/blockberries/cramberry v1.2.0   (Serialization)
+    ├── github.com/blockberries/glueberry v1.2.9   (P2P networking)
+    ├── github.com/blockberries/cramberry v1.5.3   (Serialization)
     ├── github.com/cosmos/iavl v1.3.5              (Merkleized KV store)
     ├── github.com/cosmos/ics23/go v0.10.0         (Proof verification)
     ├── github.com/prometheus/client_golang        (Metrics)

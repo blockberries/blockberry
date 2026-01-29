@@ -408,6 +408,7 @@ func (s *FileSnapshotStore) Import(snapshot *Snapshot, chunkProvider ChunkProvid
 	if err != nil {
 		return fmt.Errorf("creating gzip reader: %w", err)
 	}
+	defer gzReader.Close()
 
 	// Import into IAVL
 	importer, err := s.stateStore.tree.Import(snapshot.Height)

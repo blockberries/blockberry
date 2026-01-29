@@ -208,18 +208,61 @@ The following issues were identified and fixed in previous code review cycles (P
 
 ---
 
+## Review Iteration 2 - January 29, 2026
+
+### 16. Missing Hash Length Validation in decodeVote
+
+**File:** `handlers/consensus.go`
+**Lines:** 346-356
+**Status:** FIXED
+
+**Issue:** The `hashLen` field was read from untrusted network input without validation. A malicious peer could send `hashLen=255` causing out-of-bounds slice access when combined with insufficient data length.
+
+**Fix:** Added validation that hashLen is at most 64 bytes (max for SHA-512) and that data length is sufficient before slicing.
+
+---
+
+### 17. Missing Hash Length Validation in decodeCommit
+
+**File:** `handlers/consensus.go`
+**Lines:** 371-381
+**Status:** FIXED
+
+**Issue:** Same as #16 - hashLen read without bounds validation.
+
+**Fix:** Added same validation checks as decodeVote.
+
+---
+
+### 18. Resource Leak - gzReader Never Closed in Snapshot Import
+
+**File:** `statestore/snapshot.go`
+**Lines:** 407-439
+**Status:** FIXED
+
+**Issue:** The `gzip.NewReader` was created but never closed, even on the happy path. While gzip.Reader wrapping a bytes.Buffer doesn't leak file descriptors, it's poor practice and could leak resources in future refactoring.
+
+**Fix:** Added `defer gzReader.Close()` after gzip reader creation.
+
+---
+
 ## Summary
 
 | Severity | Total | Fixed | Remaining |
 |----------|-------|-------|-----------|
 | CRITICAL | 2 | 2 | 0 |
-| HIGH | 6 | 6 | 0 |
-| MEDIUM | 7 | 7 | 0 |
-| **Total** | **15** | **15** | **0** |
+| HIGH | 8 | 8 | 0 |
+| MEDIUM | 8 | 8 | 0 |
+| **Total** | **18** | **18** | **0** |
 
 All identified issues have been fixed. The codebase is now production-ready.
 
-### Files Modified in Latest Review (January 29, 2026)
+### Files Modified in Review Iteration 2 (January 29, 2026)
+
+- `handlers/consensus.go` - Added hash length validation in decodeVote and decodeCommit
+- `statestore/snapshot.go` - Fixed gzReader resource leak in Import function
+
+### Files Modified in Review Iteration 1 (January 29, 2026)
 
 - `mempool/priority_mempool.go` - Optimized eviction algorithm
 - `consensus/validators.go` - Added binary search for validator set lookup

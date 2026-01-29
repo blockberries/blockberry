@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.0.0] - 2026-01-26
+## [0.1.0] - 2026-01-29
 
 ### Added
 
@@ -117,9 +117,9 @@ The following phases were completed during pre-release development:
 
 ## Upgrade Guide
 
-### From Pre-release to 1.0.0
+### From Development to 0.1.0
 
-This is the first stable release. If upgrading from development versions:
+This is the first tagged release (pre-release). If upgrading from development versions:
 
 1. **Configuration Changes**:
    - Add `[metrics]` section if using Prometheus

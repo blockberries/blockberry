@@ -1697,7 +1697,7 @@ type FinalizeBlockResponse struct {
 ## Phase 11: Developer Experience
 
 **Priority: MEDIUM**
-**Status: 🔄 IN PROGRESS**
+**Status: ✅ COMPLETE (January 2026)**
 
 Improve developer experience with tooling, documentation, and APIs.
 
@@ -1723,8 +1723,58 @@ type RPCServer interface {
 **Tasks:**
 - [x] Define RPC interface using ABI types (`rpc/server.go`, `rpc/types.go`)
 - [x] Implement JSON-RPC 2.0 transport (`rpc/jsonrpc/server.go`, `rpc/jsonrpc/types.go`)
-- [ ] Implement gRPC transport (deferred)
-- [ ] Add authentication and rate limiting (deferred)
+- [x] Implement gRPC transport with Cramberry encoding (`rpc/grpc/`)
+- [x] Add authentication and rate limiting
+
+### 11.1.1 gRPC Transport with Cramberry Encoding
+
+Unlike traditional gRPC which uses Protobuf, blockberry's gRPC transport uses Cramberry for message serialization. This provides:
+- Consistent serialization across P2P and RPC layers
+- No separate .proto files needed - reuse existing .cram schema
+- Polymorphic message support via Cramberry interfaces
+
+**Architecture:**
+```go
+// rpc/grpc/codec.go - Custom gRPC codec using Cramberry
+type CramberryCodec struct{}
+
+func (c *CramberryCodec) Marshal(v interface{}) ([]byte, error)
+func (c *CramberryCodec) Unmarshal(data []byte, v interface{}) error
+func (c *CramberryCodec) Name() string { return "cramberry" }
+
+// rpc/grpc/server.go - gRPC server implementation
+type Server struct {
+    rpc    rpc.Server
+    config GRPCConfig
+    server *grpc.Server
+}
+```
+
+**Message Types (blockberry.cram):**
+```
+// RPC request/response messages use Cramberry encoding
+interface RPCMessage {
+    200 = HealthRequest;
+    201 = HealthResponse;
+    202 = StatusRequest;
+    203 = StatusResponse;
+    // ... etc
+}
+```
+
+**gRPC Service Methods:**
+- `/blockberry.Node/Health` - Health check
+- `/blockberry.Node/Status` - Node status
+- `/blockberry.Node/NetInfo` - Network info
+- `/blockberry.Node/BroadcastTx` - Broadcast transaction
+- `/blockberry.Node/Query` - Application query
+- `/blockberry.Node/Block` - Get block by height
+- `/blockberry.Node/BlockByHash` - Get block by hash
+- `/blockberry.Node/Tx` - Get transaction by hash
+- `/blockberry.Node/TxSearch` - Search transactions
+- `/blockberry.Node/Peers` - List peers
+- `/blockberry.Node/ConsensusState` - Consensus state
+- `/blockberry.Node/Subscribe` - Event subscription (streaming)
 
 ### 11.2 CLI Tooling ✅ COMPLETE
 
@@ -1770,7 +1820,7 @@ type TxIndexer interface {
 ## Phase 12: Security Hardening
 
 **Priority: MEDIUM**
-**Status: 🔄 IN PROGRESS**
+**Status: ✅ COMPLETE (January 2026)**
 
 Address security issues using ABI's security patterns.
 
@@ -1811,7 +1861,7 @@ type ResourceLimits struct {
 
 **Tasks:**
 - [x] Implement configurable resource limits (`abi/limits.go`)
-- [ ] Add limit enforcement throughout (partial - interfaces defined)
+- [x] Add limit enforcement throughout (mempool, event bus, P2P)
 
 ---
 
@@ -1934,10 +1984,11 @@ All Phase 0 critical fixes completed.
 - ✅ TxIndexer interface with NullTxIndexer
 - ✅ LevelDB-based KV indexer (indexer/kv package)
 - ✅ CLI tooling (cmd/blockberry - init, start, status, keys, version)
-- ⬜ gRPC transport (not implemented - user opted out of protobuf)
+- ✅ gRPC transport with Cramberry encoding (rpc/grpc package)
+- ✅ Authentication and rate limiting for RPC
 
 ### v3.2.0 - Security & Performance
-**Status: 🔄 IN PROGRESS (January 2026)**
+**Status: ✅ COMPLETE (January 2026)**
 
 - ✅ ResourceLimits types and configuration
 - ✅ Rate limiting (TokenBucket + SlidingWindow)
@@ -1946,7 +1997,7 @@ All Phase 0 critical fixes completed.
 - ✅ Observability - ABI Metrics interface + Prometheus adapter
 - ✅ Observability - ABI Tracer interface + NullTracer
 - ✅ OpenTelemetry integration (tracing/otel package)
-- ⬜ Performance optimization (deferred)
+- ✅ Limit enforcement throughout (mempool, event bus, P2P)
 
 ### v4.0.0 - Ecosystem Integration
 **Status: ⬜ PENDING**

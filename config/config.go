@@ -38,6 +38,7 @@ type Config struct {
 	Housekeeping HousekeepingConfig `toml:"housekeeping"`
 	Metrics      MetricsConfig      `toml:"metrics"`
 	Logging      LoggingConfig      `toml:"logging"`
+	Limits       LimitsConfig       `toml:"limits"`
 }
 
 // NodeConfig contains node identity and chain configuration.
@@ -244,6 +245,29 @@ type LoggingConfig struct {
 	Output string `toml:"output"`
 }
 
+// LimitsConfig contains resource limits for the node.
+// These limits help prevent resource exhaustion and denial of service attacks.
+type LimitsConfig struct {
+	// MaxTxSize is the maximum size of a single transaction in bytes.
+	// Transactions larger than this will be rejected.
+	MaxTxSize int64 `toml:"max_tx_size"`
+
+	// MaxBlockSize is the maximum size of a block in bytes.
+	MaxBlockSize int64 `toml:"max_block_size"`
+
+	// MaxBlockTxs is the maximum number of transactions per block.
+	MaxBlockTxs int `toml:"max_block_txs"`
+
+	// MaxMsgSize is the maximum size of a network message in bytes.
+	MaxMsgSize int64 `toml:"max_msg_size"`
+
+	// MaxSubscribers is the maximum number of event subscribers.
+	MaxSubscribers int `toml:"max_subscribers"`
+
+	// MaxSubscribersPerQuery is the maximum subscribers per query.
+	MaxSubscribersPerQuery int `toml:"max_subscribers_per_query"`
+}
+
 // Duration is a wrapper around time.Duration for TOML unmarshaling.
 type Duration time.Duration
 
@@ -346,6 +370,14 @@ func DefaultConfig() *Config {
 			Level:  "info",
 			Format: "text",
 			Output: "stderr",
+		},
+		Limits: LimitsConfig{
+			MaxTxSize:              1024 * 1024,      // 1 MB
+			MaxBlockSize:           21 * 1024 * 1024, // 21 MB
+			MaxBlockTxs:            10000,
+			MaxMsgSize:             10 * 1024 * 1024, // 10 MB
+			MaxSubscribers:         1000,
+			MaxSubscribersPerQuery: 100,
 		},
 	}
 }

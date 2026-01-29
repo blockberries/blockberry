@@ -102,6 +102,27 @@ func TestSimpleMempool_MaxBytes(t *testing.T) {
 	require.Equal(t, int64(100), mp.SizeBytes())
 }
 
+func TestSimpleMempool_MaxTxSize(t *testing.T) {
+	// Create mempool with 50 byte max tx size
+	mp := NewSimpleMempoolWithLimits(100, 1024*1024, 50)
+	mp.SetTxValidator(AcceptAllTxValidator)
+
+	// Transaction within limit should succeed
+	err := mp.AddTx(make([]byte, 40))
+	require.NoError(t, err)
+
+	// Transaction exactly at limit should succeed
+	err = mp.AddTx(make([]byte, 50))
+	require.NoError(t, err)
+
+	// Transaction exceeding limit should fail
+	err = mp.AddTx(make([]byte, 51))
+	require.ErrorIs(t, err, types.ErrTxTooLarge)
+
+	// Verify mempool state is unchanged after rejected tx
+	require.Equal(t, 2, mp.Size())
+}
+
 func TestSimpleMempool_HasTx(t *testing.T) {
 	mp := NewSimpleMempool(100, 1024*1024)
 	mp.SetTxValidator(AcceptAllTxValidator)

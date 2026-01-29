@@ -48,6 +48,7 @@ Blockberry is a modular blockchain node framework written in Go. It provides the
 3. **Opaque Data**: Blocks and transactions are treated as opaque `[]byte` by blockberry
 4. **Efficient Sync**: Merkleized data structures for fast existence proofs and sync
 5. **Peer Accountability**: Track per-peer state to avoid redundant transfers and enable scoring
+6. **Dual-Mode Operation**: Supports both simple mempool (full nodes) and DAG mempool (validators)
 
 ## Module Dependencies
 
@@ -115,6 +116,14 @@ Blockberry uses glueberry's encrypted stream multiplexing with the following str
 | `blocks` | Bidirectional | `BlockMessage` | Real-time block propagation |
 | `consensus` | Bidirectional | Raw `[]byte` | Application-defined consensus |
 | `housekeeping` | Bidirectional | `HousekeepingMessages` | Latency probes, firewall detection |
+
+**Note**: When integrated with Looseberry (validators), three additional streams are used:
+
+| Stream | Direction | Message Type | Purpose |
+|--------|-----------|--------------|---------|
+| `looseberry-batches` | Bidirectional | Raw `[]byte` | Worker-to-worker batch dissemination |
+| `looseberry-headers` | Bidirectional | Raw `[]byte` | Primary-to-primary headers and votes |
+| `looseberry-sync` | Bidirectional | Raw `[]byte` | Certificate synchronization |
 
 #### Message Flow Diagram
 
@@ -197,9 +206,12 @@ The handshake validates peer compatibility before establishing encrypted communi
 
 ### 4. Mempool
 
-The mempool manages pending transactions awaiting inclusion in blocks.
+The mempool manages pending transactions awaiting inclusion in blocks. Blockberry supports two mempool implementations:
 
-#### Interface
+1. **Simple Mempool**: Hash-based in-memory storage (used by full nodes)
+2. **DAG Mempool**: Looseberry integration (used by validators)
+
+#### Base Mempool Interface
 
 ```go
 type Mempool interface {
@@ -227,6 +239,36 @@ type Mempool interface {
 
     // Flush removes all transactions.
     Flush()
+}
+```
+
+#### Extended DAGMempool Interface
+
+For validators using Looseberry, an extended interface provides DAG-specific methods:
+
+```go
+type DAGMempool interface {
+    Mempool  // Embeds base interface
+
+    // Pull certified batches for block building
+    // Returns batches in deterministic order: by round ASC, then by validator index ASC
+    // Only returns batches from rounds > lastCommittedRound
+    ReapCertifiedBatches(maxBytes int64) []CertifiedBatch
+
+    // Notify that consensus has committed up to a round
+    // Enables garbage collection of older rounds
+    NotifyCommitted(round uint64)
+
+    // Update validator set (epoch change)
+    UpdateValidatorSet(validators ValidatorSet)
+
+    // Get current DAG round
+    CurrentRound() uint64
+}
+
+type CertifiedBatch struct {
+    Certificate *looseberry.Certificate
+    Batches     []*looseberry.Batch
 }
 ```
 
@@ -278,6 +320,56 @@ type PriorityMempool struct {
 - Configurable `PriorityFunc` for custom priority calculation
 - Automatic eviction of lowest priority transactions when full
 - Built-in priority functions: `DefaultPriorityFunc`, `SizePriorityFunc`
+
+#### TransactionsReactor Modes
+
+The TransactionsReactor operates in two modes depending on node type:
+
+**Active Mode (Full Nodes)**:
+- Actively gossips transactions to peers
+- Periodically requests transactions from connected peers
+- Adds received transactions to simple mempool
+- Used by full nodes that don't participate in consensus
+
+**Passive Mode (Validators with Looseberry)**:
+- Receives transactions from peers but does NOT initiate gossip
+- Routes received transactions to Looseberry.AddTx()
+- Disables outbound gossip requests
+- Used by validators running DAG mempool
+
+```go
+type TransactionsReactor struct {
+    mempool      Mempool           // Simple mempool (nil for validators)
+    looseberry   DAGMempool        // Looseberry integration (nil for full nodes)
+    passiveMode  bool              // true if looseberry != nil
+
+    // Gossip loop only runs if !passiveMode
+    gossipTicker *time.Ticker
+}
+
+func (r *TransactionsReactor) handleTransactionDataResponse(peerID peer.ID, data []byte) error {
+    // ... deserialize and validate ...
+
+    for _, txData := range resp.Transactions {
+        // Route to appropriate mempool
+        if r.looseberry != nil {
+            // Validator: route to Looseberry
+            _ = r.looseberry.AddTx(txData.Data)
+        } else if r.mempool != nil {
+            // Full node: add to simple mempool
+            _ = r.mempool.AddTx(txData.Data)
+        }
+    }
+
+    return nil
+}
+```
+
+This dual-mode design ensures:
+- Full nodes actively gossip transactions to the network
+- Validators receive transactions from full nodes without re-gossiping
+- Looseberry's DAG protocol handles validator-to-validator dissemination
+- No redundant transaction propagation
 
 #### TTL Mempool
 
@@ -901,6 +993,130 @@ All public APIs are safe for concurrent use:
 - StateStore: IAVL handles concurrency
 - PeerManager: Protected by RWMutex
 - Glueberry: Thread-safe by design
+
+---
+
+## Integration with Raspberry
+
+Blockberry serves as the core framework for the Raspberry blockchain node, integrating with:
+
+- **Leaderberry**: BFT consensus engine (implements `ConsensusHandler` interface)
+- **Looseberry**: DAG mempool for validators (implements `DAGMempool` interface)
+- **Glueberry**: P2P networking layer (wrapped by blockberry's Node)
+
+### Node Type Configurations
+
+#### Validator Node
+
+```go
+// Validator initialization
+node := blockberry.New(cfg,
+    blockberry.WithGlueberry(glueNode),
+    blockberry.WithMempool(looseberry),  // DAG mempool
+    blockberry.WithConsensus(leaderberry),
+    blockberry.WithApplication(app),
+)
+
+// Streams: handshake, pex, transactions (passive), blocksync,
+//          blocks, consensus, housekeeping, looseberry-*
+```
+
+**Characteristics**:
+- Uses Looseberry (DAG mempool)
+- Runs Leaderberry (consensus engine)
+- TransactionsReactor in passive mode
+- All 10 streams active
+
+#### Full Node
+
+```go
+// Full node initialization
+node := blockberry.New(cfg,
+    blockberry.WithGlueberry(glueNode),
+    blockberry.WithMempool(simpleMempool),  // Simple mempool
+    blockberry.WithApplication(app),
+    // No consensus engine
+)
+
+// Streams: handshake, pex, transactions (active), blocksync,
+//          blocks, housekeeping
+```
+
+**Characteristics**:
+- Uses simple mempool
+- No consensus engine
+- TransactionsReactor in active mode
+- 7 streams active (no looseberry-*, no consensus)
+
+### Stream Registration
+
+```go
+// Validator stream setup (after glueberry handshake)
+streamNames := []string{
+    "pex",
+    "transactions",    // Passive mode
+    "blocksync",
+    "blocks",
+    "consensus",       // Consensus messages
+    "housekeeping",
+    "looseberry-batches",
+    "looseberry-headers",
+    "looseberry-sync",
+}
+
+// Full node stream setup
+streamNames := []string{
+    "pex",
+    "transactions",    // Active mode
+    "blocksync",
+    "blocks",
+    "housekeeping",
+}
+```
+
+### Transaction Flow
+
+**Validator Flow**:
+```
+Client RPC → Looseberry.AddTx()
+Full Node Gossip → TransactionsReactor (passive) → Looseberry.AddTx()
+Looseberry batches → certificates → ReapCertifiedBatches() → Leaderberry blocks
+```
+
+**Full Node Flow**:
+```
+Client RPC → Simple Mempool
+Peer Gossip → TransactionsReactor (active) → Simple Mempool
+Mempool → gossip to peers (including validators)
+```
+
+### Block Execution Integration
+
+```go
+func (n *Node) OnBlockCommit(block *Block) error {
+    // 1. Execute block through application
+    if err := n.app.ExecuteBlock(block); err != nil {
+        return err
+    }
+
+    // 2. Save to block store
+    if err := n.blockStore.SaveBlock(block); err != nil {
+        return err
+    }
+
+    // 3. Update mempool
+    if dagMempool, ok := n.mempool.(DAGMempool); ok {
+        // Validator: notify Looseberry for GC
+        dagMempool.NotifyCommitted(block.Header.DAGRound)
+    } else {
+        // Full node: remove committed txs
+        txHashes := extractTxHashes(block)
+        n.mempool.RemoveTxs(txHashes)
+    }
+
+    return nil
+}
+```
 
 ---
 

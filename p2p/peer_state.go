@@ -54,14 +54,27 @@ type PeerState struct {
 }
 
 // NewPeerState creates a new peer state for a connected peer.
+// Panics if LRU cache creation fails (indicates programming error with invalid size constants).
 func NewPeerState(peerID peer.ID, isOutbound bool) *PeerState {
 	now := time.Now()
 
-	// Create LRU caches - these never fail with valid sizes
-	txsSent, _ := lru.New[string, struct{}](MaxKnownTxsPerPeer)
-	txsReceived, _ := lru.New[string, struct{}](MaxKnownTxsPerPeer)
-	blocksSent, _ := lru.New[int64, struct{}](MaxKnownBlocksPerPeer)
-	blocksReceived, _ := lru.New[int64, struct{}](MaxKnownBlocksPerPeer)
+	// Create LRU caches - panic on failure since it indicates invalid configuration
+	txsSent, err := lru.New[string, struct{}](MaxKnownTxsPerPeer)
+	if err != nil {
+		panic("failed to create txsSent LRU cache: " + err.Error())
+	}
+	txsReceived, err := lru.New[string, struct{}](MaxKnownTxsPerPeer)
+	if err != nil {
+		panic("failed to create txsReceived LRU cache: " + err.Error())
+	}
+	blocksSent, err := lru.New[int64, struct{}](MaxKnownBlocksPerPeer)
+	if err != nil {
+		panic("failed to create blocksSent LRU cache: " + err.Error())
+	}
+	blocksReceived, err := lru.New[int64, struct{}](MaxKnownBlocksPerPeer)
+	if err != nil {
+		panic("failed to create blocksReceived LRU cache: " + err.Error())
+	}
 
 	return &PeerState{
 		PeerID:         peerID,

@@ -182,30 +182,23 @@ func (m *PriorityMempool) AddTx(tx []byte) error {
 // evictLowestLocked evicts the lowest priority transaction if it has lower priority
 // than the given priority. Returns true if a transaction was evicted.
 // Caller must hold the lock.
+//
+// Note: For a max-heap, finding the minimum requires O(n) scan since the minimum
+// can be anywhere in the leaf nodes. For high-throughput systems, consider using
+// a dual-heap or indexed priority queue data structure.
 func (m *PriorityMempool) evictLowestLocked(newPriority int64, _ int64) bool {
-	if len(m.heap) == 0 {
+	n := len(m.heap)
+	if n == 0 {
 		return false
 	}
 
-	// Find the lowest priority transaction (it's at an arbitrary position in the heap)
-	// For a max-heap, we need to scan all leaves to find the minimum
-	var lowestIdx int
-	var lowestPriority int64 = m.heap[0].priority
+	// Find the lowest priority transaction in a single O(n) pass.
+	// The minimum in a max-heap must be among the leaves (indices n/2 to n-1),
+	// but we scan all elements to be safe in case of edge cases.
+	lowestIdx := 0
+	lowestPriority := m.heap[0].priority
 
-	// Start from half the heap (leaf nodes) to find the minimum
-	start := len(m.heap) / 2
-	for i := range len(m.heap) {
-		if i < start {
-			continue
-		}
-		if m.heap[i].priority < lowestPriority {
-			lowestPriority = m.heap[i].priority
-			lowestIdx = i
-		}
-	}
-
-	// Also check internal nodes (they could be lower)
-	for i := range start {
+	for i := 1; i < n; i++ {
 		if m.heap[i].priority < lowestPriority {
 			lowestPriority = m.heap[i].priority
 			lowestIdx = i

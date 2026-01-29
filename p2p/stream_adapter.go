@@ -58,11 +58,12 @@ func (a *GlueberryStreamAdapter) GetAllStreamNames() []string {
 func (a *GlueberryStreamAdapter) RouteMessage(msg streams.IncomingMessage) error {
 	a.mu.RLock()
 	handler := a.registry.GetHandler(msg.StreamName)
+	streamExists := a.registry.Has(msg.StreamName)
 	a.mu.RUnlock()
 
 	if handler == nil {
 		// Check if stream exists but has no handler
-		if a.registry.Has(msg.StreamName) {
+		if streamExists {
 			return fmt.Errorf("%w: %s", ErrStreamHandlerNotSet, msg.StreamName)
 		}
 		return fmt.Errorf("%w: %s", ErrStreamNotFound, msg.StreamName)

@@ -181,9 +181,14 @@ func (s *Server) handleBatch(w http.ResponseWriter, ctx context.Context, body []
 		responses[i] = *s.processRequest(ctx, &req)
 	}
 
-	data, _ := json.Marshal(responses)
+	data, err := json.Marshal(responses)
+	if err != nil {
+		// Marshal error is a server-side issue - return internal error
+		s.writeError(w, nil, ErrInternalError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 // processRequest processes a single JSON-RPC request.
@@ -214,9 +219,16 @@ func (s *Server) processRequest(ctx context.Context, req *Request) *Response {
 
 // writeResponse writes a JSON-RPC response.
 func (s *Server) writeResponse(w http.ResponseWriter, resp *Response) {
-	data, _ := json.Marshal(resp)
+	data, err := json.Marshal(resp)
+	if err != nil {
+		// Marshal error is a server-side issue - write a minimal error response
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","error":{"code":-32603,"message":"Internal error"}}`))
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(data)
+	_, _ = w.Write(data)
 }
 
 // writeError writes a JSON-RPC error response.

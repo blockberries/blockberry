@@ -423,16 +423,18 @@ type ValidatorSetStore interface {
 // InMemoryValidatorSetStore is an in-memory implementation of ValidatorSetStore.
 // Useful for testing and development.
 type InMemoryValidatorSetStore struct {
-	sets   map[int64]ValidatorSet
-	latest int64
-	mu     sync.RWMutex
+	sets          map[int64]ValidatorSet
+	sortedHeights []int64 // Cached sorted heights for efficient lookups
+	latest        int64
+	mu            sync.RWMutex
 }
 
 // NewInMemoryValidatorSetStore creates a new in-memory validator set store.
 func NewInMemoryValidatorSetStore() *InMemoryValidatorSetStore {
 	return &InMemoryValidatorSetStore{
-		sets:   make(map[int64]ValidatorSet),
-		latest: 0,
+		sets:          make(map[int64]ValidatorSet),
+		sortedHeights: make([]int64, 0),
+		latest:        0,
 	}
 }
 
@@ -440,6 +442,13 @@ func NewInMemoryValidatorSetStore() *InMemoryValidatorSetStore {
 func (s *InMemoryValidatorSetStore) SaveValidatorSet(height int64, valSet ValidatorSet) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	// Check if height already exists
+	if _, exists := s.sets[height]; !exists {
+		// Insert into sorted heights using binary search to maintain order
+		idx, _ := slices.BinarySearch(s.sortedHeights, height)
+		s.sortedHeights = slices.Insert(s.sortedHeights, idx, height)
+	}
 
 	s.sets[height] = valSet
 	if height > s.latest {
@@ -472,28 +481,29 @@ func (s *InMemoryValidatorSetStore) LatestValidatorSet() (ValidatorSet, error) {
 }
 
 // ValidatorSetAtHeight returns the validator set active at the given height.
+// Uses binary search on cached sorted heights for O(log n) lookup.
 func (s *InMemoryValidatorSetStore) ValidatorSetAtHeight(height int64) (ValidatorSet, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	if len(s.sortedHeights) == 0 {
+		return nil, fmt.Errorf("%w at height %d", ErrValidatorSetNotFound, height)
+	}
+
 	// Find the validator set that was active at this height
 	// (the most recent one at or before this height)
-	heights := make([]int64, 0, len(s.sets))
-	for h := range s.sets {
-		heights = append(heights, h)
-	}
-	slices.Sort(heights)
+	// Binary search for the insertion point, then back up to find the active set
+	idx, found := slices.BinarySearch(s.sortedHeights, height)
 
 	var activeHeight int64
-	for _, h := range heights {
-		if h <= height {
-			activeHeight = h
-		} else {
-			break
-		}
-	}
-
-	if activeHeight == 0 {
+	if found {
+		// Exact match
+		activeHeight = s.sortedHeights[idx]
+	} else if idx > 0 {
+		// Use the height just before the insertion point
+		activeHeight = s.sortedHeights[idx-1]
+	} else {
+		// height is less than all stored heights
 		return nil, fmt.Errorf("%w at height %d", ErrValidatorSetNotFound, height)
 	}
 

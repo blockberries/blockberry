@@ -142,3 +142,258 @@ interface StateSyncMessage {
   146 = SnapshotChunkRequest;
   147 = SnapshotChunkResponse;
 }
+
+// RPC Messages - used by gRPC transport with Cramberry encoding
+// Type IDs 200-299 reserved for RPC
+
+message GrpcNodeInfo {
+  required string id = 1;
+  required string moniker = 2;
+  required string network = 3;
+  required string version = 4;
+  string listen_addr = 5;
+}
+
+message GrpcSyncInfo {
+  required bytes latest_block_hash = 1;
+  required bytes latest_app_hash = 2;
+  required int64 latest_block_height = 3;
+  required int64 latest_block_time = 4;
+  required int64 earliest_block_height = 5;
+  required int64 earliest_block_time = 6;
+  required bool catching_up = 7;
+}
+
+message GrpcValidatorInfo {
+  required bytes address = 1;
+  required bytes public_key = 2;
+  required int64 voting_power = 3;
+}
+
+message GrpcHealthCheck {
+  required string status = 1;
+  string msg = 2;
+  required int64 time = 3;
+}
+
+message GrpcPeerInfo {
+  required string id = 1;
+  required string address = 2;
+  required bool is_outbound = 3;
+  required string connection_status = 4;
+  GrpcNodeInfo node_info = 5;
+}
+
+message GrpcBlockId {
+  required bytes hash = 1;
+  required int32 parts_total = 2;
+  required bytes parts_hash = 3;
+}
+
+message GrpcBlock {
+  required int64 height = 1;
+  required bytes hash = 2;
+  required int64 time = 3;
+  required bytes last_block_hash = 4;
+  required bytes data_hash = 5;
+  required bytes validators_hash = 6;
+  required bytes app_hash = 7;
+  repeated bytes txs = 8;
+}
+
+message GrpcTxResult {
+  required bytes hash = 1;
+  required int64 height = 2;
+  required int32 index = 3;
+  required int32 code = 4;
+  string log = 5;
+  bytes data = 6;
+  required int64 gas_wanted = 7;
+  required int64 gas_used = 8;
+}
+
+// Health RPC
+message HealthRequest {}
+
+message HealthResponse {
+  required string status = 1;
+  repeated GrpcHealthCheck checks = 2;
+}
+
+// Status RPC
+message StatusRequest {}
+
+message StatusResponse {
+  GrpcNodeInfo node_info = 1;
+  GrpcSyncInfo sync_info = 2;
+  GrpcValidatorInfo validator_info = 3;
+}
+
+// NetInfo RPC
+message NetInfoRequest {}
+
+message NetInfoResponse {
+  required bool listening = 1;
+  repeated string listeners = 2;
+  required int32 num_peers = 3;
+  repeated GrpcPeerInfo peers = 4;
+}
+
+// BroadcastTx RPC
+message BroadcastTxRequest {
+  required bytes tx = 1;
+  required int32 mode = 2;
+}
+
+message BroadcastTxResponse {
+  required int32 code = 1;
+  required bytes hash = 2;
+  string log = 3;
+  bytes data = 4;
+  int64 height = 5;
+}
+
+// Query RPC
+message QueryRequest {
+  required string path = 1;
+  bytes data = 2;
+  int64 height = 3;
+  bool prove = 4;
+}
+
+message QueryResponse {
+  required int32 code = 1;
+  bytes value = 2;
+  string log = 3;
+  int64 height = 4;
+  bytes proof = 5;
+}
+
+// Block RPC
+message BlockRequest {
+  required int64 height = 1;
+}
+
+message BlockByHashRequest {
+  required bytes hash = 1;
+}
+
+message BlockResponse {
+  GrpcBlock block = 1;
+  GrpcBlockId block_id = 2;
+}
+
+// Tx RPC
+message TxRequest {
+  required bytes hash = 1;
+}
+
+message TxSearchRequest {
+  required string query = 1;
+  required int32 page = 2;
+  required int32 per_page = 3;
+}
+
+message TxResponse {
+  GrpcTxResult tx = 1;
+}
+
+message TxSearchResponse {
+  repeated GrpcTxResult txs = 1;
+  required int32 total = 2;
+  required int32 page = 3;
+  required int32 per_page = 4;
+  required int32 total_pages = 5;
+}
+
+// Peers RPC
+message PeersRequest {}
+
+message PeersResponse {
+  repeated GrpcPeerInfo peers = 1;
+}
+
+// ConsensusState RPC
+message ConsensusStateRequest {}
+
+message ConsensusStateResponse {
+  required int64 height = 1;
+  required int32 round = 2;
+  required string step = 3;
+  required int64 start_time = 4;
+  repeated GrpcValidatorInfo validators = 5;
+}
+
+// Subscribe RPC (streaming)
+message SubscribeRequest {
+  required string subscriber = 1;
+  required string query = 2;
+}
+
+message EventMessage {
+  required string type = 1;
+  required bytes data = 2;
+  required int64 height = 3;
+}
+
+message SubscribeResponse {
+  EventMessage event = 1;
+}
+
+// Unsubscribe RPC
+message UnsubscribeRequest {
+  required string subscriber = 1;
+  required string query = 2;
+}
+
+message UnsubscribeResponse {
+  required bool success = 1;
+}
+
+// UnsubscribeAll RPC
+message UnsubscribeAllRequest {
+  required string subscriber = 1;
+}
+
+message UnsubscribeAllResponse {
+  required bool success = 1;
+}
+
+// RPC Error
+message GrpcError {
+  required int32 code = 1;
+  required string msg = 2;
+  bytes data = 3;
+}
+
+interface GrpcMessage {
+  200 = HealthRequest;
+  201 = HealthResponse;
+  202 = StatusRequest;
+  203 = StatusResponse;
+  204 = NetInfoRequest;
+  205 = NetInfoResponse;
+  206 = BroadcastTxRequest;
+  207 = BroadcastTxResponse;
+  208 = QueryRequest;
+  209 = QueryResponse;
+  210 = BlockRequest;
+  211 = BlockByHashRequest;
+  212 = BlockResponse;
+  213 = TxRequest;
+  214 = TxResponse;
+  215 = TxSearchRequest;
+  216 = TxSearchResponse;
+  217 = PeersRequest;
+  218 = PeersResponse;
+  219 = ConsensusStateRequest;
+  220 = ConsensusStateResponse;
+  221 = SubscribeRequest;
+  222 = SubscribeResponse;
+  223 = UnsubscribeRequest;
+  224 = UnsubscribeResponse;
+  225 = UnsubscribeAllRequest;
+  226 = UnsubscribeAllResponse;
+  227 = GrpcError;
+  228 = EventMessage;
+}

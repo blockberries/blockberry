@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 
 	"github.com/blockberries/blockberry/abi"
+	"github.com/blockberries/blockberry/logging"
 )
 
 // Common errors.
@@ -82,6 +84,7 @@ type Server struct {
 	eventBus abi.EventBus
 	cfg      Config
 	upgrader ws.HTTPUpgrader
+	logger   *logging.Logger
 
 	mu      sync.RWMutex
 	clients map[string]*Client
@@ -99,6 +102,7 @@ func NewServer(eventBus abi.EventBus, cfg Config) *Server {
 	s := &Server{
 		eventBus: eventBus,
 		cfg:      cfg,
+		logger:   logging.NewNopLogger().WithComponent("websocket"),
 		clients:  make(map[string]*Client),
 		ctx:      ctx,
 		cancel:   cancel,
@@ -113,6 +117,13 @@ func NewServer(eventBus abi.EventBus, cfg Config) *Server {
 	}
 
 	return s
+}
+
+// SetLogger sets the logger for the WebSocket server.
+func (s *Server) SetLogger(logger *logging.Logger) {
+	if logger != nil {
+		s.logger = logger.WithComponent("websocket")
+	}
 }
 
 // Start starts the WebSocket server.
@@ -234,6 +245,7 @@ type Client struct {
 	server     *Server
 	conn       net.Conn
 	remoteAddr string
+	logger     *logging.Logger
 
 	mu            sync.Mutex
 	subscriptions map[string]*clientSubscription
@@ -255,11 +267,13 @@ type clientSubscription struct {
 // newClient creates a new client.
 func newClient(s *Server, conn net.Conn, remoteAddr string) *Client {
 	ctx, cancel := context.WithCancel(s.ctx)
+	clientID := fmt.Sprintf("%s-%d", remoteAddr, time.Now().UnixNano())
 	return &Client{
-		id:            fmt.Sprintf("%s-%d", remoteAddr, time.Now().UnixNano()),
+		id:            clientID,
 		server:        s,
 		conn:          conn,
 		remoteAddr:    remoteAddr,
+		logger:        s.logger.With(slog.String("client_id", clientID)),
 		subscriptions: make(map[string]*clientSubscription),
 		sendCh:        make(chan []byte, 256),
 		ctx:           ctx,
@@ -528,7 +542,10 @@ func (c *Client) sendEvent(query string, event abi.Event) {
 	select {
 	case c.sendCh <- data:
 	default:
-		// Channel full, drop event
+		// Channel full, drop event and log warning
+		c.logger.Warn("event dropped: send channel full",
+			slog.String("query", query),
+			slog.String("event_type", event.Type))
 	}
 }
 
@@ -548,6 +565,9 @@ func (c *Client) sendResult(id any, result any) {
 	select {
 	case c.sendCh <- data:
 	default:
+		// Channel full, drop result and log warning
+		c.logger.Warn("result dropped: send channel full",
+			slog.Any("request_id", id))
 	}
 }
 
@@ -570,6 +590,10 @@ func (c *Client) sendError(id any, err error) {
 	select {
 	case c.sendCh <- data:
 	default:
+		// Channel full, drop error and log warning
+		c.logger.Warn("error response dropped: send channel full",
+			slog.Any("request_id", id),
+			slog.String("error", err.Error()))
 	}
 }
 

@@ -1858,6 +1858,3123 @@ func (m *SnapshotChunkResponse) Validate() error {
 }
 
 
+type GrpcNodeInfo struct {
+Id *string `cramberry:"1,required" json:"id"`
+Moniker *string `cramberry:"2,required" json:"moniker"`
+Network *string `cramberry:"3,required" json:"network"`
+Version *string `cramberry:"4,required" json:"version"`
+ListenAddr string `cramberry:"5" json:"listen_addr"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcNodeInfo) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcNodeInfo) encodeTo(w *cramberry.Writer) {
+	if m.Id != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Id)
+	}
+	if m.Moniker != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Moniker)
+	}
+	if m.Network != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Network)
+	}
+	if m.Version != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Version)
+	}
+	if m.ListenAddr != "" {
+		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteString(m.ListenAddr)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcNodeInfo) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcNodeInfo) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Id = &tmp
+		case 2:
+			var tmp string
+		tmp = r.ReadString()
+		m.Moniker = &tmp
+		case 3:
+			var tmp string
+		tmp = r.ReadString()
+		m.Network = &tmp
+		case 4:
+			var tmp string
+		tmp = r.ReadString()
+		m.Version = &tmp
+		case 5:
+			m.ListenAddr = r.ReadString()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcNodeInfo) Validate() error {
+	// Field id is required
+	if m.Id == nil {
+		return cramberry.NewValidationError("GrpcNodeInfo", "id", "required field is missing")
+	}
+	// Field moniker is required
+	if m.Moniker == nil {
+		return cramberry.NewValidationError("GrpcNodeInfo", "moniker", "required field is missing")
+	}
+	// Field network is required
+	if m.Network == nil {
+		return cramberry.NewValidationError("GrpcNodeInfo", "network", "required field is missing")
+	}
+	// Field version is required
+	if m.Version == nil {
+		return cramberry.NewValidationError("GrpcNodeInfo", "version", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcSyncInfo struct {
+LatestBlockHash []byte `cramberry:"1,required" json:"latest_block_hash"`
+LatestAppHash []byte `cramberry:"2,required" json:"latest_app_hash"`
+LatestBlockHeight *int64 `cramberry:"3,required" json:"latest_block_height"`
+LatestBlockTime *int64 `cramberry:"4,required" json:"latest_block_time"`
+EarliestBlockHeight *int64 `cramberry:"5,required" json:"earliest_block_height"`
+EarliestBlockTime *int64 `cramberry:"6,required" json:"earliest_block_time"`
+CatchingUp *bool `cramberry:"7,required" json:"catching_up"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcSyncInfo) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcSyncInfo) encodeTo(w *cramberry.Writer) {
+	if len(m.LatestBlockHash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.LatestBlockHash)
+	}
+	if len(m.LatestAppHash) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.LatestAppHash)
+	}
+	if m.LatestBlockHeight != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.LatestBlockHeight)
+	}
+	if m.LatestBlockTime != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.LatestBlockTime)
+	}
+	if m.EarliestBlockHeight != nil {
+		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.EarliestBlockHeight)
+	}
+	if m.EarliestBlockTime != nil {
+		w.WriteCompactTag(6, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.EarliestBlockTime)
+	}
+	if m.CatchingUp != nil {
+		w.WriteCompactTag(7, cramberry.WireTypeV2Varint)
+		w.WriteBool(*m.CatchingUp)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcSyncInfo) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcSyncInfo) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.LatestBlockHash = r.ReadBytes()
+		case 2:
+			m.LatestAppHash = r.ReadBytes()
+		case 3:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.LatestBlockHeight = &tmp
+		case 4:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.LatestBlockTime = &tmp
+		case 5:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.EarliestBlockHeight = &tmp
+		case 6:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.EarliestBlockTime = &tmp
+		case 7:
+			var tmp bool
+		tmp = r.ReadBool()
+		m.CatchingUp = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcSyncInfo) Validate() error {
+	// Field latest_block_hash is required
+	if m.LatestBlockHash == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "latest_block_hash", "required field is missing")
+	}
+	// Field latest_app_hash is required
+	if m.LatestAppHash == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "latest_app_hash", "required field is missing")
+	}
+	// Field latest_block_height is required
+	if m.LatestBlockHeight == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "latest_block_height", "required field is missing")
+	}
+	// Field latest_block_time is required
+	if m.LatestBlockTime == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "latest_block_time", "required field is missing")
+	}
+	// Field earliest_block_height is required
+	if m.EarliestBlockHeight == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "earliest_block_height", "required field is missing")
+	}
+	// Field earliest_block_time is required
+	if m.EarliestBlockTime == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "earliest_block_time", "required field is missing")
+	}
+	// Field catching_up is required
+	if m.CatchingUp == nil {
+		return cramberry.NewValidationError("GrpcSyncInfo", "catching_up", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcValidatorInfo struct {
+Address []byte `cramberry:"1,required" json:"address"`
+PublicKey []byte `cramberry:"2,required" json:"public_key"`
+VotingPower *int64 `cramberry:"3,required" json:"voting_power"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcValidatorInfo) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcValidatorInfo) encodeTo(w *cramberry.Writer) {
+	if len(m.Address) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Address)
+	}
+	if len(m.PublicKey) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.PublicKey)
+	}
+	if m.VotingPower != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.VotingPower)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcValidatorInfo) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcValidatorInfo) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Address = r.ReadBytes()
+		case 2:
+			m.PublicKey = r.ReadBytes()
+		case 3:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.VotingPower = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcValidatorInfo) Validate() error {
+	// Field address is required
+	if m.Address == nil {
+		return cramberry.NewValidationError("GrpcValidatorInfo", "address", "required field is missing")
+	}
+	// Field public_key is required
+	if m.PublicKey == nil {
+		return cramberry.NewValidationError("GrpcValidatorInfo", "public_key", "required field is missing")
+	}
+	// Field voting_power is required
+	if m.VotingPower == nil {
+		return cramberry.NewValidationError("GrpcValidatorInfo", "voting_power", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcHealthCheck struct {
+Status *string `cramberry:"1,required" json:"status"`
+Msg string `cramberry:"2" json:"msg"`
+Time *int64 `cramberry:"3,required" json:"time"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcHealthCheck) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcHealthCheck) encodeTo(w *cramberry.Writer) {
+	if m.Status != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Status)
+	}
+	if m.Msg != "" {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(m.Msg)
+	}
+	if m.Time != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Time)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcHealthCheck) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcHealthCheck) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Status = &tmp
+		case 2:
+			m.Msg = r.ReadString()
+		case 3:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Time = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcHealthCheck) Validate() error {
+	// Field status is required
+	if m.Status == nil {
+		return cramberry.NewValidationError("GrpcHealthCheck", "status", "required field is missing")
+	}
+	// Field time is required
+	if m.Time == nil {
+		return cramberry.NewValidationError("GrpcHealthCheck", "time", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcPeerInfo struct {
+Id *string `cramberry:"1,required" json:"id"`
+Address *string `cramberry:"2,required" json:"address"`
+IsOutbound *bool `cramberry:"3,required" json:"is_outbound"`
+ConnectionStatus *string `cramberry:"4,required" json:"connection_status"`
+NodeInfo GrpcNodeInfo `cramberry:"5" json:"node_info"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcPeerInfo) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcPeerInfo) encodeTo(w *cramberry.Writer) {
+	if m.Id != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Id)
+	}
+	if m.Address != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Address)
+	}
+	if m.IsOutbound != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Varint)
+		w.WriteBool(*m.IsOutbound)
+	}
+	if m.ConnectionStatus != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.ConnectionStatus)
+	}
+	w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+	m.NodeInfo.encodeTo(w)
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcPeerInfo) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcPeerInfo) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Id = &tmp
+		case 2:
+			var tmp string
+		tmp = r.ReadString()
+		m.Address = &tmp
+		case 3:
+			var tmp bool
+		tmp = r.ReadBool()
+		m.IsOutbound = &tmp
+		case 4:
+			var tmp string
+		tmp = r.ReadString()
+		m.ConnectionStatus = &tmp
+		case 5:
+			m.NodeInfo.decodeFrom(r)
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcPeerInfo) Validate() error {
+	// Field id is required
+	if m.Id == nil {
+		return cramberry.NewValidationError("GrpcPeerInfo", "id", "required field is missing")
+	}
+	// Field address is required
+	if m.Address == nil {
+		return cramberry.NewValidationError("GrpcPeerInfo", "address", "required field is missing")
+	}
+	// Field is_outbound is required
+	if m.IsOutbound == nil {
+		return cramberry.NewValidationError("GrpcPeerInfo", "is_outbound", "required field is missing")
+	}
+	// Field connection_status is required
+	if m.ConnectionStatus == nil {
+		return cramberry.NewValidationError("GrpcPeerInfo", "connection_status", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcBlockId struct {
+Hash []byte `cramberry:"1,required" json:"hash"`
+PartsTotal *int32 `cramberry:"2,required" json:"parts_total"`
+PartsHash []byte `cramberry:"3,required" json:"parts_hash"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcBlockId) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcBlockId) encodeTo(w *cramberry.Writer) {
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	if m.PartsTotal != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.PartsTotal)
+	}
+	if len(m.PartsHash) > 0 {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.PartsHash)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcBlockId) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcBlockId) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Hash = r.ReadBytes()
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.PartsTotal = &tmp
+		case 3:
+			m.PartsHash = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcBlockId) Validate() error {
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("GrpcBlockId", "hash", "required field is missing")
+	}
+	// Field parts_total is required
+	if m.PartsTotal == nil {
+		return cramberry.NewValidationError("GrpcBlockId", "parts_total", "required field is missing")
+	}
+	// Field parts_hash is required
+	if m.PartsHash == nil {
+		return cramberry.NewValidationError("GrpcBlockId", "parts_hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcBlock struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+Hash []byte `cramberry:"2,required" json:"hash"`
+Time *int64 `cramberry:"3,required" json:"time"`
+LastBlockHash []byte `cramberry:"4,required" json:"last_block_hash"`
+DataHash []byte `cramberry:"5,required" json:"data_hash"`
+ValidatorsHash []byte `cramberry:"6,required" json:"validators_hash"`
+AppHash []byte `cramberry:"7,required" json:"app_hash"`
+Txs [][]byte `cramberry:"8" json:"txs"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcBlock) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcBlock) encodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	if m.Time != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Time)
+	}
+	if len(m.LastBlockHash) > 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.LastBlockHash)
+	}
+	if len(m.DataHash) > 0 {
+		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.DataHash)
+	}
+	if len(m.ValidatorsHash) > 0 {
+		w.WriteCompactTag(6, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.ValidatorsHash)
+	}
+	if len(m.AppHash) > 0 {
+		w.WriteCompactTag(7, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.AppHash)
+	}
+	if len(m.Txs) > 0 {
+		w.WriteCompactTag(8, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Txs)))
+		for _, v := range m.Txs {
+			w.WriteBytes(v)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcBlock) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcBlock) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		case 2:
+			m.Hash = r.ReadBytes()
+		case 3:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Time = &tmp
+		case 4:
+			m.LastBlockHash = r.ReadBytes()
+		case 5:
+			m.DataHash = r.ReadBytes()
+		case 6:
+			m.ValidatorsHash = r.ReadBytes()
+		case 7:
+			m.AppHash = r.ReadBytes()
+		case 8:
+			n := int(r.ReadUvarint())
+		m.Txs = make([][]byte, n)
+		for i := 0; i < n; i++ {
+			m.Txs[i] = r.ReadBytes()
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcBlock) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("GrpcBlock", "height", "required field is missing")
+	}
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("GrpcBlock", "hash", "required field is missing")
+	}
+	// Field time is required
+	if m.Time == nil {
+		return cramberry.NewValidationError("GrpcBlock", "time", "required field is missing")
+	}
+	// Field last_block_hash is required
+	if m.LastBlockHash == nil {
+		return cramberry.NewValidationError("GrpcBlock", "last_block_hash", "required field is missing")
+	}
+	// Field data_hash is required
+	if m.DataHash == nil {
+		return cramberry.NewValidationError("GrpcBlock", "data_hash", "required field is missing")
+	}
+	// Field validators_hash is required
+	if m.ValidatorsHash == nil {
+		return cramberry.NewValidationError("GrpcBlock", "validators_hash", "required field is missing")
+	}
+	// Field app_hash is required
+	if m.AppHash == nil {
+		return cramberry.NewValidationError("GrpcBlock", "app_hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcTxResult struct {
+Hash []byte `cramberry:"1,required" json:"hash"`
+Height *int64 `cramberry:"2,required" json:"height"`
+Index *int32 `cramberry:"3,required" json:"index"`
+Code *int32 `cramberry:"4,required" json:"code"`
+Log string `cramberry:"5" json:"log"`
+Data []byte `cramberry:"6" json:"data"`
+GasWanted *int64 `cramberry:"7,required" json:"gas_wanted"`
+GasUsed *int64 `cramberry:"8,required" json:"gas_used"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcTxResult) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcTxResult) encodeTo(w *cramberry.Writer) {
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	if m.Height != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	if m.Index != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Index)
+	}
+	if m.Code != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Code)
+	}
+	if m.Log != "" {
+		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteString(m.Log)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(6, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	if m.GasWanted != nil {
+		w.WriteCompactTag(7, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.GasWanted)
+	}
+	if m.GasUsed != nil {
+		w.WriteCompactTag(8, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.GasUsed)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcTxResult) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcTxResult) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Hash = r.ReadBytes()
+		case 2:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		case 3:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Index = &tmp
+		case 4:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Code = &tmp
+		case 5:
+			m.Log = r.ReadString()
+		case 6:
+			m.Data = r.ReadBytes()
+		case 7:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.GasWanted = &tmp
+		case 8:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.GasUsed = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcTxResult) Validate() error {
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "hash", "required field is missing")
+	}
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "height", "required field is missing")
+	}
+	// Field index is required
+	if m.Index == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "index", "required field is missing")
+	}
+	// Field code is required
+	if m.Code == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "code", "required field is missing")
+	}
+	// Field gas_wanted is required
+	if m.GasWanted == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "gas_wanted", "required field is missing")
+	}
+	// Field gas_used is required
+	if m.GasUsed == nil {
+		return cramberry.NewValidationError("GrpcTxResult", "gas_used", "required field is missing")
+	}
+	return nil
+}
+
+
+type HealthRequest struct {
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *HealthRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *HealthRequest) encodeTo(w *cramberry.Writer) {
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *HealthRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *HealthRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type HealthResponse struct {
+Status *string `cramberry:"1,required" json:"status"`
+Checks []GrpcHealthCheck `cramberry:"2" json:"checks"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *HealthResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *HealthResponse) encodeTo(w *cramberry.Writer) {
+	if m.Status != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Status)
+	}
+	if len(m.Checks) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Checks)))
+		for _, v := range m.Checks {
+			v.encodeTo(w)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *HealthResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *HealthResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Status = &tmp
+		case 2:
+			n := int(r.ReadUvarint())
+		m.Checks = make([]GrpcHealthCheck, n)
+		for i := 0; i < n; i++ {
+			m.Checks[i].decodeFrom(r)
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *HealthResponse) Validate() error {
+	// Field status is required
+	if m.Status == nil {
+		return cramberry.NewValidationError("HealthResponse", "status", "required field is missing")
+	}
+	return nil
+}
+
+
+type StatusRequest struct {
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *StatusRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *StatusRequest) encodeTo(w *cramberry.Writer) {
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *StatusRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *StatusRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type StatusResponse struct {
+NodeInfo GrpcNodeInfo `cramberry:"1" json:"node_info"`
+SyncInfo GrpcSyncInfo `cramberry:"2" json:"sync_info"`
+ValidatorInfo GrpcValidatorInfo `cramberry:"3" json:"validator_info"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *StatusResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *StatusResponse) encodeTo(w *cramberry.Writer) {
+	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+	m.NodeInfo.encodeTo(w)
+	w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+	m.SyncInfo.encodeTo(w)
+	w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+	m.ValidatorInfo.encodeTo(w)
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *StatusResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *StatusResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.NodeInfo.decodeFrom(r)
+		case 2:
+			m.SyncInfo.decodeFrom(r)
+		case 3:
+			m.ValidatorInfo.decodeFrom(r)
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type NetInfoRequest struct {
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *NetInfoRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *NetInfoRequest) encodeTo(w *cramberry.Writer) {
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *NetInfoRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *NetInfoRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type NetInfoResponse struct {
+Listening *bool `cramberry:"1,required" json:"listening"`
+Listeners []string `cramberry:"2" json:"listeners"`
+NumPeers *int32 `cramberry:"3,required" json:"num_peers"`
+Peers []GrpcPeerInfo `cramberry:"4" json:"peers"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *NetInfoResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *NetInfoResponse) encodeTo(w *cramberry.Writer) {
+	if m.Listening != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteBool(*m.Listening)
+	}
+	if len(m.Listeners) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Listeners)))
+		for _, v := range m.Listeners {
+			w.WriteString(v)
+		}
+	}
+	if m.NumPeers != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.NumPeers)
+	}
+	if len(m.Peers) > 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Peers)))
+		for _, v := range m.Peers {
+			v.encodeTo(w)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *NetInfoResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *NetInfoResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp bool
+		tmp = r.ReadBool()
+		m.Listening = &tmp
+		case 2:
+			n := int(r.ReadUvarint())
+		m.Listeners = make([]string, n)
+		for i := 0; i < n; i++ {
+			m.Listeners[i] = r.ReadString()
+		}
+		case 3:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.NumPeers = &tmp
+		case 4:
+			n := int(r.ReadUvarint())
+		m.Peers = make([]GrpcPeerInfo, n)
+		for i := 0; i < n; i++ {
+			m.Peers[i].decodeFrom(r)
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *NetInfoResponse) Validate() error {
+	// Field listening is required
+	if m.Listening == nil {
+		return cramberry.NewValidationError("NetInfoResponse", "listening", "required field is missing")
+	}
+	// Field num_peers is required
+	if m.NumPeers == nil {
+		return cramberry.NewValidationError("NetInfoResponse", "num_peers", "required field is missing")
+	}
+	return nil
+}
+
+
+type BroadcastTxRequest struct {
+Tx []byte `cramberry:"1,required" json:"tx"`
+Mode *int32 `cramberry:"2,required" json:"mode"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BroadcastTxRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *BroadcastTxRequest) encodeTo(w *cramberry.Writer) {
+	if len(m.Tx) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Tx)
+	}
+	if m.Mode != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Mode)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BroadcastTxRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *BroadcastTxRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Tx = r.ReadBytes()
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Mode = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *BroadcastTxRequest) Validate() error {
+	// Field tx is required
+	if m.Tx == nil {
+		return cramberry.NewValidationError("BroadcastTxRequest", "tx", "required field is missing")
+	}
+	// Field mode is required
+	if m.Mode == nil {
+		return cramberry.NewValidationError("BroadcastTxRequest", "mode", "required field is missing")
+	}
+	return nil
+}
+
+
+type BroadcastTxResponse struct {
+Code *int32 `cramberry:"1,required" json:"code"`
+Hash []byte `cramberry:"2,required" json:"hash"`
+Log string `cramberry:"3" json:"log"`
+Data []byte `cramberry:"4" json:"data"`
+Height int64 `cramberry:"5" json:"height"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BroadcastTxResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *BroadcastTxResponse) encodeTo(w *cramberry.Writer) {
+	if m.Code != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Code)
+	}
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	if m.Log != "" {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteString(m.Log)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	if m.Height != 0 {
+		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(m.Height)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BroadcastTxResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *BroadcastTxResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Code = &tmp
+		case 2:
+			m.Hash = r.ReadBytes()
+		case 3:
+			m.Log = r.ReadString()
+		case 4:
+			m.Data = r.ReadBytes()
+		case 5:
+			m.Height = r.ReadInt64()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *BroadcastTxResponse) Validate() error {
+	// Field code is required
+	if m.Code == nil {
+		return cramberry.NewValidationError("BroadcastTxResponse", "code", "required field is missing")
+	}
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("BroadcastTxResponse", "hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type QueryRequest struct {
+Path *string `cramberry:"1,required" json:"path"`
+Data []byte `cramberry:"2" json:"data"`
+Height int64 `cramberry:"3" json:"height"`
+Prove bool `cramberry:"4" json:"prove"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *QueryRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *QueryRequest) encodeTo(w *cramberry.Writer) {
+	if m.Path != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Path)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	if m.Height != 0 {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(m.Height)
+	}
+	if m.Prove {
+		w.WriteCompactTag(4, cramberry.WireTypeV2Varint)
+		w.WriteBool(m.Prove)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *QueryRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *QueryRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Path = &tmp
+		case 2:
+			m.Data = r.ReadBytes()
+		case 3:
+			m.Height = r.ReadInt64()
+		case 4:
+			m.Prove = r.ReadBool()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *QueryRequest) Validate() error {
+	// Field path is required
+	if m.Path == nil {
+		return cramberry.NewValidationError("QueryRequest", "path", "required field is missing")
+	}
+	return nil
+}
+
+
+type QueryResponse struct {
+Code *int32 `cramberry:"1,required" json:"code"`
+Value []byte `cramberry:"2" json:"value"`
+Log string `cramberry:"3" json:"log"`
+Height int64 `cramberry:"4" json:"height"`
+Proof []byte `cramberry:"5" json:"proof"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *QueryResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *QueryResponse) encodeTo(w *cramberry.Writer) {
+	if m.Code != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Code)
+	}
+	if len(m.Value) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Value)
+	}
+	if m.Log != "" {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteString(m.Log)
+	}
+	if m.Height != 0 {
+		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(m.Height)
+	}
+	if len(m.Proof) > 0 {
+		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Proof)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *QueryResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *QueryResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Code = &tmp
+		case 2:
+			m.Value = r.ReadBytes()
+		case 3:
+			m.Log = r.ReadString()
+		case 4:
+			m.Height = r.ReadInt64()
+		case 5:
+			m.Proof = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *QueryResponse) Validate() error {
+	// Field code is required
+	if m.Code == nil {
+		return cramberry.NewValidationError("QueryResponse", "code", "required field is missing")
+	}
+	return nil
+}
+
+
+type BlockRequest struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *BlockRequest) encodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *BlockRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *BlockRequest) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("BlockRequest", "height", "required field is missing")
+	}
+	return nil
+}
+
+
+type BlockByHashRequest struct {
+Hash []byte `cramberry:"1,required" json:"hash"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockByHashRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *BlockByHashRequest) encodeTo(w *cramberry.Writer) {
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockByHashRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *BlockByHashRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Hash = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *BlockByHashRequest) Validate() error {
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("BlockByHashRequest", "hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type BlockResponse struct {
+Block GrpcBlock `cramberry:"1" json:"block"`
+BlockId GrpcBlockId `cramberry:"2" json:"block_id"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *BlockResponse) encodeTo(w *cramberry.Writer) {
+	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+	m.Block.encodeTo(w)
+	w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+	m.BlockId.encodeTo(w)
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *BlockResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *BlockResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Block.decodeFrom(r)
+		case 2:
+			m.BlockId.decodeFrom(r)
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type TxRequest struct {
+Hash []byte `cramberry:"1,required" json:"hash"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *TxRequest) encodeTo(w *cramberry.Writer) {
+	if len(m.Hash) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Hash)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *TxRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Hash = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *TxRequest) Validate() error {
+	// Field hash is required
+	if m.Hash == nil {
+		return cramberry.NewValidationError("TxRequest", "hash", "required field is missing")
+	}
+	return nil
+}
+
+
+type TxSearchRequest struct {
+Query *string `cramberry:"1,required" json:"query"`
+Page *int32 `cramberry:"2,required" json:"page"`
+PerPage *int32 `cramberry:"3,required" json:"per_page"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxSearchRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *TxSearchRequest) encodeTo(w *cramberry.Writer) {
+	if m.Query != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Query)
+	}
+	if m.Page != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Page)
+	}
+	if m.PerPage != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.PerPage)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxSearchRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *TxSearchRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Query = &tmp
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Page = &tmp
+		case 3:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.PerPage = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *TxSearchRequest) Validate() error {
+	// Field query is required
+	if m.Query == nil {
+		return cramberry.NewValidationError("TxSearchRequest", "query", "required field is missing")
+	}
+	// Field page is required
+	if m.Page == nil {
+		return cramberry.NewValidationError("TxSearchRequest", "page", "required field is missing")
+	}
+	// Field per_page is required
+	if m.PerPage == nil {
+		return cramberry.NewValidationError("TxSearchRequest", "per_page", "required field is missing")
+	}
+	return nil
+}
+
+
+type TxResponse struct {
+Tx GrpcTxResult `cramberry:"1" json:"tx"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *TxResponse) encodeTo(w *cramberry.Writer) {
+	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+	m.Tx.encodeTo(w)
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *TxResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Tx.decodeFrom(r)
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type TxSearchResponse struct {
+Txs []GrpcTxResult `cramberry:"1" json:"txs"`
+Total *int32 `cramberry:"2,required" json:"total"`
+Page *int32 `cramberry:"3,required" json:"page"`
+PerPage *int32 `cramberry:"4,required" json:"per_page"`
+TotalPages *int32 `cramberry:"5,required" json:"total_pages"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxSearchResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *TxSearchResponse) encodeTo(w *cramberry.Writer) {
+	if len(m.Txs) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Txs)))
+		for _, v := range m.Txs {
+			v.encodeTo(w)
+		}
+	}
+	if m.Total != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Total)
+	}
+	if m.Page != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Page)
+	}
+	if m.PerPage != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.PerPage)
+	}
+	if m.TotalPages != nil {
+		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.TotalPages)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *TxSearchResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *TxSearchResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			n := int(r.ReadUvarint())
+		m.Txs = make([]GrpcTxResult, n)
+		for i := 0; i < n; i++ {
+			m.Txs[i].decodeFrom(r)
+		}
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Total = &tmp
+		case 3:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Page = &tmp
+		case 4:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.PerPage = &tmp
+		case 5:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.TotalPages = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *TxSearchResponse) Validate() error {
+	// Field total is required
+	if m.Total == nil {
+		return cramberry.NewValidationError("TxSearchResponse", "total", "required field is missing")
+	}
+	// Field page is required
+	if m.Page == nil {
+		return cramberry.NewValidationError("TxSearchResponse", "page", "required field is missing")
+	}
+	// Field per_page is required
+	if m.PerPage == nil {
+		return cramberry.NewValidationError("TxSearchResponse", "per_page", "required field is missing")
+	}
+	// Field total_pages is required
+	if m.TotalPages == nil {
+		return cramberry.NewValidationError("TxSearchResponse", "total_pages", "required field is missing")
+	}
+	return nil
+}
+
+
+type PeersRequest struct {
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *PeersRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *PeersRequest) encodeTo(w *cramberry.Writer) {
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *PeersRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *PeersRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type PeersResponse struct {
+Peers []GrpcPeerInfo `cramberry:"1" json:"peers"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *PeersResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *PeersResponse) encodeTo(w *cramberry.Writer) {
+	if len(m.Peers) > 0 {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Peers)))
+		for _, v := range m.Peers {
+			v.encodeTo(w)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *PeersResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *PeersResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			n := int(r.ReadUvarint())
+		m.Peers = make([]GrpcPeerInfo, n)
+		for i := 0; i < n; i++ {
+			m.Peers[i].decodeFrom(r)
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type ConsensusStateRequest struct {
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *ConsensusStateRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *ConsensusStateRequest) encodeTo(w *cramberry.Writer) {
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *ConsensusStateRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *ConsensusStateRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type ConsensusStateResponse struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+Round *int32 `cramberry:"2,required" json:"round"`
+Step *string `cramberry:"3,required" json:"step"`
+StartTime *int64 `cramberry:"4,required" json:"start_time"`
+Validators []GrpcValidatorInfo `cramberry:"5" json:"validators"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *ConsensusStateResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *ConsensusStateResponse) encodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	if m.Round != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Round)
+	}
+	if m.Step != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Step)
+	}
+	if m.StartTime != nil {
+		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.StartTime)
+	}
+	if len(m.Validators) > 0 {
+		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteUvarint(uint64(len(m.Validators)))
+		for _, v := range m.Validators {
+			v.encodeTo(w)
+		}
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *ConsensusStateResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *ConsensusStateResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		case 2:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Round = &tmp
+		case 3:
+			var tmp string
+		tmp = r.ReadString()
+		m.Step = &tmp
+		case 4:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.StartTime = &tmp
+		case 5:
+			n := int(r.ReadUvarint())
+		m.Validators = make([]GrpcValidatorInfo, n)
+		for i := 0; i < n; i++ {
+			m.Validators[i].decodeFrom(r)
+		}
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *ConsensusStateResponse) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("ConsensusStateResponse", "height", "required field is missing")
+	}
+	// Field round is required
+	if m.Round == nil {
+		return cramberry.NewValidationError("ConsensusStateResponse", "round", "required field is missing")
+	}
+	// Field step is required
+	if m.Step == nil {
+		return cramberry.NewValidationError("ConsensusStateResponse", "step", "required field is missing")
+	}
+	// Field start_time is required
+	if m.StartTime == nil {
+		return cramberry.NewValidationError("ConsensusStateResponse", "start_time", "required field is missing")
+	}
+	return nil
+}
+
+
+type SubscribeRequest struct {
+Subscriber *string `cramberry:"1,required" json:"subscriber"`
+Query *string `cramberry:"2,required" json:"query"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SubscribeRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SubscribeRequest) encodeTo(w *cramberry.Writer) {
+	if m.Subscriber != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Subscriber)
+	}
+	if m.Query != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Query)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SubscribeRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SubscribeRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Subscriber = &tmp
+		case 2:
+			var tmp string
+		tmp = r.ReadString()
+		m.Query = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *SubscribeRequest) Validate() error {
+	// Field subscriber is required
+	if m.Subscriber == nil {
+		return cramberry.NewValidationError("SubscribeRequest", "subscriber", "required field is missing")
+	}
+	// Field query is required
+	if m.Query == nil {
+		return cramberry.NewValidationError("SubscribeRequest", "query", "required field is missing")
+	}
+	return nil
+}
+
+
+type EventMessage struct {
+Type *string `cramberry:"1,required" json:"type"`
+Data []byte `cramberry:"2,required" json:"data"`
+Height *int64 `cramberry:"3,required" json:"height"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *EventMessage) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *EventMessage) encodeTo(w *cramberry.Writer) {
+	if m.Type != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Type)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	if m.Height != nil {
+		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteInt64(*m.Height)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *EventMessage) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *EventMessage) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Type = &tmp
+		case 2:
+			m.Data = r.ReadBytes()
+		case 3:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *EventMessage) Validate() error {
+	// Field type is required
+	if m.Type == nil {
+		return cramberry.NewValidationError("EventMessage", "type", "required field is missing")
+	}
+	// Field data is required
+	if m.Data == nil {
+		return cramberry.NewValidationError("EventMessage", "data", "required field is missing")
+	}
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("EventMessage", "height", "required field is missing")
+	}
+	return nil
+}
+
+
+type SubscribeResponse struct {
+Event EventMessage `cramberry:"1" json:"event"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SubscribeResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *SubscribeResponse) encodeTo(w *cramberry.Writer) {
+	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+	m.Event.encodeTo(w)
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *SubscribeResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *SubscribeResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			m.Event.decodeFrom(r)
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+
+type UnsubscribeRequest struct {
+Subscriber *string `cramberry:"1,required" json:"subscriber"`
+Query *string `cramberry:"2,required" json:"query"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *UnsubscribeRequest) encodeTo(w *cramberry.Writer) {
+	if m.Subscriber != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Subscriber)
+	}
+	if m.Query != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Query)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *UnsubscribeRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Subscriber = &tmp
+		case 2:
+			var tmp string
+		tmp = r.ReadString()
+		m.Query = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *UnsubscribeRequest) Validate() error {
+	// Field subscriber is required
+	if m.Subscriber == nil {
+		return cramberry.NewValidationError("UnsubscribeRequest", "subscriber", "required field is missing")
+	}
+	// Field query is required
+	if m.Query == nil {
+		return cramberry.NewValidationError("UnsubscribeRequest", "query", "required field is missing")
+	}
+	return nil
+}
+
+
+type UnsubscribeResponse struct {
+Success *bool `cramberry:"1,required" json:"success"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *UnsubscribeResponse) encodeTo(w *cramberry.Writer) {
+	if m.Success != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteBool(*m.Success)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *UnsubscribeResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp bool
+		tmp = r.ReadBool()
+		m.Success = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *UnsubscribeResponse) Validate() error {
+	// Field success is required
+	if m.Success == nil {
+		return cramberry.NewValidationError("UnsubscribeResponse", "success", "required field is missing")
+	}
+	return nil
+}
+
+
+type UnsubscribeAllRequest struct {
+Subscriber *string `cramberry:"1,required" json:"subscriber"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeAllRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *UnsubscribeAllRequest) encodeTo(w *cramberry.Writer) {
+	if m.Subscriber != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Subscriber)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeAllRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *UnsubscribeAllRequest) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp string
+		tmp = r.ReadString()
+		m.Subscriber = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *UnsubscribeAllRequest) Validate() error {
+	// Field subscriber is required
+	if m.Subscriber == nil {
+		return cramberry.NewValidationError("UnsubscribeAllRequest", "subscriber", "required field is missing")
+	}
+	return nil
+}
+
+
+type UnsubscribeAllResponse struct {
+Success *bool `cramberry:"1,required" json:"success"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeAllResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *UnsubscribeAllResponse) encodeTo(w *cramberry.Writer) {
+	if m.Success != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteBool(*m.Success)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *UnsubscribeAllResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *UnsubscribeAllResponse) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp bool
+		tmp = r.ReadBool()
+		m.Success = &tmp
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *UnsubscribeAllResponse) Validate() error {
+	// Field success is required
+	if m.Success == nil {
+		return cramberry.NewValidationError("UnsubscribeAllResponse", "success", "required field is missing")
+	}
+	return nil
+}
+
+
+type GrpcError struct {
+Code *int32 `cramberry:"1,required" json:"code"`
+Msg *string `cramberry:"2,required" json:"msg"`
+Data []byte `cramberry:"3" json:"data"`
+}
+
+// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcError) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.encodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// encodeTo encodes the message directly to the writer using V2 format.
+func (m *GrpcError) encodeTo(w *cramberry.Writer) {
+	if m.Code != nil {
+		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteInt32(*m.Code)
+	}
+	if m.Msg != nil {
+		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteString(*m.Msg)
+	}
+	if len(m.Data) > 0 {
+		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteBytes(m.Data)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
+// This method uses direct field access without reflection for maximum performance.
+func (m *GrpcError) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.decodeFrom(r)
+	return r.Err()
+}
+
+// decodeFrom decodes the message from the reader using V2 format.
+func (m *GrpcError) decodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, _ := r.ReadCompactTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int32
+		tmp = r.ReadInt32()
+		m.Code = &tmp
+		case 2:
+			var tmp string
+		tmp = r.ReadString()
+		m.Msg = &tmp
+		case 3:
+			m.Data = r.ReadBytes()
+		default:
+			// Skip unknown field - read wire type would have been needed
+			// For now, just break as we can't determine how to skip
+			break
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *GrpcError) Validate() error {
+	// Field code is required
+	if m.Code == nil {
+		return cramberry.NewValidationError("GrpcError", "code", "required field is missing")
+	}
+	// Field msg is required
+	if m.Msg == nil {
+		return cramberry.NewValidationError("GrpcError", "msg", "required field is missing")
+	}
+	return nil
+}
+
+
 
 // HandshakeMessage is a polymorphic interface.
 type HandshakeMessage interface {
@@ -2039,6 +5156,137 @@ func StateSyncMessageTypeID(v StateSyncMessage) cramberry.TypeID {
 		return 146
 	case *SnapshotChunkResponse:
 		return 147
+	default:
+		return 0
+	}
+}
+
+// GrpcMessage is a polymorphic interface.
+type GrpcMessage interface {
+	isGrpcMessage()
+}
+
+
+func (*HealthRequest) isGrpcMessage() {}
+
+func (*HealthResponse) isGrpcMessage() {}
+
+func (*StatusRequest) isGrpcMessage() {}
+
+func (*StatusResponse) isGrpcMessage() {}
+
+func (*NetInfoRequest) isGrpcMessage() {}
+
+func (*NetInfoResponse) isGrpcMessage() {}
+
+func (*BroadcastTxRequest) isGrpcMessage() {}
+
+func (*BroadcastTxResponse) isGrpcMessage() {}
+
+func (*QueryRequest) isGrpcMessage() {}
+
+func (*QueryResponse) isGrpcMessage() {}
+
+func (*BlockRequest) isGrpcMessage() {}
+
+func (*BlockByHashRequest) isGrpcMessage() {}
+
+func (*BlockResponse) isGrpcMessage() {}
+
+func (*TxRequest) isGrpcMessage() {}
+
+func (*TxResponse) isGrpcMessage() {}
+
+func (*TxSearchRequest) isGrpcMessage() {}
+
+func (*TxSearchResponse) isGrpcMessage() {}
+
+func (*PeersRequest) isGrpcMessage() {}
+
+func (*PeersResponse) isGrpcMessage() {}
+
+func (*ConsensusStateRequest) isGrpcMessage() {}
+
+func (*ConsensusStateResponse) isGrpcMessage() {}
+
+func (*SubscribeRequest) isGrpcMessage() {}
+
+func (*SubscribeResponse) isGrpcMessage() {}
+
+func (*UnsubscribeRequest) isGrpcMessage() {}
+
+func (*UnsubscribeResponse) isGrpcMessage() {}
+
+func (*UnsubscribeAllRequest) isGrpcMessage() {}
+
+func (*UnsubscribeAllResponse) isGrpcMessage() {}
+
+func (*GrpcError) isGrpcMessage() {}
+
+func (*EventMessage) isGrpcMessage() {}
+
+
+// GrpcMessageTypeID returns the type ID for interface implementations.
+func GrpcMessageTypeID(v GrpcMessage) cramberry.TypeID {
+	switch v.(type) {
+	case *HealthRequest:
+		return 200
+	case *HealthResponse:
+		return 201
+	case *StatusRequest:
+		return 202
+	case *StatusResponse:
+		return 203
+	case *NetInfoRequest:
+		return 204
+	case *NetInfoResponse:
+		return 205
+	case *BroadcastTxRequest:
+		return 206
+	case *BroadcastTxResponse:
+		return 207
+	case *QueryRequest:
+		return 208
+	case *QueryResponse:
+		return 209
+	case *BlockRequest:
+		return 210
+	case *BlockByHashRequest:
+		return 211
+	case *BlockResponse:
+		return 212
+	case *TxRequest:
+		return 213
+	case *TxResponse:
+		return 214
+	case *TxSearchRequest:
+		return 215
+	case *TxSearchResponse:
+		return 216
+	case *PeersRequest:
+		return 217
+	case *PeersResponse:
+		return 218
+	case *ConsensusStateRequest:
+		return 219
+	case *ConsensusStateResponse:
+		return 220
+	case *SubscribeRequest:
+		return 221
+	case *SubscribeResponse:
+		return 222
+	case *UnsubscribeRequest:
+		return 223
+	case *UnsubscribeResponse:
+		return 224
+	case *UnsubscribeAllRequest:
+		return 225
+	case *UnsubscribeAllResponse:
+		return 226
+	case *GrpcError:
+		return 227
+	case *EventMessage:
+		return 228
 	default:
 		return 0
 	}

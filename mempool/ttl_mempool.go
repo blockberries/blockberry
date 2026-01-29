@@ -20,9 +20,10 @@ type TTLMempool struct {
 	priorityHeap ttlTxHeap
 
 	// Configuration
-	maxTxs   int
-	maxBytes int64
-	ttl      time.Duration
+	maxTxs    int
+	maxBytes  int64
+	maxTxSize int64 // Maximum size of a single transaction
+	ttl       time.Duration
 
 	// Priority calculation function
 	priorityFunc PriorityFunc
@@ -81,6 +82,7 @@ func (h *ttlTxHeap) Pop() any {
 type TTLMempoolConfig struct {
 	MaxTxs          int
 	MaxBytes        int64
+	MaxTxSize       int64 // Maximum size of a single transaction
 	TTL             time.Duration
 	CleanupInterval time.Duration
 	PriorityFunc    PriorityFunc
@@ -108,6 +110,7 @@ func NewTTLMempool(cfg TTLMempoolConfig) *TTLMempool {
 		priorityHeap:    make(ttlTxHeap, 0),
 		maxTxs:          cfg.MaxTxs,
 		maxBytes:        cfg.MaxBytes,
+		maxTxSize:       cfg.MaxTxSize,
 		ttl:             ttl,
 		priorityFunc:    pf,
 		cleanupInterval: cleanupInterval,
@@ -182,9 +185,15 @@ func (m *TTLMempool) AddTxWithTTL(tx []byte, ttl time.Duration) error {
 		return types.ErrInvalidTx
 	}
 
+	txSize := int64(len(tx))
+
+	// Check individual transaction size limit
+	if m.maxTxSize > 0 && txSize > m.maxTxSize {
+		return types.ErrTxTooLarge
+	}
+
 	hash := types.HashTx(tx)
 	hashKey := string(hash)
-	txSize := int64(len(tx))
 	now := time.Now()
 
 	m.mu.Lock()

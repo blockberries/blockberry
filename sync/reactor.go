@@ -297,11 +297,19 @@ func (r *SyncReactor) transitionToSyncing() {
 	r.mu.Unlock()
 }
 
+// blockRequest represents a pending block request to be sent.
+type blockRequest struct {
+	peerID peer.ID
+	start  int64
+}
+
 // requestBlocks requests blocks from peers starting from our current height.
 // Supports parallel requests to multiple peers for faster sync.
 func (r *SyncReactor) requestBlocks(since int64) {
+	// Collect requests while holding the lock
+	var requests []blockRequest
+
 	r.mu.Lock()
-	defer r.mu.Unlock()
 
 	// Clean up timed out requests
 	r.cleanupTimedOutRequestsLocked()
@@ -314,6 +322,7 @@ func (r *SyncReactor) requestBlocks(since int64) {
 	// Get peers with blocks we need
 	peers := r.getPeersWithHeightLocked(r.nextRequestHeight)
 	if len(peers) == 0 {
+		r.mu.Unlock()
 		return
 	}
 
@@ -321,10 +330,11 @@ func (r *SyncReactor) requestBlocks(since int64) {
 	currentPending := len(r.pendingRequests)
 	available := r.maxParallel - currentPending
 	if available <= 0 {
+		r.mu.Unlock()
 		return
 	}
 
-	// Request from available peers in parallel
+	// Prepare requests while holding the lock
 	peerIdx := 0
 	for i := 0; i < available && peerIdx < len(peers); i++ {
 		// Find a peer without a pending request
@@ -357,14 +367,21 @@ func (r *SyncReactor) requestBlocks(since int64) {
 		r.nextRequestHeight = endHeight + 1
 		r.lastRequest = time.Now()
 
-		// Send request (don't hold lock during network call)
+		// Collect request to send after releasing lock
+		requests = append(requests, blockRequest{peerID: peerID, start: startHeight})
+	}
+
+	r.mu.Unlock()
+
+	// Send requests outside of lock to avoid holding lock during network calls
+	for _, req := range requests {
 		go func(pid peer.ID, start int64) {
 			if err := r.SendBlocksRequest(pid, start); err != nil {
 				r.mu.Lock()
 				delete(r.pendingRequests, pid)
 				r.mu.Unlock()
 			}
-		}(peerID, startHeight)
+		}(req.peerID, req.start)
 	}
 }
 

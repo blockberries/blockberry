@@ -432,7 +432,7 @@ func (r *StateSyncReactor) applySnapshotLocked() {
 
 	r.mu.Lock()
 	if err != nil {
-		r.failWithErrorLocked(fmt.Errorf("applying snapshot: %w", err))
+		r.transitionToFailed(fmt.Errorf("applying snapshot: %w", err))
 		return
 	}
 
@@ -452,21 +452,26 @@ func (r *StateSyncReactor) applySnapshotLocked() {
 // failWithError transitions to failed state with an error.
 func (r *StateSyncReactor) failWithError(err error) {
 	r.mu.Lock()
-	r.failWithErrorLocked(err)
+	r.transitionToFailed(err)
 	r.mu.Unlock()
 }
 
-// failWithErrorLocked transitions to failed state with an error.
-// Must be called with mutex held.
-func (r *StateSyncReactor) failWithErrorLocked(err error) {
+// transitionToFailed transitions to failed state with an error.
+// Must be called with mutex held. The lock is temporarily released to call
+// the callback, then re-acquired before returning. Callers should be aware
+// that state may change during callback execution.
+func (r *StateSyncReactor) transitionToFailed(err error) {
 	r.state = StateSyncFailed
 	callback := r.onFailed
+
+	// Release lock to call callback (may be slow or cause deadlock)
 	r.mu.Unlock()
 
 	if callback != nil {
 		callback(err)
 	}
 
+	// Re-acquire lock before returning
 	r.mu.Lock()
 }
 

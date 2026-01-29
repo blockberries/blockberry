@@ -451,15 +451,15 @@ func TestConsensusReactor_StartStop(t *testing.T) {
 // Helper functions to create test message data
 
 func makeProposalData(height int64, round int32, polRound int32) []byte {
-	data := make([]byte, 33)
+	data := make([]byte, 37)
 	data[0] = MsgTypeProposal
 	binary.BigEndian.PutUint64(data[1:9], uint64(height))
 	binary.BigEndian.PutUint32(data[9:13], uint32(round))
 	binary.BigEndian.PutUint32(data[13:17], uint32(polRound))
-	// Add minimal block data
+	// Add minimal block data (8 bytes height + 4 bytes round + 8 bytes timestamp = 20 bytes)
 	binary.BigEndian.PutUint64(data[17:25], uint64(height))
 	binary.BigEndian.PutUint32(data[25:29], uint32(round))
-	binary.BigEndian.PutUint32(data[29:33], 0)
+	binary.BigEndian.PutUint64(data[29:37], 0) // timestamp (8 bytes)
 	return data
 }
 
@@ -486,10 +486,10 @@ func makeCommitData(height int64, round int32, blockHash []byte) []byte {
 }
 
 func makeBFTBlockData(height int64, round int32) []byte {
-	data := make([]byte, 17)
+	data := make([]byte, 21)
 	data[0] = MsgTypeBlock
 	binary.BigEndian.PutUint64(data[1:9], uint64(height))
 	binary.BigEndian.PutUint32(data[9:13], uint32(round))
-	binary.BigEndian.PutUint32(data[13:17], 0) // timestamp
+	binary.BigEndian.PutUint64(data[13:21], 0) // timestamp (8 bytes)
 	return data
 }

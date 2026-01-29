@@ -1,6 +1,7 @@
 package blockstore
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -38,6 +39,11 @@ func (m *MemoryBlockStore) SaveBlock(height int64, hash, data []byte) error {
 
 	if _, exists := m.blocks[height]; exists {
 		return types.ErrBlockExists
+	}
+
+	// Check for hash collision (different height with same hash)
+	if existingHeight, exists := m.byHash[string(hash)]; exists && existingHeight != height {
+		return fmt.Errorf("%w: hash already exists at height %d", types.ErrBlockAlreadyExists, existingHeight)
 	}
 
 	m.blocks[height] = blockEntry{hash: hash, data: data}

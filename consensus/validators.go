@@ -5,6 +5,7 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"sync"
 )
@@ -148,6 +149,11 @@ func (vs *SimpleValidatorSet) Quorum() int64 {
 	// For BFT, quorum is 2f+1 where f is max Byzantine nodes
 	// f = (n-1)/3, so quorum = 2*((n-1)/3) + 1 = (2n+1)/3
 	// In terms of voting power: quorum = 2/3 * total + 1
+	// Use overflow-safe calculation for large values
+	if vs.totalPower > math.MaxInt64/2 {
+		// For very large values, use division-first approach (slightly conservative)
+		return vs.totalPower/3*2 + 1
+	}
 	return (2*vs.totalPower)/3 + 1
 }
 
@@ -200,6 +206,11 @@ func (vs *SimpleValidatorSet) VerifyCommit(height int64, blockHash []byte, commi
 			continue
 		}
 
+		// Validate signature length to prevent panic in ed25519.Verify
+		if len(sig.Signature) != ed25519.SignatureSize {
+			continue
+		}
+
 		// For production: construct proper sign bytes from height/round/blockHash
 		signBytes := makeCommitSignBytes(height, commit.Round, blockHash)
 		if !ed25519.Verify(validator.PublicKey, signBytes, sig.Signature) {
@@ -209,7 +220,13 @@ func (vs *SimpleValidatorSet) VerifyCommit(height int64, blockHash []byte, commi
 		votingPower += validator.VotingPower
 	}
 
-	quorum := (2*vs.totalPower)/3 + 1
+	// Use overflow-safe quorum calculation for large values
+	var quorum int64
+	if vs.totalPower > math.MaxInt64/2 {
+		quorum = vs.totalPower/3*2 + 1
+	} else {
+		quorum = (2*vs.totalPower)/3 + 1
+	}
 	if votingPower < quorum {
 		return fmt.Errorf("%w: got %d, need %d", ErrInsufficientQuorum, votingPower, quorum)
 	}

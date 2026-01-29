@@ -160,7 +160,6 @@ func NewValidatorStatusTracker(detector ValidatorDetector, callback ValidatorSta
 // Returns true if the status changed.
 func (t *ValidatorStatusTracker) Update(valSet ValidatorSet) bool {
 	t.mu.Lock()
-	defer t.mu.Unlock()
 
 	isValidator := t.detector.IsValidator(valSet)
 	index := t.detector.ValidatorIndex(valSet)
@@ -172,19 +171,21 @@ func (t *ValidatorStatusTracker) Update(valSet ValidatorSet) bool {
 	// Check if status changed
 	statusChanged := isValidator != t.lastStatus || index != t.lastIndex
 
+	// Copy callback reference while holding lock
+	var cb ValidatorStatusCallback
 	if statusChanged {
 		t.lastStatus = isValidator
 		t.lastIndex = index
 		t.lastValidator = validator
+		cb = t.callback
+	}
 
-		if t.callback != nil {
-			// Invoke callback outside of lock to prevent deadlocks
-			// Copy values to avoid race conditions
-			cb := t.callback
-			t.mu.Unlock()
-			cb(isValidator, index, validator)
-			t.mu.Lock()
-		}
+	// Release lock before callback to prevent deadlocks and ensure panic safety
+	t.mu.Unlock()
+
+	// Invoke callback outside of lock
+	if cb != nil {
+		cb(isValidator, index, validator)
 	}
 
 	return statusChanged

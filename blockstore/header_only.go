@@ -1,6 +1,7 @@
 package blockstore
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/blockberries/blockberry/types"
@@ -31,6 +32,11 @@ func (s *HeaderOnlyBlockStore) SaveBlock(height int64, hash []byte, _ []byte) er
 
 	if _, exists := s.headers[height]; exists {
 		return types.ErrBlockAlreadyExists
+	}
+
+	// Check for hash collision (different height with same hash)
+	if existingHeight, exists := s.byHash[string(hash)]; exists && existingHeight != height {
+		return fmt.Errorf("%w: hash already exists at height %d", types.ErrBlockAlreadyExists, existingHeight)
 	}
 
 	// Store hash only, discard block data

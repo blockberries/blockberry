@@ -15,8 +15,9 @@ type SimpleMempool struct {
 	order [][]byte
 
 	// Configuration
-	maxTxs   int
-	maxBytes int64
+	maxTxs    int
+	maxBytes  int64
+	maxTxSize int64 // Maximum size of a single transaction
 
 	// Current state
 	sizeBytes int64
@@ -29,11 +30,17 @@ type SimpleMempool struct {
 
 // NewSimpleMempool creates a new simple mempool.
 func NewSimpleMempool(maxTxs int, maxBytes int64) *SimpleMempool {
+	return NewSimpleMempoolWithLimits(maxTxs, maxBytes, 0)
+}
+
+// NewSimpleMempoolWithLimits creates a new simple mempool with transaction size limit.
+func NewSimpleMempoolWithLimits(maxTxs int, maxBytes int64, maxTxSize int64) *SimpleMempool {
 	return &SimpleMempool{
-		txs:      make(map[string][]byte),
-		order:    make([][]byte, 0),
-		maxTxs:   maxTxs,
-		maxBytes: maxBytes,
+		txs:       make(map[string][]byte),
+		order:     make([][]byte, 0),
+		maxTxs:    maxTxs,
+		maxBytes:  maxBytes,
+		maxTxSize: maxTxSize,
 	}
 }
 
@@ -43,6 +50,11 @@ func NewSimpleMempool(maxTxs int, maxBytes int64) *SimpleMempool {
 func (m *SimpleMempool) AddTx(tx []byte) error {
 	if tx == nil {
 		return types.ErrInvalidTx
+	}
+
+	// Check individual transaction size limit
+	if m.maxTxSize > 0 && int64(len(tx)) > m.maxTxSize {
+		return types.ErrTxTooLarge
 	}
 
 	hash := types.HashTx(tx)
@@ -118,7 +130,11 @@ func (m *SimpleMempool) ReapTxs(maxBytes int64) [][]byte {
 	var totalBytes int64
 
 	for _, hash := range m.order {
-		tx := m.txs[string(hash)]
+		tx, exists := m.txs[string(hash)]
+		if !exists || tx == nil {
+			// Hash exists in order but not in txs map (should not happen, but be defensive)
+			continue
+		}
 		txSize := int64(len(tx))
 
 		if maxBytes > 0 && totalBytes+txSize > maxBytes {

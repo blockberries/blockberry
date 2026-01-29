@@ -383,7 +383,7 @@ func (r *ConsensusReactor) decodeCommit(data []byte) (*consensus.Commit, error) 
 // decodeBlock decodes a block from bytes.
 // TODO: Implement proper cramberry deserialization.
 func (r *ConsensusReactor) decodeBlock(data []byte) (*consensus.Block, error) {
-	if len(data) < 16 {
+	if len(data) < 20 {
 		return nil, fmt.Errorf("block data too short")
 	}
 
@@ -391,8 +391,8 @@ func (r *ConsensusReactor) decodeBlock(data []byte) (*consensus.Block, error) {
 	block := &consensus.Block{
 		Height:    int64(binary.BigEndian.Uint64(data[0:8])),
 		Round:     int32(binary.BigEndian.Uint32(data[8:12])),
-		Timestamp: int64(binary.BigEndian.Uint32(data[12:16])),
-		Data:      data[16:],
+		Timestamp: int64(binary.BigEndian.Uint64(data[12:20])),
+		Data:      data[20:],
 	}
 
 	return block, nil

@@ -17,9 +17,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/blockberries/blockberry/config"
-	"github.com/blockberries/blockberry/node"
-	bsync "github.com/blockberries/blockberry/sync"
+	"github.com/blockberries/blockberry/pkg/config"
+	"github.com/blockberries/blockberry/pkg/node"
+	bsync "github.com/blockberries/blockberry/internal/sync"
 )
 
 func main() {

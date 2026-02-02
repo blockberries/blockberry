@@ -15,11 +15,11 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/blockberries/blockberry/config"
-	"github.com/blockberries/blockberry/mempool"
-	"github.com/blockberries/blockberry/node"
-	bsync "github.com/blockberries/blockberry/sync"
-	"github.com/blockberries/blockberry/types"
+	"github.com/blockberries/blockberry/pkg/config"
+	"github.com/blockberries/blockberry/pkg/mempool"
+	"github.com/blockberries/blockberry/pkg/node"
+	bsync "github.com/blockberries/blockberry/internal/sync"
+	"github.com/blockberries/blockberry/pkg/types"
 )
 
 func main() {

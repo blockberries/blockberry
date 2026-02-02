@@ -16,11 +16,11 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/blockberries/blockberry/config"
-	"github.com/blockberries/blockberry/handlers"
-	"github.com/blockberries/blockberry/node"
-	bsync "github.com/blockberries/blockberry/sync"
-	"github.com/blockberries/blockberry/types"
+	"github.com/blockberries/blockberry/pkg/config"
+	"github.com/blockberries/blockberry/internal/handlers"
+	"github.com/blockberries/blockberry/pkg/node"
+	bsync "github.com/blockberries/blockberry/internal/sync"
+	"github.com/blockberries/blockberry/pkg/types"
 )
 
 func main() {

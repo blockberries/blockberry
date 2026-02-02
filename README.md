@@ -70,8 +70,8 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/blockberries/blockberry/config"
-    "github.com/blockberries/blockberry/node"
+    "github.com/blockberries/blockberry/pkg/config"
+    "github.com/blockberries/blockberry/pkg/node"
 )
 
 func main() {
@@ -114,9 +114,8 @@ import (
 
     "github.com/libp2p/go-libp2p/core/peer"
 
-    "github.com/blockberries/blockberry/config"
-    "github.com/blockberries/blockberry/handlers"
-    "github.com/blockberries/blockberry/node"
+    "github.com/blockberries/blockberry/pkg/config"
+    "github.com/blockberries/blockberry/pkg/node"
 )
 
 // MyConsensus implements the ConsensusHandler interface
@@ -372,20 +371,35 @@ make generate
 
 ```
 github.com/blockberries/blockberry/
-├── blockstore/    # Block storage implementations
-├── config/        # Configuration loading and validation
-├── handlers/      # Message handlers (handshake, transactions, blocks, consensus)
-├── logging/       # Structured logging with slog integration
-├── mempool/       # Transaction pool (simple, priority, TTL implementations)
-├── metrics/       # Prometheus metrics collection
-├── node/          # Main Node coordinator
-├── p2p/           # Peer management, scoring, and rate limiting
-├── pex/           # Peer exchange protocol
-├── schema/        # Generated cramberry message types
-├── statestore/    # IAVL state storage with ICS23 proofs
-├── sync/          # Block synchronization
-├── testing/       # Integration test helpers
-└── types/         # Common types, errors, and validation
+├── cmd/
+│   └── blockberry/     # CLI application
+├── pkg/                # Public API packages
+│   ├── abi/            # Application Binary Interface
+│   ├── blockstore/     # Block storage implementations
+│   ├── config/         # Configuration loading and validation
+│   ├── consensus/      # Consensus interfaces and implementations
+│   ├── events/         # Event bus implementation
+│   ├── indexer/        # Transaction indexing
+│   ├── logging/        # Structured logging with slog integration
+│   ├── mempool/        # Transaction pool (simple, priority, TTL, looseberry)
+│   ├── metrics/        # Prometheus metrics collection
+│   ├── node/           # Main Node coordinator
+│   ├── rpc/            # RPC servers (gRPC, JSON-RPC, WebSocket)
+│   ├── statestore/     # IAVL state storage with ICS23 proofs
+│   ├── tracing/        # OpenTelemetry tracing integration
+│   └── types/          # Common types, errors, and validation
+├── internal/           # Private implementation packages
+│   ├── container/      # Dependency injection container
+│   ├── handlers/       # Message handlers (handshake, transactions, blocks, consensus)
+│   ├── memory/         # Buffer pool utilities
+│   ├── p2p/            # Peer management, scoring, and rate limiting
+│   ├── pex/            # Peer exchange protocol
+│   ├── security/       # Security utilities (eclipse detection, rate limiting)
+│   └── sync/           # Block synchronization
+├── schema/             # Generated cramberry message types
+├── examples/           # Example applications
+├── test/               # Integration test helpers
+└── docs/               # Documentation
 ```
 
 ## Dependencies

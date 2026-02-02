@@ -1,7 +1,9 @@
 package blockstore
 
 import (
+	"encoding/binary"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -9,6 +11,8 @@ import (
 	"github.com/dgraph-io/badger/v4/options"
 
 	"github.com/blockberries/blockberry/types"
+	"github.com/blockberries/cramberry/pkg/cramberry"
+	loosetypes "github.com/blockberries/looseberry/types"
 )
 
 // BadgerDBBlockStore implements BlockStore using BadgerDB.
@@ -587,8 +591,333 @@ func compareKeys(a, b []byte) int {
 	return 0
 }
 
-// Ensure BadgerDBBlockStore implements PrunableBlockStore.
+// Ensure BadgerDBBlockStore implements PrunableBlockStore and CertificateBlockStore.
 var _ PrunableBlockStore = (*BadgerDBBlockStore)(nil)
+var _ CertificateBlockStore = (*BadgerDBBlockStore)(nil)
+
+// SaveCertificate persists a DAG certificate with multiple indexes.
+func (s *BadgerDBBlockStore) SaveCertificate(cert *loosetypes.Certificate) error {
+	if cert == nil {
+		return fmt.Errorf("cannot save nil certificate")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create defensive copy of digest
+	digest := cert.Digest()
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	// Check if certificate already exists
+	certKey := makeCertKey(digestCopy)
+	err := s.db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(certKey)
+		return err
+	})
+	if err == nil {
+		return types.ErrCertificateAlreadyExists
+	}
+	if err != badger.ErrKeyNotFound {
+		return fmt.Errorf("checking certificate existence: %w", err)
+	}
+
+	// Marshal certificate with cramberry
+	data, err := cramberry.Marshal(cert)
+	if err != nil {
+		return fmt.Errorf("failed to marshal certificate: %w", err)
+	}
+
+	// Use transaction for atomic write
+	err = s.db.Update(func(txn *badger.Txn) error {
+		// Primary key: C:<digest>
+		if err := txn.Set(certKey, data); err != nil {
+			return err
+		}
+
+		// Round index: CR:<round>:<validator_idx>
+		roundKey := makeCertRoundKey(cert.Round(), cert.Author())
+		if err := txn.Set(roundKey, digestCopy); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("writing certificate: %w", err)
+	}
+
+	return nil
+}
+
+// GetCertificate retrieves a certificate by its digest.
+func (s *BadgerDBBlockStore) GetCertificate(digest loosetypes.Hash) (*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var cert loosetypes.Certificate
+	err := s.db.View(func(txn *badger.Txn) error {
+		key := makeCertKey(digest[:])
+		item, err := txn.Get(key)
+		if err == badger.ErrKeyNotFound {
+			return types.ErrCertificateNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			return cramberry.Unmarshal(val, &cert)
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &cert, nil
+}
+
+// GetCertificatesForRound retrieves all certificates for a given DAG round.
+func (s *BadgerDBBlockStore) GetCertificatesForRound(round uint64) ([]*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var certs []*loosetypes.Certificate
+	prefix := makeCertRoundPrefix(round)
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = true
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			digest, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+
+			// Load the certificate
+			certKey := makeCertKey(digest)
+			certItem, err := txn.Get(certKey)
+			if err != nil {
+				return fmt.Errorf("loading certificate for round %d: %w", round, err)
+			}
+
+			var cert loosetypes.Certificate
+			if err := certItem.Value(func(val []byte) error {
+				return cramberry.Unmarshal(val, &cert)
+			}); err != nil {
+				return err
+			}
+			certs = append(certs, &cert)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// GetCertificatesForHeight retrieves all certificates committed at a given block height.
+func (s *BadgerDBBlockStore) GetCertificatesForHeight(height int64) ([]*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var certs []*loosetypes.Certificate
+	prefix := makeCertHeightPrefix(height)
+
+	err := s.db.View(func(txn *badger.Txn) error {
+		opts := badger.DefaultIteratorOptions
+		opts.Prefix = prefix
+		opts.PrefetchValues = true
+
+		it := txn.NewIterator(opts)
+		defer it.Close()
+
+		for it.Rewind(); it.Valid(); it.Next() {
+			item := it.Item()
+			digest, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+
+			// Load the certificate
+			certKey := makeCertKey(digest)
+			certItem, err := txn.Get(certKey)
+			if err != nil {
+				return fmt.Errorf("loading certificate for height %d: %w", height, err)
+			}
+
+			var cert loosetypes.Certificate
+			if err := certItem.Value(func(val []byte) error {
+				return cramberry.Unmarshal(val, &cert)
+			}); err != nil {
+				return err
+			}
+			certs = append(certs, &cert)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// SetCertificateBlockHeight updates the block height index for a certificate.
+func (s *BadgerDBBlockStore) SetCertificateBlockHeight(digest loosetypes.Hash, height int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	return s.db.Update(func(txn *badger.Txn) error {
+		// Verify certificate exists
+		certKey := makeCertKey(digestCopy)
+		item, err := txn.Get(certKey)
+		if err == badger.ErrKeyNotFound {
+			return types.ErrCertificateNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("checking certificate: %w", err)
+		}
+
+		// Get validator index from certificate
+		var cert loosetypes.Certificate
+		if err := item.Value(func(val []byte) error {
+			return cramberry.Unmarshal(val, &cert)
+		}); err != nil {
+			return err
+		}
+
+		// Create height index entry
+		heightKey := makeCertHeightKey(height, cert.Author())
+		return txn.Set(heightKey, digestCopy)
+	})
+}
+
+// SaveBatch persists a transaction batch.
+func (s *BadgerDBBlockStore) SaveBatch(batch *loosetypes.Batch) error {
+	if batch == nil {
+		return fmt.Errorf("cannot save nil batch")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create defensive copy of digest
+	digest := batch.Digest
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	// Check if batch already exists
+	batchKey := makeBatchKey(digestCopy)
+	err := s.db.View(func(txn *badger.Txn) error {
+		_, err := txn.Get(batchKey)
+		return err
+	})
+	if err == nil {
+		return types.ErrBatchAlreadyExists
+	}
+	if err != badger.ErrKeyNotFound {
+		return fmt.Errorf("checking batch existence: %w", err)
+	}
+
+	// Marshal batch with cramberry
+	data, err := cramberry.Marshal(batch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal batch: %w", err)
+	}
+
+	// Write batch data
+	return s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(batchKey, data)
+	})
+}
+
+// GetBatch retrieves a batch by its digest.
+func (s *BadgerDBBlockStore) GetBatch(digest loosetypes.Hash) (*loosetypes.Batch, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	var batch loosetypes.Batch
+	err := s.db.View(func(txn *badger.Txn) error {
+		key := makeBatchKey(digest[:])
+		item, err := txn.Get(key)
+		if err == badger.ErrKeyNotFound {
+			return types.ErrBatchNotFound
+		}
+		if err != nil {
+			return err
+		}
+
+		return item.Value(func(val []byte) error {
+			return cramberry.Unmarshal(val, &batch)
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &batch, nil
+}
+
+// BadgerDB certificate key helpers (shared format with LevelDB)
+
+// makeBadgerCertKey creates a key for storing certificate data.
+func makeBadgerCertKey(digest []byte) []byte {
+	return makeCertKey(digest)
+}
+
+// makeBadgerCertRoundKey creates a key for the round index.
+func makeBadgerCertRoundKey(round uint64, validatorIdx uint16) []byte {
+	return makeCertRoundKey(round, validatorIdx)
+}
+
+// makeBadgerCertRoundPrefix creates a prefix for iterating certificates by round.
+func makeBadgerCertRoundPrefix(round uint64) []byte {
+	return makeCertRoundPrefix(round)
+}
+
+// makeBadgerCertHeightKey creates a key for the height index.
+func makeBadgerCertHeightKey(height int64, validatorIdx uint16) []byte {
+	key := make([]byte, len(prefixCertHeight)+8+2)
+	copy(key, prefixCertHeight)
+	binary.BigEndian.PutUint64(key[len(prefixCertHeight):], uint64(height)) //nolint:gosec // height is always non-negative
+	binary.BigEndian.PutUint16(key[len(prefixCertHeight)+8:], validatorIdx)
+	return key
+}
+
+// makeBadgerCertHeightPrefix creates a prefix for iterating certificates by height.
+func makeBadgerCertHeightPrefix(height int64) []byte {
+	key := make([]byte, len(prefixCertHeight)+8)
+	copy(key, prefixCertHeight)
+	binary.BigEndian.PutUint64(key[len(prefixCertHeight):], uint64(height)) //nolint:gosec // height is always non-negative
+	return key
+}
+
+// makeBadgerBatchKey creates a key for storing batch data.
+func makeBadgerBatchKey(digest []byte) []byte {
+	return makeBatchKey(digest)
+}
 
 // BadgerDBIterator provides an iterator over BadgerDB blocks.
 type BadgerDBIterator struct {

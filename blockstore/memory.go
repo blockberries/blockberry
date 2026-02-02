@@ -2,10 +2,12 @@ package blockstore
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/blockberries/blockberry/types"
+	loosetypes "github.com/blockberries/looseberry/types"
 )
 
 // MemoryBlockStore implements BlockStore with in-memory storage.
@@ -17,6 +19,12 @@ type MemoryBlockStore struct {
 	base     int64
 	pruneCfg *PruneConfig
 	mu       sync.RWMutex
+
+	// Certificate storage
+	certs        map[string]*loosetypes.Certificate // digest -> certificate
+	certsByRound map[uint64][]string                // round -> list of digests
+	certsByHeight map[int64][]string                // height -> list of digests
+	batches      map[string]*loosetypes.Batch       // digest -> batch
 }
 
 type blockEntry struct {
@@ -27,8 +35,12 @@ type blockEntry struct {
 // NewMemoryBlockStore creates a new in-memory block store.
 func NewMemoryBlockStore() *MemoryBlockStore {
 	return &MemoryBlockStore{
-		blocks: make(map[int64]blockEntry),
-		byHash: make(map[string]int64),
+		blocks:        make(map[int64]blockEntry),
+		byHash:        make(map[string]int64),
+		certs:         make(map[string]*loosetypes.Certificate),
+		certsByRound:  make(map[uint64][]string),
+		certsByHeight: make(map[int64][]string),
+		batches:       make(map[string]*loosetypes.Batch),
 	}
 }
 
@@ -200,5 +212,148 @@ func (m *MemoryBlockStore) SetPruneConfig(cfg *PruneConfig) {
 	m.pruneCfg = cfg
 }
 
-// Ensure MemoryBlockStore implements PrunableBlockStore.
+// Ensure MemoryBlockStore implements PrunableBlockStore and CertificateBlockStore.
 var _ PrunableBlockStore = (*MemoryBlockStore)(nil)
+var _ CertificateBlockStore = (*MemoryBlockStore)(nil)
+
+// SaveCertificate persists a DAG certificate.
+func (m *MemoryBlockStore) SaveCertificate(cert *loosetypes.Certificate) error {
+	if cert == nil {
+		return fmt.Errorf("cannot save nil certificate")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	digest := cert.Digest()
+	digestKey := string(digest[:])
+
+	if _, exists := m.certs[digestKey]; exists {
+		return types.ErrCertificateAlreadyExists
+	}
+
+	// Store a clone to prevent external mutation
+	m.certs[digestKey] = cert.Clone()
+
+	// Update round index
+	round := cert.Round()
+	m.certsByRound[round] = append(m.certsByRound[round], digestKey)
+
+	return nil
+}
+
+// GetCertificate retrieves a certificate by its digest.
+func (m *MemoryBlockStore) GetCertificate(digest loosetypes.Hash) (*loosetypes.Certificate, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	digestKey := string(digest[:])
+	cert, exists := m.certs[digestKey]
+	if !exists {
+		return nil, types.ErrCertificateNotFound
+	}
+
+	// Return a clone to prevent external mutation
+	return cert.Clone(), nil
+}
+
+// GetCertificatesForRound retrieves all certificates for a given DAG round.
+func (m *MemoryBlockStore) GetCertificatesForRound(round uint64) ([]*loosetypes.Certificate, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	digests, exists := m.certsByRound[round]
+	if !exists || len(digests) == 0 {
+		return nil, nil
+	}
+
+	certs := make([]*loosetypes.Certificate, 0, len(digests))
+	for _, digestKey := range digests {
+		cert, exists := m.certs[digestKey]
+		if exists {
+			certs = append(certs, cert.Clone())
+		}
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// GetCertificatesForHeight retrieves all certificates committed at a given block height.
+func (m *MemoryBlockStore) GetCertificatesForHeight(height int64) ([]*loosetypes.Certificate, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	digests, exists := m.certsByHeight[height]
+	if !exists || len(digests) == 0 {
+		return nil, nil
+	}
+
+	certs := make([]*loosetypes.Certificate, 0, len(digests))
+	for _, digestKey := range digests {
+		cert, exists := m.certs[digestKey]
+		if exists {
+			certs = append(certs, cert.Clone())
+		}
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// SetCertificateBlockHeight updates the block height index for a certificate.
+func (m *MemoryBlockStore) SetCertificateBlockHeight(digest loosetypes.Hash, height int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	digestKey := string(digest[:])
+	if _, exists := m.certs[digestKey]; !exists {
+		return types.ErrCertificateNotFound
+	}
+
+	// Add to height index
+	m.certsByHeight[height] = append(m.certsByHeight[height], digestKey)
+	return nil
+}
+
+// SaveBatch persists a transaction batch.
+func (m *MemoryBlockStore) SaveBatch(batch *loosetypes.Batch) error {
+	if batch == nil {
+		return fmt.Errorf("cannot save nil batch")
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	digestKey := string(batch.Digest[:])
+	if _, exists := m.batches[digestKey]; exists {
+		return types.ErrBatchAlreadyExists
+	}
+
+	// Store a clone to prevent external mutation
+	m.batches[digestKey] = batch.Clone()
+	return nil
+}
+
+// GetBatch retrieves a batch by its digest.
+func (m *MemoryBlockStore) GetBatch(digest loosetypes.Hash) (*loosetypes.Batch, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	digestKey := string(digest[:])
+	batch, exists := m.batches[digestKey]
+	if !exists {
+		return nil, types.ErrBatchNotFound
+	}
+
+	// Return a clone to prevent external mutation
+	return batch.Clone(), nil
+}

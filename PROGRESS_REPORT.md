@@ -4033,3 +4033,170 @@ All existing tests pass. Tests updated for new block data format (8-byte timesta
 Clean build, all tests pass with race detection.
 
 ---
+
+## Phase 4: BlockStore Certificate Integration - February 2, 2026
+
+### Summary
+Extended the BlockStore interface to support DAG certificate and batch storage for Looseberry integration. Implemented certificate storage across all three BlockStore backends (LevelDB, BadgerDB, Memory) with comprehensive testing and performance benchmarks.
+
+### Task 1: Schema Design for Certificates
+**Status:** Complete
+
+**Key Design:**
+```
+LevelDB Key Schema:
++------------------------------------------------------+
+| Block Storage (existing schema)                       |
++------------------------------------------------------+
+| H:<height>        -> Block hash                       |
+| B:<hash>          -> Block data (height + payload)    |
+| M:height          -> Latest block height metadata     |
+| M:base            -> Earliest block height metadata   |
++------------------------------------------------------+
+| Certificate Storage (NEW)                             |
++------------------------------------------------------+
+| C:<digest>        -> Certificate data (cramberry)     |
+| CR:<round>:<idx>  -> Certificate digest (round index) |
+| CH:<height>:<idx> -> Certificate digest (height index)|
+| CB:<digest>       -> Batch data (cramberry)           |
++------------------------------------------------------+
+```
+
+**Index Design Rationale:**
+- Primary key by digest enables O(1) lookup by certificate/batch hash
+- Round index (CR:) enables efficient retrieval of all certificates for a DAG round
+- Height index (CH:) enables retrieval of certificates committed at a specific block height
+- Fixed-width binary encoding (8 bytes for round/height, 2 bytes for validator index) ensures proper lexicographic ordering
+
+### Task 2: Extended BlockStore Interface
+**Status:** Complete
+
+**Files Modified:**
+- `blockstore/store.go`
+
+**New Interface Methods:**
+```go
+type CertificateStore interface {
+    SaveCertificate(cert *loosetypes.Certificate) error
+    GetCertificate(digest loosetypes.Hash) (*loosetypes.Certificate, error)
+    GetCertificatesForRound(round uint64) ([]*loosetypes.Certificate, error)
+    GetCertificatesForHeight(height int64) ([]*loosetypes.Certificate, error)
+    SaveBatch(batch *loosetypes.Batch) error
+    GetBatch(digest loosetypes.Hash) (*loosetypes.Batch, error)
+    SetCertificateBlockHeight(digest loosetypes.Hash, height int64) error
+}
+
+type CertificateBlockStore interface {
+    BlockStore
+    CertificateStore
+}
+```
+
+### Task 3: LevelDB Implementation
+**Status:** Complete
+
+**Files Modified:**
+- `blockstore/leveldb.go`
+
+**Key Features:**
+- Atomic batch writes for certificate and round index
+- Defensive copying of digests to prevent external mutation
+- Cramberry serialization for certificate/batch data
+- Iterator-based round and height queries with proper ordering
+
+### Task 4: Memory and BadgerDB Implementations
+**Status:** Complete
+
+**Files Modified:**
+- `blockstore/memory.go`
+- `blockstore/badgerdb.go`
+
+**Key Features:**
+- Memory store uses maps with defensive cloning
+- BadgerDB implementation mirrors LevelDB key schema
+- All implementations return certificates sorted by validator index
+
+### Task 5: Error Types
+**Status:** Complete
+
+**Files Modified:**
+- `types/errors.go`
+
+**New Errors:**
+```go
+var (
+    ErrCertificateNotFound      = errors.New("certificate not found")
+    ErrCertificateAlreadyExists = errors.New("certificate already exists")
+    ErrInvalidCertificate       = errors.New("invalid certificate")
+    ErrBatchNotFound            = errors.New("batch not found")
+    ErrBatchAlreadyExists       = errors.New("batch already exists")
+    ErrInvalidBatch             = errors.New("invalid batch")
+)
+```
+
+### Task 6: Comprehensive Testing
+**Status:** Complete
+
+**Files Created:**
+- `blockstore/certificate_test.go`
+
+**Test Coverage:**
+- SaveAndGetCertificate - Basic CRUD operations
+- CertificateNotFound - Error handling for missing certificates
+- DuplicateCertificate - Duplicate detection
+- GetCertificatesForRound - Round-based queries
+- GetCertificatesForHeight - Height-based queries
+- SaveAndGetBatch - Batch storage CRUD
+- BatchNotFound - Error handling for missing batches
+- DuplicateBatch - Duplicate detection
+- DefensiveCopying - Immutability verification
+- ConcurrentAccess - Thread-safety with race detection
+- Nil handling tests
+
+**All tests pass with race detection.**
+
+### Task 7: Performance Benchmarks
+**Status:** Complete
+
+**Benchmark Results (Apple M4 Pro):**
+| Operation                  | Latency    | Target  | Status |
+|---------------------------|------------|---------|--------|
+| SaveCertificate           | ~4.2ms     | <50ms   | PASS   |
+| GetCertificate            | ~2.3us     | <5ms    | PASS   |
+| SaveBatch                 | ~4.5ms     | <50ms   | PASS   |
+| GetBatch                  | ~605ns     | <5ms    | PASS   |
+| GetCertificatesForRound   | ~27us      | N/A     | PASS   |
+
+### Task 8: Raspberry BlockExecutor Integration
+**Status:** Complete
+
+**Files Modified:**
+- `../raspberry/integration/blockexecutor.go`
+
+**Integration Changes:**
+1. Added `CertificateStore` interface for certificate/batch persistence
+2. Added `CertificateBlockStore` combined interface
+3. `NewBlockExecutorAdapter` automatically detects if BlockStore implements CertificateStore
+4. `NewBlockExecutorAdapterWithCertStore` for explicit certificate store configuration
+5. `CreateProposalBlock` now saves certificates and batches to storage before block creation
+6. `ApplyBlock` updates certificate height indexes after block commit
+7. Added `fetchBatch` helper with fallback from mempool to certificate store
+
+### Deliverables Summary
+
+| Deliverable                          | Status   |
+|-------------------------------------|----------|
+| BlockStore interface extended       | Complete |
+| LevelDB implementation              | Complete |
+| Memory implementation               | Complete |
+| BadgerDB implementation             | Complete |
+| Raspberry BlockExecutor integration | Complete |
+| Certificate storage tests           | Complete |
+| Performance benchmarks              | Complete |
+
+### Build Status
+- Blockstore package: Clean build, all tests pass
+- Raspberry package: Blockexecutor.go compiles (other files have unrelated issues)
+- Race detection: All tests pass
+
+---

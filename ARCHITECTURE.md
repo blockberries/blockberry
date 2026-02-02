@@ -1180,3 +1180,17 @@ github.com/blockberries/blockberry/
     ├── custom_mempool/
     └── mock_consensus/
 ```
+
+---
+
+## Ecosystem References
+
+Blockberry is part of the Blockberries ecosystem. For complete integration documentation:
+
+- **[../ECOSYSTEM.md](../ECOSYSTEM.md)** - Complete ecosystem architecture and canonical interface definitions
+- **[../raspberry/ARCHITECTURE.md](../raspberry/ARCHITECTURE.md)** - Blockchain node that integrates all components
+- **[../punnet-sdk/ARCHITECTURE.md](../punnet-sdk/ARCHITECTURE.md)** - Application module framework
+- **[../leaderberry/ARCHITECTURE.md](../leaderberry/ARCHITECTURE.md)** - BFT consensus engine
+- **[../looseberry/ARCHITECTURE.md](../looseberry/ARCHITECTURE.md)** - DAG mempool for high throughput
+- **[../glueberry/ARCHITECTURE.md](../glueberry/ARCHITECTURE.md)** - Encrypted P2P networking
+- **[../cramberry/ARCHITECTURE.md](../cramberry/ARCHITECTURE.md)** - Binary serialization

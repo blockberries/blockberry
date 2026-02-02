@@ -169,3 +169,27 @@ var (
 	// ErrNodeStopped is returned when operations are attempted after the node stops.
 	ErrNodeStopped = errors.New("node stopped")
 )
+
+// Certificate-related errors (DAG mempool).
+var (
+	// ErrCertificateNotFound is returned when a certificate cannot be found.
+	ErrCertificateNotFound = errors.New("certificate not found")
+
+	// ErrCertificateAlreadyExists is returned when attempting to store a certificate that already exists.
+	ErrCertificateAlreadyExists = errors.New("certificate already exists")
+
+	// ErrInvalidCertificate is returned when a certificate fails validation.
+	ErrInvalidCertificate = errors.New("invalid certificate")
+)
+
+// Batch-related errors (DAG mempool).
+var (
+	// ErrBatchNotFound is returned when a batch cannot be found.
+	ErrBatchNotFound = errors.New("batch not found")
+
+	// ErrBatchAlreadyExists is returned when attempting to store a batch that already exists.
+	ErrBatchAlreadyExists = errors.New("batch already exists")
+
+	// ErrInvalidBatch is returned when a batch fails validation.
+	ErrInvalidBatch = errors.New("invalid batch")
+)

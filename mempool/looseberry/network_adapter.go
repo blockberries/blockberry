@@ -17,14 +17,15 @@ type networkAdapter struct {
 	validatorSet   *validatorSetAdapter
 
 	// Message channels
-	batchMessages        chan *lbnetwork.BatchMessage
-	batchAckMessages     chan *lbnetwork.BatchAckMessage
-	batchRequestMessages chan *lbnetwork.BatchRequestMessage
-	headerMessages       chan *lbnetwork.HeaderMessage
-	voteMessages         chan *lbnetwork.VoteMessage
-	certificateMessages  chan *lbnetwork.CertificateMessage
-	syncRequests         chan *lbnetwork.SyncRequest
-	syncResponses        chan *lbnetwork.SyncResponseMessage
+	batchMessages         chan *lbnetwork.BatchMessage
+	batchAckMessages      chan *lbnetwork.BatchAckMessage
+	batchRequestMessages  chan *lbnetwork.BatchRequestMessage
+	batchResponseMessages chan *lbnetwork.BatchResponseMessage
+	headerMessages        chan *lbnetwork.HeaderMessage
+	voteMessages          chan *lbnetwork.VoteMessage
+	certificateMessages   chan *lbnetwork.CertificateMessage
+	syncRequests          chan *lbnetwork.SyncRequest
+	syncResponses         chan *lbnetwork.SyncResponseMessage
 
 	// Lifecycle
 	stopCh chan struct{}
@@ -36,18 +37,19 @@ func newNetworkAdapter(network mempool.MempoolNetwork, validatorIndex uint16, va
 	bufferSize := 1000
 
 	return &networkAdapter{
-		network:              network,
-		validatorIndex:       validatorIndex,
-		validatorSet:         validatorSet,
-		batchMessages:        make(chan *lbnetwork.BatchMessage, bufferSize),
-		batchAckMessages:     make(chan *lbnetwork.BatchAckMessage, bufferSize),
-		batchRequestMessages: make(chan *lbnetwork.BatchRequestMessage, bufferSize),
-		headerMessages:       make(chan *lbnetwork.HeaderMessage, bufferSize),
-		voteMessages:         make(chan *lbnetwork.VoteMessage, bufferSize),
-		certificateMessages:  make(chan *lbnetwork.CertificateMessage, bufferSize),
-		syncRequests:         make(chan *lbnetwork.SyncRequest, bufferSize),
-		syncResponses:        make(chan *lbnetwork.SyncResponseMessage, bufferSize),
-		stopCh:               make(chan struct{}),
+		network:               network,
+		validatorIndex:        validatorIndex,
+		validatorSet:          validatorSet,
+		batchMessages:         make(chan *lbnetwork.BatchMessage, bufferSize),
+		batchAckMessages:      make(chan *lbnetwork.BatchAckMessage, bufferSize),
+		batchRequestMessages:  make(chan *lbnetwork.BatchRequestMessage, bufferSize),
+		batchResponseMessages: make(chan *lbnetwork.BatchResponseMessage, bufferSize),
+		headerMessages:        make(chan *lbnetwork.HeaderMessage, bufferSize),
+		voteMessages:          make(chan *lbnetwork.VoteMessage, bufferSize),
+		certificateMessages:   make(chan *lbnetwork.CertificateMessage, bufferSize),
+		syncRequests:          make(chan *lbnetwork.SyncRequest, bufferSize),
+		syncResponses:         make(chan *lbnetwork.SyncResponseMessage, bufferSize),
+		stopCh:                make(chan struct{}),
 	}
 }
 
@@ -107,6 +109,16 @@ func (n *networkAdapter) SendBatchRequest(validator uint16, req *lbnetwork.Batch
 	return n.network.Send(peerID, StreamBatches, data)
 }
 
+// SendBatchResponse sends a batch response to a specific validator.
+func (n *networkAdapter) SendBatchResponse(validator uint16, resp *lbnetwork.BatchResponseMessage) error {
+	peerID, err := n.validatorToPeerID(validator)
+	if err != nil {
+		return err
+	}
+	data := encodeBatchResponse(resp)
+	return n.network.Send(peerID, StreamBatches, data)
+}
+
 // SendSyncRequest sends a sync request to a specific validator.
 func (n *networkAdapter) SendSyncRequest(validator uint16, req *lbnetwork.SyncRequest) error {
 	peerID, err := n.validatorToPeerID(validator)
@@ -140,6 +152,11 @@ func (n *networkAdapter) BatchAckMessages() <-chan *lbnetwork.BatchAckMessage {
 // BatchRequestMessages returns the channel for incoming batch request messages.
 func (n *networkAdapter) BatchRequestMessages() <-chan *lbnetwork.BatchRequestMessage {
 	return n.batchRequestMessages
+}
+
+// BatchResponseMessages returns the channel for incoming batch response messages.
+func (n *networkAdapter) BatchResponseMessages() <-chan *lbnetwork.BatchResponseMessage {
+	return n.batchResponseMessages
 }
 
 // HeaderMessages returns the channel for incoming header messages.
@@ -235,6 +252,12 @@ func encodeBatchAck(ack *lbnetwork.BatchAckMessage) []byte {
 func encodeBatchRequest(req *lbnetwork.BatchRequestMessage) []byte {
 	// TODO: Implement using cramberry schema for looseberry BatchRequestMessage type
 	_ = req
+	return nil
+}
+
+func encodeBatchResponse(resp *lbnetwork.BatchResponseMessage) []byte {
+	// TODO: Implement using cramberry schema for looseberry BatchResponseMessage type
+	_ = resp
 	return nil
 }
 

@@ -3,6 +3,7 @@ package blockstore
 import (
 	"encoding/binary"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/syndtr/goleveldb/leveldb/util"
 
 	"github.com/blockberries/blockberry/types"
+	"github.com/blockberries/cramberry/pkg/cramberry"
+	loosetypes "github.com/blockberries/looseberry/types"
 )
 
 // Key prefixes for LevelDB storage.
@@ -19,6 +22,12 @@ var (
 	prefixBlock   = []byte("B:") // Hash -> Block data mapping
 	keyMetaHeight = []byte("M:height")
 	keyMetaBase   = []byte("M:base")
+
+	// Certificate storage prefixes
+	prefixCert       = []byte("C:")  // C:<digest> -> Certificate data
+	prefixCertRound  = []byte("CR:") // CR:<round>:<validator_idx> -> Certificate digest
+	prefixCertHeight = []byte("CH:") // CH:<height>:<validator_idx> -> Certificate digest
+	prefixBatch      = []byte("CB:") // CB:<digest> -> Batch data
 )
 
 // LevelDBBlockStore implements BlockStore using LevelDB.
@@ -355,8 +364,255 @@ func (s *LevelDBBlockStore) Compact() error {
 	return s.db.CompactRange(util.Range{})
 }
 
-// Ensure LevelDBBlockStore implements PrunableBlockStore.
+// Ensure LevelDBBlockStore implements PrunableBlockStore and CertificateBlockStore.
 var _ PrunableBlockStore = (*LevelDBBlockStore)(nil)
+var _ CertificateBlockStore = (*LevelDBBlockStore)(nil)
+
+// SaveCertificate persists a DAG certificate with multiple indexes.
+// Indexes: primary by digest, secondary by round+validator, tertiary by height+validator.
+func (s *LevelDBBlockStore) SaveCertificate(cert *loosetypes.Certificate) error {
+	if cert == nil {
+		return fmt.Errorf("cannot save nil certificate")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create defensive copy of digest
+	digest := cert.Digest()
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	// Check if certificate already exists
+	certKey := makeCertKey(digestCopy)
+	exists, err := s.db.Has(certKey, nil)
+	if err != nil {
+		return fmt.Errorf("checking certificate existence: %w", err)
+	}
+	if exists {
+		return types.ErrCertificateAlreadyExists
+	}
+
+	// Marshal certificate with cramberry
+	data, err := cramberry.Marshal(cert)
+	if err != nil {
+		return fmt.Errorf("failed to marshal certificate: %w", err)
+	}
+
+	// Create batch for atomic write
+	batch := new(leveldb.Batch)
+
+	// Primary key: C:<digest>
+	batch.Put(certKey, data)
+
+	// Round index: CR:<round>:<validator_idx>
+	roundKey := makeCertRoundKey(cert.Round(), cert.Author())
+	batch.Put(roundKey, digestCopy)
+
+	// Write batch
+	if err := s.db.Write(batch, &opt.WriteOptions{Sync: true}); err != nil {
+		return fmt.Errorf("writing certificate: %w", err)
+	}
+
+	return nil
+}
+
+// GetCertificate retrieves a certificate by its digest.
+func (s *LevelDBBlockStore) GetCertificate(digest loosetypes.Hash) (*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := makeCertKey(digest[:])
+	data, err := s.db.Get(key, nil)
+	if err == leveldb.ErrNotFound {
+		return nil, types.ErrCertificateNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting certificate: %w", err)
+	}
+
+	var cert loosetypes.Certificate
+	if err := cramberry.Unmarshal(data, &cert); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal certificate: %w", err)
+	}
+
+	return &cert, nil
+}
+
+// GetCertificatesForRound retrieves all certificates for a given DAG round.
+func (s *LevelDBBlockStore) GetCertificatesForRound(round uint64) ([]*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prefix := makeCertRoundPrefix(round)
+	iter := s.db.NewIterator(util.BytesPrefix(prefix), nil)
+	defer iter.Release()
+
+	var certs []*loosetypes.Certificate
+	for iter.Next() {
+		digest := iter.Value()
+		cert, err := s.getCertificateUnlocked(digest)
+		if err != nil {
+			return nil, fmt.Errorf("loading certificate for round %d: %w", round, err)
+		}
+		certs = append(certs, cert)
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterating certificates for round %d: %w", round, err)
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// GetCertificatesForHeight retrieves all certificates committed at a given block height.
+func (s *LevelDBBlockStore) GetCertificatesForHeight(height int64) ([]*loosetypes.Certificate, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	prefix := makeCertHeightPrefix(height)
+	iter := s.db.NewIterator(util.BytesPrefix(prefix), nil)
+	defer iter.Release()
+
+	var certs []*loosetypes.Certificate
+	for iter.Next() {
+		digest := iter.Value()
+		cert, err := s.getCertificateUnlocked(digest)
+		if err != nil {
+			return nil, fmt.Errorf("loading certificate for height %d: %w", height, err)
+		}
+		certs = append(certs, cert)
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterating certificates for height %d: %w", height, err)
+	}
+
+	// Sort by validator index for deterministic ordering
+	sort.Slice(certs, func(i, j int) bool {
+		return certs[i].Author() < certs[j].Author()
+	})
+
+	return certs, nil
+}
+
+// SetCertificateBlockHeight updates the block height index for a certificate.
+func (s *LevelDBBlockStore) SetCertificateBlockHeight(digest loosetypes.Hash, height int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Verify certificate exists
+	certKey := makeCertKey(digest[:])
+	data, err := s.db.Get(certKey, nil)
+	if err == leveldb.ErrNotFound {
+		return types.ErrCertificateNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("checking certificate: %w", err)
+	}
+
+	// Unmarshal to get validator index
+	var cert loosetypes.Certificate
+	if err := cramberry.Unmarshal(data, &cert); err != nil {
+		return fmt.Errorf("failed to unmarshal certificate: %w", err)
+	}
+
+	// Create height index entry
+	heightKey := makeCertHeightKey(height, cert.Author())
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	if err := s.db.Put(heightKey, digestCopy, &opt.WriteOptions{Sync: true}); err != nil {
+		return fmt.Errorf("setting certificate height index: %w", err)
+	}
+
+	return nil
+}
+
+// SaveBatch persists a transaction batch.
+func (s *LevelDBBlockStore) SaveBatch(batch *loosetypes.Batch) error {
+	if batch == nil {
+		return fmt.Errorf("cannot save nil batch")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Create defensive copy of digest
+	digest := batch.Digest
+	digestCopy := make([]byte, len(digest))
+	copy(digestCopy, digest[:])
+
+	// Check if batch already exists
+	batchKey := makeBatchKey(digestCopy)
+	exists, err := s.db.Has(batchKey, nil)
+	if err != nil {
+		return fmt.Errorf("checking batch existence: %w", err)
+	}
+	if exists {
+		return types.ErrBatchAlreadyExists
+	}
+
+	// Marshal batch with cramberry
+	data, err := cramberry.Marshal(batch)
+	if err != nil {
+		return fmt.Errorf("failed to marshal batch: %w", err)
+	}
+
+	// Write batch data
+	if err := s.db.Put(batchKey, data, &opt.WriteOptions{Sync: true}); err != nil {
+		return fmt.Errorf("writing batch: %w", err)
+	}
+
+	return nil
+}
+
+// GetBatch retrieves a batch by its digest.
+func (s *LevelDBBlockStore) GetBatch(digest loosetypes.Hash) (*loosetypes.Batch, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	key := makeBatchKey(digest[:])
+	data, err := s.db.Get(key, nil)
+	if err == leveldb.ErrNotFound {
+		return nil, types.ErrBatchNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting batch: %w", err)
+	}
+
+	var batch loosetypes.Batch
+	if err := cramberry.Unmarshal(data, &batch); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal batch: %w", err)
+	}
+
+	return &batch, nil
+}
+
+// getCertificateUnlocked retrieves a certificate without holding the lock.
+// Caller must hold at least a read lock.
+func (s *LevelDBBlockStore) getCertificateUnlocked(digest []byte) (*loosetypes.Certificate, error) {
+	key := makeCertKey(digest)
+	data, err := s.db.Get(key, nil)
+	if err == leveldb.ErrNotFound {
+		return nil, types.ErrCertificateNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("getting certificate: %w", err)
+	}
+
+	var cert loosetypes.Certificate
+	if err := cramberry.Unmarshal(data, &cert); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal certificate: %w", err)
+	}
+
+	return &cert, nil
+}
 
 // Key encoding helpers
 
@@ -403,4 +659,68 @@ func decodeInt64(data []byte) int64 {
 	}
 	// Block heights stored are always non-negative and fit in int64
 	return int64(binary.BigEndian.Uint64(data)) //nolint:gosec // stored heights are always valid
+}
+
+// Certificate key helpers
+
+// makeCertKey creates a key for storing certificate data.
+// Format: C:<digest>
+func makeCertKey(digest []byte) []byte {
+	key := make([]byte, len(prefixCert)+len(digest))
+	copy(key, prefixCert)
+	copy(key[len(prefixCert):], digest)
+	return key
+}
+
+// makeCertRoundKey creates a key for the round index.
+// Format: CR:<round>:<validator_idx>
+// Uses fixed-width encoding for proper lexicographic ordering.
+func makeCertRoundKey(round uint64, validatorIdx uint16) []byte {
+	// CR: (3 bytes) + round (8 bytes) + validator (2 bytes) = 13 bytes
+	key := make([]byte, len(prefixCertRound)+8+2)
+	copy(key, prefixCertRound)
+	binary.BigEndian.PutUint64(key[len(prefixCertRound):], round)
+	binary.BigEndian.PutUint16(key[len(prefixCertRound)+8:], validatorIdx)
+	return key
+}
+
+// makeCertRoundPrefix creates a prefix for iterating certificates by round.
+// Format: CR:<round>:
+func makeCertRoundPrefix(round uint64) []byte {
+	// CR: (3 bytes) + round (8 bytes) = 11 bytes
+	key := make([]byte, len(prefixCertRound)+8)
+	copy(key, prefixCertRound)
+	binary.BigEndian.PutUint64(key[len(prefixCertRound):], round)
+	return key
+}
+
+// makeCertHeightKey creates a key for the height index.
+// Format: CH:<height>:<validator_idx>
+// Uses fixed-width encoding for proper lexicographic ordering.
+func makeCertHeightKey(height int64, validatorIdx uint16) []byte {
+	// CH: (3 bytes) + height (8 bytes) + validator (2 bytes) = 13 bytes
+	key := make([]byte, len(prefixCertHeight)+8+2)
+	copy(key, prefixCertHeight)
+	binary.BigEndian.PutUint64(key[len(prefixCertHeight):], uint64(height)) //nolint:gosec // height is always non-negative
+	binary.BigEndian.PutUint16(key[len(prefixCertHeight)+8:], validatorIdx)
+	return key
+}
+
+// makeCertHeightPrefix creates a prefix for iterating certificates by height.
+// Format: CH:<height>:
+func makeCertHeightPrefix(height int64) []byte {
+	// CH: (3 bytes) + height (8 bytes) = 11 bytes
+	key := make([]byte, len(prefixCertHeight)+8)
+	copy(key, prefixCertHeight)
+	binary.BigEndian.PutUint64(key[len(prefixCertHeight):], uint64(height)) //nolint:gosec // height is always non-negative
+	return key
+}
+
+// makeBatchKey creates a key for storing batch data.
+// Format: CB:<digest>
+func makeBatchKey(digest []byte) []byte {
+	key := make([]byte, len(prefixBatch)+len(digest))
+	copy(key, prefixBatch)
+	copy(key[len(prefixBatch):], digest)
+	return key
 }

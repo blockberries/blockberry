@@ -3,6 +3,7 @@ package blockstore
 
 import (
 	"github.com/blockberries/blockberry/types"
+	loosetypes "github.com/blockberries/looseberry/types"
 )
 
 // BlockStore defines the interface for block persistence.
@@ -36,6 +37,52 @@ type BlockStore interface {
 
 	// Close closes the store and releases resources.
 	Close() error
+}
+
+// CertificateStore defines the interface for DAG certificate and batch persistence.
+// This interface is used by Looseberry-integrated BlockStores to store
+// certificates and batches from the DAG mempool.
+// Implementations must be safe for concurrent use.
+type CertificateStore interface {
+	// SaveCertificate persists a DAG certificate.
+	// The certificate is indexed by its digest, round, and optionally block height.
+	// Returns an error if the certificate already exists.
+	SaveCertificate(cert *loosetypes.Certificate) error
+
+	// GetCertificate retrieves a certificate by its digest.
+	// Returns types.ErrCertificateNotFound if the certificate does not exist.
+	GetCertificate(digest loosetypes.Hash) (*loosetypes.Certificate, error)
+
+	// GetCertificatesForRound retrieves all certificates for a given DAG round.
+	// Returns an empty slice if no certificates exist for the round.
+	// Certificates are returned in validator index order.
+	GetCertificatesForRound(round uint64) ([]*loosetypes.Certificate, error)
+
+	// GetCertificatesForHeight retrieves all certificates committed at a given block height.
+	// Returns an empty slice if no certificates exist for the height.
+	// Certificates are returned in validator index order.
+	GetCertificatesForHeight(height int64) ([]*loosetypes.Certificate, error)
+
+	// SaveBatch persists a transaction batch.
+	// The batch is indexed by its digest.
+	// Returns an error if the batch already exists.
+	SaveBatch(batch *loosetypes.Batch) error
+
+	// GetBatch retrieves a batch by its digest.
+	// Returns types.ErrBatchNotFound if the batch does not exist.
+	GetBatch(digest loosetypes.Hash) (*loosetypes.Batch, error)
+
+	// SetCertificateBlockHeight updates the block height index for a certificate.
+	// This is called when a certificate is committed in a block.
+	SetCertificateBlockHeight(digest loosetypes.Hash, height int64) error
+}
+
+// CertificateBlockStore combines BlockStore and CertificateStore interfaces.
+// This is the primary interface for stores that support both block and
+// certificate storage, used by validators running Looseberry.
+type CertificateBlockStore interface {
+	BlockStore
+	CertificateStore
 }
 
 // BlockInfo contains metadata about a stored block.

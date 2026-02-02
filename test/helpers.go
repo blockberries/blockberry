@@ -244,7 +244,7 @@ func NewTestNode(tc *TestNodeConfig) (*TestNode, error) {
 
 	// Set default validator for testing (accepts all blocks)
 	// Production code should use a proper validator
-	tn.SyncReactor.SetValidator(bsync.AcceptAllBlockValidator)
+	tn.SyncReactor.SetValidator(types.AcceptAllBlockValidator)
 
 	return tn, nil
 }

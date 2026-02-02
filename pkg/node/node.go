@@ -107,7 +107,7 @@ func WithConsensusHandler(ch handlers.ConsensusHandler) Option {
 // WithBlockValidator sets the block validation function.
 // This is REQUIRED for the node to start - blocks will not be accepted
 // without a validator (fail-closed behavior).
-func WithBlockValidator(v bsync.BlockValidator) Option {
+func WithBlockValidator(v types.BlockValidator) Option {
 	return func(n *Node) {
 		if n.syncReactor != nil {
 			n.syncReactor.SetValidator(v)

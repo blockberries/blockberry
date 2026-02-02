@@ -14,3 +14,12 @@ type TxValidator func(tx []byte) error
 // BlockValidator is a function that validates blocks.
 // Used by sync and block reactors to verify blocks before storing.
 type BlockValidator func(height int64, hash, data []byte) error
+
+// AcceptAllBlockValidator is a BlockValidator that accepts all blocks without validation.
+// This is useful for testing and development, but should NOT be used in production.
+//
+// Warning: Using this validator means blocks are not validated before being stored,
+// which can lead to accepting invalid blocks.
+var AcceptAllBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
+	return nil
+}

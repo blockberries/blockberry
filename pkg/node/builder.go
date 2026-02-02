@@ -26,7 +26,7 @@ type NodeBuilder struct {
 	mempool          mempool.Mempool
 	blockStore       blockstore.BlockStore
 	consensusHandler handlers.ConsensusHandler
-	blockValidator   bsync.BlockValidator
+	blockValidator   types.BlockValidator
 	callbacks        *types.NodeCallbacks
 
 	// Error tracking during build
@@ -67,7 +67,7 @@ func (b *NodeBuilder) WithConsensusHandler(ch handlers.ConsensusHandler) *NodeBu
 
 // WithBlockValidator sets the block validation function.
 // This is REQUIRED for the node to process blocks properly.
-func (b *NodeBuilder) WithBlockValidator(v bsync.BlockValidator) *NodeBuilder {
+func (b *NodeBuilder) WithBlockValidator(v types.BlockValidator) *NodeBuilder {
 	if b.err != nil {
 		return b
 	}

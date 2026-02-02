@@ -30,23 +30,12 @@ const (
 	StateSyncing
 )
 
-// BlockValidator is a callback for validating blocks before storing.
-// This is a required component - blocks will not be accepted without validation.
-type BlockValidator func(height int64, hash, data []byte) error
-
 // DefaultBlockValidator is a fail-closed validator that rejects all blocks.
 // This is used when no validator is explicitly set, ensuring blocks are never
 // accepted without proper validation. Applications MUST provide their own
 // validator to accept blocks.
-var DefaultBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
+var DefaultBlockValidator types.BlockValidator = func(height int64, hash, data []byte) error {
 	return fmt.Errorf("%w: no block validator configured", types.ErrNoBlockValidator)
-}
-
-// AcceptAllBlockValidator is a validator that accepts all blocks.
-// WARNING: This should ONLY be used for testing purposes.
-// Production systems must use a proper validator that verifies block integrity.
-var AcceptAllBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
-	return nil
 }
 
 // PendingRequest tracks an in-flight block request.
@@ -71,7 +60,7 @@ type SyncReactor struct {
 	requestTimeout  time.Duration // Timeout for pending requests
 
 	// Block validation callback
-	validator BlockValidator
+	validator types.BlockValidator
 
 	// Sync state
 	state       SyncState
@@ -148,7 +137,7 @@ func (r *SyncReactor) Name() string {
 }
 
 // SetValidator sets the block validation callback.
-func (r *SyncReactor) SetValidator(v BlockValidator) {
+func (r *SyncReactor) SetValidator(v types.BlockValidator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.validator = v

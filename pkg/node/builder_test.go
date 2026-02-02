@@ -10,7 +10,6 @@ import (
 	"github.com/blockberries/blockberry/pkg/config"
 	"github.com/blockberries/blockberry/internal/handlers"
 	"github.com/blockberries/blockberry/pkg/mempool"
-	bsync "github.com/blockberries/blockberry/internal/sync"
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
@@ -138,7 +137,7 @@ func TestNodeBuilder_Chaining(t *testing.T) {
 	cfg := testConfig(t)
 
 	callbacks := &types.NodeCallbacks{}
-	validator := bsync.BlockValidator(func(height int64, hash, data []byte) error {
+	validator := types.BlockValidator(func(height int64, hash, data []byte) error {
 		return nil
 	})
 

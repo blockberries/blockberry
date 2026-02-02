@@ -8,7 +8,6 @@ import (
 	"github.com/blockberries/blockberry/pkg/config"
 	"github.com/blockberries/blockberry/pkg/consensus"
 	"github.com/blockberries/blockberry/pkg/mempool"
-	bsync "github.com/blockberries/blockberry/internal/sync"
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
@@ -35,7 +34,7 @@ type RoleBasedBuilder struct {
 	mempool         mempool.Mempool
 	blockStore      blockstore.BlockStore
 	consensusEngine consensus.ConsensusEngine
-	blockValidator  bsync.BlockValidator
+	blockValidator  types.BlockValidator
 	callbacks       *types.NodeCallbacks
 
 	// Build tracking
@@ -104,7 +103,7 @@ func (b *RoleBasedBuilder) WithConsensusEngine(engine consensus.ConsensusEngine)
 
 // WithBlockValidator sets the block validation function.
 // Required for roles that process blocks.
-func (b *RoleBasedBuilder) WithBlockValidator(v bsync.BlockValidator) *RoleBasedBuilder {
+func (b *RoleBasedBuilder) WithBlockValidator(v types.BlockValidator) *RoleBasedBuilder {
 	if b.err != nil {
 		return b
 	}

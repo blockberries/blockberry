@@ -37,7 +37,7 @@ func TestSyncReactor_StartStop(t *testing.T) {
 	require.False(t, reactor.IsRunning())
 
 	// Set validator and start
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 	err = reactor.Start()
 	require.NoError(t, err)
 	require.True(t, reactor.IsRunning())
@@ -65,7 +65,7 @@ func TestSyncReactor_StartRequiresValidator(t *testing.T) {
 	require.ErrorIs(t, err, types.ErrNoBlockValidator)
 
 	// With validator, Start should succeed
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 	err = reactor.Start()
 	require.NoError(t, err)
 
@@ -187,7 +187,7 @@ func TestSyncReactor_HandleBlocksResponse(t *testing.T) {
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
 
 	// Set validator to accept all blocks (for testing)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Create blocks with correct hashes
 	block1Data := []byte("block 1 data")
@@ -432,8 +432,8 @@ func TestDefaultBlockValidator(t *testing.T) {
 }
 
 func TestAcceptAllBlockValidator(t *testing.T) {
-	// AcceptAllBlockValidator should accept all blocks
-	err := AcceptAllBlockValidator(1, []byte("hash"), []byte("data"))
+	// types.AcceptAllBlockValidator should accept all blocks
+	err := types.AcceptAllBlockValidator(1, []byte("hash"), []byte("data"))
 	require.NoError(t, err)
 }
 
@@ -442,7 +442,7 @@ func TestSyncReactor_HandleDuplicateBlock(t *testing.T) {
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
 
 	// Set validator to accept all blocks (for testing)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Add a block first
 	blockData := []byte("block data")
@@ -488,7 +488,7 @@ func TestSyncReactor_GetPeersWithHeight(t *testing.T) {
 func TestSyncReactor_HandleBlocksResponseContiguous(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Create contiguous blocks starting at height 1
 	block1Data := []byte("block 1 data")
@@ -525,7 +525,7 @@ func TestSyncReactor_HandleBlocksResponseContiguous(t *testing.T) {
 func TestSyncReactor_HandleBlocksResponseNonContiguous(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Create non-contiguous blocks (gap at height 2)
 	block1Data := []byte("block 1 data")
@@ -557,7 +557,7 @@ func TestSyncReactor_HandleBlocksResponseNonContiguous(t *testing.T) {
 func TestSyncReactor_HandleBlocksResponseWrongStartHeight(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Pre-populate store with block 1
 	existingData := []byte("existing block")
@@ -589,7 +589,7 @@ func TestSyncReactor_HandleBlocksResponseWrongStartHeight(t *testing.T) {
 func TestSyncReactor_HandleBlocksResponseEmptyResponse(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	resp := &schema.BlocksResponse{
 		Blocks: []schema.BlockData{},
@@ -606,7 +606,7 @@ func TestSyncReactor_HandleBlocksResponseEmptyResponse(t *testing.T) {
 func TestSyncReactor_HandleBlocksResponseWithExistingBlocks(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
-	reactor.SetValidator(AcceptAllBlockValidator)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
 
 	// Pre-populate store with blocks 1 and 2
 	block1Data := []byte("block 1 data")

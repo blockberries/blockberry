@@ -9,7 +9,6 @@ import (
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/config"
 	"github.com/blockberries/blockberry/pkg/mempool"
-	bsync "github.com/blockberries/blockberry/internal/sync"
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
@@ -175,6 +174,6 @@ func TestRoleBasedBuilder_Errors(t *testing.T) {
 }
 
 // acceptAllValidator is a test validator that accepts all blocks.
-var acceptAllValidator bsync.BlockValidator = func(height int64, hash []byte, data []byte) error {
+var acceptAllValidator types.BlockValidator = func(height int64, hash []byte, data []byte) error {
 	return nil
 }

@@ -17,9 +17,6 @@ const (
 	TypeIDBlockData cramberry.TypeID = 139
 )
 
-// BlockValidator is a callback for validating blocks before storing.
-type BlockValidator func(height int64, hash, data []byte) error
-
 // BlockReactor handles real-time block propagation between peers.
 type BlockReactor struct {
 	// Dependencies
@@ -28,7 +25,7 @@ type BlockReactor struct {
 	peerManager *p2p.PeerManager
 
 	// Block validation callback
-	validator BlockValidator
+	validator types.BlockValidator
 
 	// Callback for when a new block is received
 	onBlockReceived func(height int64, hash, data []byte)
@@ -82,7 +79,7 @@ func (r *BlockReactor) IsRunning() bool {
 }
 
 // SetValidator sets the block validation callback.
-func (r *BlockReactor) SetValidator(v BlockValidator) {
+func (r *BlockReactor) SetValidator(v types.BlockValidator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.validator = v

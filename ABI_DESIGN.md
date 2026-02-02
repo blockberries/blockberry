@@ -26,7 +26,7 @@ This document presents a comprehensive redesign of the Application Blockchain In
 
 ## Architecture Overview
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           APPLICATION LAYER                              │
 │  ┌─────────────────────────────────────────────────────────────────────┐│
@@ -60,7 +60,8 @@ This document presents a comprehensive redesign of the Application Blockchain In
 │  │  └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘   ││
 │  └─────────────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────────────┘
-```
+
+```text
 
 ---
 
@@ -108,7 +109,8 @@ type Genesis struct {
     Validators     []Validator
     AppState       []byte           // App-specific genesis state (opaque)
 }
-```
+
+```text
 
 ### 1.2 Transaction Processing
 
@@ -175,7 +177,8 @@ const (
     CodeInvalidState        ResultCode = 7
     // 100-999: App-specific codes
 )
-```
+
+```text
 
 ### 1.3 Block Execution
 
@@ -221,7 +224,8 @@ type Attribute struct {
     Value []byte
     Index bool   // Should this be indexed?
 }
-```
+
+```text
 
 ### 1.4 State Query Interface
 
@@ -254,7 +258,8 @@ type ProofOp struct {
     Key  []byte
     Data []byte
 }
-```
+
+```text
 
 ---
 
@@ -307,7 +312,8 @@ const (
     ApplyRetrySnapshot                      // Retry entire snapshot
     ApplyRejectSnapshot                     // Reject snapshot
 )
-```
+
+```text
 
 ### 2.2 Prepare/Process Proposal (Leader Selection)
 
@@ -358,7 +364,8 @@ const (
     ProcessAccept  ProcessStatus = iota  // Valid proposal
     ProcessReject                         // Invalid proposal
 )
-```
+
+```text
 
 ### 2.3 Finality Extensions
 
@@ -421,7 +428,8 @@ type FinalizeBlockResponse struct {
     ConsensusParams   *ConsensusParams
     AppHash           []byte
 }
-```
+
+```text
 
 ---
 
@@ -474,7 +482,8 @@ type MempoolSize struct {
     TxCount   int
     ByteCount int64
 }
-```
+
+```text
 
 ### 3.2 DAG Mempool Extension (Looseberry Integration)
 
@@ -526,7 +535,8 @@ type DAGMetrics struct {
     CertifiedBatches int
     ValidatorCount  int
 }
-```
+
+```text
 
 ### 3.3 Network-Aware Mempool
 
@@ -573,7 +583,8 @@ type MempoolNetwork interface {
     // ValidatorPeers returns connected validator peer IDs.
     ValidatorPeers() [][]byte
 }
-```
+
+```text
 
 ---
 
@@ -637,7 +648,8 @@ const (
     MsgTypeNewRoundStep
     MsgTypeHasVote
 )
-```
+
+```text
 
 ### 4.2 BFT Consensus Extension
 
@@ -720,7 +732,8 @@ const (
     TimeoutPrevote
     TimeoutPrecommit
 )
-```
+
+```text
 
 ### 4.3 DAG Consensus Extension
 
@@ -756,7 +769,8 @@ type DAGVertex struct {
     Signature  []byte
     Hash       []byte           // Computed hash
 }
-```
+
+```text
 
 ### 4.4 Stream-Aware Consensus
 
@@ -771,7 +785,8 @@ type StreamAwareConsensusEngine interface {
     // HandleStreamMessage processes messages from custom streams.
     HandleStreamMessage(stream string, peerID []byte, data []byte) error
 }
-```
+
+```text
 
 ---
 
@@ -831,7 +846,8 @@ const (
     EventSyncProgress   = "SyncProgress"
     EventSyncCompleted  = "SyncCompleted"
 )
-```
+
+```text
 
 ### 5.2 Callback Registry
 
@@ -875,7 +891,8 @@ const (
     TxRemovalInvalid
     TxRemovalEvicted
 )
-```
+
+```text
 
 ---
 
@@ -931,7 +948,8 @@ type LifecycleAware interface {
 type Resettable interface {
     Reset() error
 }
-```
+
+```text
 
 ### 6.2 Service Registry
 
@@ -956,7 +974,8 @@ type ServiceRegistry interface {
     // Health returns aggregate health of all components.
     Health() map[string]HealthStatus
 }
-```
+
+```text
 
 ---
 
@@ -1009,7 +1028,8 @@ type BlockID struct {
     Hash          []byte
     PartSetHeader PartSetHeader
 }
-```
+
+```text
 
 ### 7.2 State Store
 
@@ -1037,7 +1057,8 @@ type StateStore interface {
     // Pruning
     PruneStates(retainHeight uint64) error
 }
-```
+
+```text
 
 ### 7.3 Evidence Store
 
@@ -1069,7 +1090,8 @@ type Evidence interface {
     ValidateBasic() error
     String() string
 }
-```
+
+```text
 
 ---
 
@@ -1139,7 +1161,8 @@ type IncomingMessage struct {
     Data      []byte
     Timestamp time.Time
 }
-```
+
+```text
 
 ### 8.2 Peer Scoring
 
@@ -1164,7 +1187,8 @@ type PeerScorer interface {
     BanPeer(peerID []byte, duration time.Duration, reason string)
     UnbanPeer(peerID []byte)
 }
-```
+
+```text
 
 ---
 
@@ -1210,7 +1234,8 @@ type KeyShare struct {
     Index int
     Share []byte
 }
-```
+
+```text
 
 ### 9.2 Key Management
 
@@ -1236,7 +1261,8 @@ type KeyInfo struct {
     PublicKey []byte
     CreatedAt time.Time
 }
-```
+
+```text
 
 ---
 
@@ -1285,7 +1311,8 @@ type NodeConfig struct {
     TracingEnabled    bool
     TracingEndpoint   string
 }
-```
+
+```text
 
 ### 10.2 Consensus Parameters
 
@@ -1321,7 +1348,8 @@ type VersionParams struct {
 type ABCIParams struct {
     VoteExtensionsEnabled bool
 }
-```
+
+```text
 
 ---
 
@@ -1365,7 +1393,8 @@ type Metrics interface {
     BlockStoreSizeBytes(bytes int64)
     StateStoreCommit(duration time.Duration)
 }
-```
+
+```text
 
 ### 11.2 Tracing Interface
 
@@ -1404,7 +1433,8 @@ const (
     StatusOK
     StatusError
 )
-```
+
+```text
 
 ---
 
@@ -1466,7 +1496,8 @@ func (app *MinimalApp) Query(ctx context.Context, req *QueryRequest) *QueryRespo
     }
     return &QueryResponse{Code: CodeOK, Value: value}
 }
-```
+
+```text
 
 ### 12.2 DAG-Enabled Application
 
@@ -1499,7 +1530,8 @@ func (app *DAGApp) Commit(ctx context.Context) *CommitResult {
 
     return result
 }
-```
+
+```text
 
 ### 12.3 Looseberry Integration
 
@@ -1544,7 +1576,8 @@ func (a *LooseberryAdapter) NotifyCommitted(round uint64) {
 func (a *LooseberryAdapter) UpdateValidatorSet(validators []Validator) {
     a.looseberry.SetValidatorSet(convertValidators(validators))
 }
-```
+
+```text
 
 ---
 
@@ -1585,7 +1618,8 @@ func DefaultTxValidator(ctx context.Context, tx *Transaction) *TxCheckResult {
         Error: errors.New("no validator configured"),
     }
 }
-```
+
+```text
 
 ### 14.2 Input Validation
 
@@ -1602,7 +1636,8 @@ func (msg *Proposal) ValidateBasic() error {
     // ... additional validation
     return nil
 }
-```
+
+```text
 
 ### 14.3 Resource Limits
 
@@ -1617,7 +1652,8 @@ type ResourceLimits struct {
     MaxPeers        int
     MaxSubscribers  int
 }
-```
+
+```text
 
 ---
 

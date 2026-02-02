@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Comprehensive documentation suite with over 20,000 lines across 41 markdown files:
+  - **ARCHITECTURE.md**: Complete 4,681-line architecture guide covering all 20 major system aspects including design principles, component architecture, concurrency patterns, network protocols, security model, and deployment strategies
+  - **API_REFERENCE.md**: Godoc-compatible API reference for all 14 public packages with complete method signatures, usage examples, and RPC API documentation for gRPC, JSON-RPC, and WebSocket endpoints
+  - **README.md**: Professional GitHub homepage with installation instructions, quickstart guide, feature overview, and development workflow
+  - **ARCHITECTURE_ANALYSIS.md**: Deep dive into Go architecture patterns including interface design, concurrency model, dependency injection, and design pattern usage across the codebase
+  - **CODEBASE_ANALYSIS.md**: Detailed code analysis covering implementation patterns, security features, performance optimizations, and integration with Glueberry/Cramberry/Looseberry dependencies
+  - **docs/getting-started/**: Installation guide, 5-minute quickstart, first application tutorial (KV-store blockchain), and comprehensive configuration reference
+  - **docs/tutorials/**: Step-by-step guides for custom mempool implementation, consensus engine integration, storage backend development, and transaction lifecycle
+  - **docs/guides/**: Developer guides covering application development (ABI v2.0), consensus engines, testing strategies, benchmarking, production deployment, monitoring, security hardening, and contributing guidelines
+  - **docs/concepts/**: Core concept documentation for system architecture, ABI design philosophy, consensus layer, mempool strategies, P2P networking, storage layer, state management, and node roles
+  - **docs/reference/**: Complete reference for CLI commands, configuration options, RPC APIs, message protocols, error codes, and terminology glossary
+  - **docs/examples/**: Runnable code examples for simple node setup, custom mempool, consensus engine, and complete blockchain applications
+- Python script for automated markdown linting fixes (`scripts/fix_markdown.py`) to ensure documentation quality and consistency
+
+### Changed
+
+- Improved markdown formatting in existing documentation files for better readability and linting compliance:
+  - Added language specifiers to code fences for proper syntax highlighting
+  - Added blank lines around lists and headings per markdown best practices
+  - Fixed code fence closures in ABI_DESIGN.md and CODE_REVIEW.md
+
 ## [0.1.7] - 2026-01-29
 
 ### Security

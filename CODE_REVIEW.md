@@ -257,19 +257,22 @@ The following issues were identified and fixed in previous code review cycles (P
 **Issue:** The `decodeSnapshotMetadata` function read length fields from untrusted input and allocated slices without bounds validation. An attacker could send a malicious snapshot with `hashLen=0xFFFFFFFF` causing a 4GB allocation attempt, leading to memory exhaustion or OOM kill.
 
 Affected fields:
+
 - `hashLen` - unbounded hash allocation
 - `appHashLen` - unbounded app hash allocation
 - `metadataLen` - unbounded metadata allocation
 - `numChunks` - unbounded chunks slice allocation
 
 **Fix:** Added constants and validation:
+
 ```go
 const (
     maxSnapshotHashSize     = 64              // SHA-512 maximum
     maxSnapshotMetadataSize = 1024 * 1024     // 1MB limit
     maxSnapshotChunks       = 100000          // Reasonable chunk limit
 )
-```
+
+```text
 Each field is validated against these limits before allocation.
 
 ---
@@ -283,12 +286,14 @@ Each field is validated against these limits before allocation.
 **Issue:** The `decodeExportNode` function read `keyLen` and `valueLen` from untrusted input and allocated slices without bounds validation. Same memory exhaustion attack vector as #19.
 
 **Fix:** Added constants and validation:
+
 ```go
 const (
     maxIAVLKeySize   = 4 * 1024           // 4KB key limit
     maxIAVLValueSize = 10 * 1024 * 1024   // 10MB value limit
 )
-```
+
+```text
 Both fields are validated against these limits before allocation.
 
 ---
@@ -493,6 +498,7 @@ All tests pass with race detection enabled.
 **Issue:** The state sync code used `bytes.Equal()` for cryptographic hash comparisons instead of constant-time comparison, potentially leaking timing information about hash values through timing side-channels.
 
 Affected comparisons:
+
 - Line 293: `bytes.Equal(offer.AppHash, r.trustHash)` - App hash comparison
 - Line 645: `bytes.Equal(resp.SnapshotHash, r.selectedOffer.Hash)` - Snapshot hash comparison
 - Line 661: `bytes.Equal(computedHash[:], resp.ChunkHash)` - Chunk hash comparison
@@ -593,12 +599,14 @@ All tests pass with race detection enabled.
 **Issue:** In `handleConnectionEvent()` and `handleMessage()`, the `n.callbacks` field was accessed without synchronization while it could be concurrently modified by `SetCallbacks()`. This created a race condition where the callbacks pointer could change between checking it and invoking methods on it.
 
 **Fix:** Added mutex-protected copy of the callbacks before invoking any methods:
+
 ```go
 n.mu.RLock()
 cb := n.callbacks
 n.mu.RUnlock()
 // Use cb instead of n.callbacks for all invocations
-```
+
+```text
 
 ---
 
@@ -623,12 +631,14 @@ n.mu.RUnlock()
 **Issue:** `SaveBlock()` stored hash and data slices directly without copying, allowing callers to corrupt stored data by modifying the slices after calling SaveBlock. Similarly, `LoadBlock()` and `LoadBlockByHash()` returned internal slices, allowing callers to corrupt stored data.
 
 **Fix:** Added defensive copies in `SaveBlock()`:
+
 ```go
 m.blocks[height] = blockEntry{
     hash: append([]byte(nil), hash...),
     data: append([]byte(nil), data...),
 }
-```
+
+```text
 And in `LoadBlock()`/`LoadBlockByHash()` for returned values.
 
 ---
@@ -642,9 +652,11 @@ And in `LoadBlock()`/`LoadBlockByHash()` for returned values.
 **Issue:** The `ReapTxs()` method appended transaction slices directly from batches without making defensive copies. If the underlying looseberry implementation reused or modified these slices, callers would see corrupted data.
 
 **Fix:** Changed to return defensive copies:
+
 ```go
 txs = append(txs, append([]byte(nil), tx...))
-```
+
+```text
 
 ---
 
@@ -657,6 +669,7 @@ txs = append(txs, append([]byte(nil), tx...))
 **Issue:** The `sendTransactionDataRequest()` function added entries to the `pendingRequests` map without enforcing the `maxPending` limit (field defined at line 40 but never used). A malicious peer could send many `TransactionsResponse` messages with unique hashes, causing unbounded memory growth.
 
 **Fix:** Added enforcement of `maxPending` limit:
+
 ```go
 for _, txHash := range txHashes {
     if len(pending) >= r.maxPending {
@@ -664,7 +677,8 @@ for _, txHash := range txHashes {
     }
     // ... add to pending
 }
-```
+
+```text
 
 ---
 
@@ -677,6 +691,7 @@ for _, txHash := range txHashes {
 **Issue:** The `NewMempool()` factory function always returned a `SimpleMempool` regardless of the `cfg.Type` field value. The configuration supported "simple", "priority", "ttl", and "looseberry" but only "simple" was ever created.
 
 **Fix:** Added switch statement to create the appropriate mempool type based on configuration:
+
 ```go
 switch cfg.Type {
 case MempoolTypePriority:
@@ -688,7 +703,8 @@ case MempoolTypeSimple, "":
 default:
     return NewSimpleMempool(...)
 }
-```
+
+```text
 
 ---
 
@@ -729,6 +745,7 @@ All tests pass with race detection enabled.
 **Issue:** The `SimpleValidatorSet.GetProposer()` method returned a direct pointer to an internal validator (`return vs.validators[idx]`), allowing callers to mutate the internal validator set state. This is inconsistent with `GetByIndex()` and `GetByAddress()` which properly return deep copies.
 
 **Fix:** Changed to return a deep copy consistent with other getter methods:
+
 ```go
 v := vs.validators[idx]
 return &Validator{
@@ -738,7 +755,8 @@ return &Validator{
     VotingPower:      v.VotingPower,
     ProposerPriority: v.ProposerPriority,
 }
-```
+
+```text
 
 ---
 
@@ -763,6 +781,7 @@ return &Validator{
 **Issue:** The constructor stored the provided `validators` slice directly without making a defensive copy. If the caller retained a reference and mutated the slice after construction, the internal state would be corrupted.
 
 **Fix:** Added defensive copies of all validators:
+
 ```go
 valCopy := make([]*Validator, len(validators))
 for i, v := range validators {
@@ -775,7 +794,8 @@ for i, v := range validators {
         ProposerPriority: v.ProposerPriority,
     }
 }
-```
+
+```text
 
 ---
 
@@ -786,6 +806,7 @@ for i, v := range validators {
 **Status:** FIXED
 
 **Issue:** The `decodeVote()`, `decodeCommit()`, and `decodeBlock()` functions stored slices pointing directly into the input `data` buffer without making defensive copies:
+
 - `vote.BlockHash = data[16:16+hashLen]`
 - `commit.BlockHash = data[13:13+hashLen]`
 - `block.Data = data[20:]`
@@ -793,12 +814,14 @@ for i, v := range validators {
 If the network layer reuses message buffers, the decoded structs' fields could become corrupted when the next message arrives.
 
 **Fix:** Added defensive copies for all slice fields:
+
 ```go
 vote.BlockHash = append([]byte(nil), data[16:16+hashLen]...)
 vote.Signature = append([]byte(nil), data[16+hashLen:]...)
 commit.BlockHash = append([]byte(nil), data[13:13+hashLen]...)
 block.Data = append([]byte(nil), data[20:]...)
-```
+
+```text
 
 ---
 

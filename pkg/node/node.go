@@ -68,6 +68,9 @@ type Node struct {
 	pexReactor          *pex.Reactor
 	syncReactor         *bsync.SyncReactor
 
+	// Custom stream handlers for application-specific protocols
+	customStreamHandlers map[string]types.StreamHandler
+
 	// Callbacks for event notifications
 	callbacks *types.NodeCallbacks
 
@@ -452,6 +455,18 @@ func (n *Node) SetCallbacks(cb *types.NodeCallbacks) {
 	n.callbacks = cb
 }
 
+// RegisterStreamHandler registers a handler for a custom network stream.
+// Messages received on the named stream will be routed to the handler.
+// This must be called before Start(). Calling it after Start() has undefined behavior.
+func (n *Node) RegisterStreamHandler(stream string, handler types.StreamHandler) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	if n.customStreamHandlers == nil {
+		n.customStreamHandlers = make(map[string]types.StreamHandler)
+	}
+	n.customStreamHandlers[stream] = handler
+}
+
 // eventLoop handles incoming events and messages.
 func (n *Node) eventLoop() {
 	defer n.wg.Done()
@@ -599,6 +614,14 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 		err = n.consensusReactor.HandleMessage(peerID, data)
 	case p2p.StreamHousekeeping:
 		err = n.housekeepingReactor.HandleMessage(peerID, data)
+	default:
+		// Check custom stream handlers (e.g. looseberry DAG mempool streams)
+		n.mu.RLock()
+		handler := n.customStreamHandlers[stream]
+		n.mu.RUnlock()
+		if handler != nil {
+			err = handler(peerID, data)
+		}
 	}
 
 	if err != nil {

@@ -18,12 +18,14 @@ import (
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
+
 // NodeBuilder provides a fluent interface for constructing a Node.
 // It ensures single-pass initialization and proper validation.
 type NodeBuilder struct {
 	cfg *config.Config
 
 	// Pluggable components (optional)
+	privateKey       ed25519.PrivateKey
 	mempool          mempool.Mempool
 	blockStore       blockstore.BlockStore
 	consensusHandler consensus.ConsensusHandler
@@ -37,6 +39,16 @@ type NodeBuilder struct {
 // NewNodeBuilder creates a new NodeBuilder with the given configuration.
 func NewNodeBuilder(cfg *config.Config) *NodeBuilder {
 	return &NodeBuilder{cfg: cfg}
+}
+
+// WithPrivateKey sets a pre-loaded private key, skipping file-based key loading.
+// Use this when the calling application manages its own key format.
+func (b *NodeBuilder) WithPrivateKey(key ed25519.PrivateKey) *NodeBuilder {
+	if b.err != nil {
+		return b
+	}
+	b.privateKey = key
+	return b
 }
 
 // WithMempool sets a custom mempool implementation.
@@ -99,10 +111,14 @@ func (b *NodeBuilder) Build() (*Node, error) {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
 	}
 
-	// Load or generate private key
-	privateKey, err := loadOrGenerateKey(cfg.Node.PrivateKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("loading private key: %w", err)
+	// Use pre-loaded key or load from file
+	privateKey := b.privateKey
+	if privateKey == nil {
+		var err error
+		privateKey, err = loadOrGenerateKey(cfg.Node.PrivateKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("loading private key: %w", err)
+		}
 	}
 
 	// Create node ID from public key

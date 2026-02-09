@@ -4,6 +4,8 @@
 // Use abi.Application for all application implementations.
 package types
 
+import "github.com/libp2p/go-libp2p/core/peer"
+
 // TxValidator is a function that validates transactions.
 // Used by the mempool to check transactions before accepting them.
 //
@@ -23,3 +25,8 @@ type BlockValidator func(height int64, hash, data []byte) error
 var AcceptAllBlockValidator BlockValidator = func(height int64, hash, data []byte) error {
 	return nil
 }
+
+// StreamHandler handles messages received on a custom network stream.
+// It is called when a message arrives on a stream that was registered
+// via Node.RegisterStreamHandler.
+type StreamHandler func(peerID peer.ID, data []byte) error

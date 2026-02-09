@@ -75,3 +75,34 @@ Replaced the `github.com/cosmos/iavl` dependency with `github.com/blockberries/a
 2. **Proof verification**: Changed from ICS23 spec-based validation (`ics23.VerifyMembership`) to direct root hash calculation comparison. This is necessary because avlberry's inner op prefixes can be shorter than `IavlSpec.MinPrefixLength` (3 bytes vs 4 bytes required). The direct calculation approach provides equivalent security — it verifies the proof path computes to the correct root hash.
 
 3. **VersionExists with legacy support**: Updated avlberry's `VersionExists` to check both new-format root keys ('s' prefix) and legacy root keys ('r' prefix) for backward compatibility with databases that contain legacy-format data.
+
+---
+
+## Update to avlberry v1.1.0
+
+### Status: Complete
+
+### Summary
+
+Updated blockberry to leverage avlberry v1.1.0, which fixes ICS23 spec compatibility (inner op prefixes now include version field, meeting `IavlSpec.MinPrefixLength` of 4 bytes) and adds the `GetVersioned` and `WorkingHash` APIs.
+
+### Changes
+
+**Files modified:**
+- `pkg/statestore/iavl.go`
+  - `GetVersioned`: Replaced temp tree workaround with direct `s.tree.GetVersioned(key, version)` call using avlberry's native API
+  - `RootHash`: Changed from `s.tree.Hash()` to `s.tree.WorkingHash()`. In v1.1.0, `MutableTree.Hash()` returns the committed root hash, while `WorkingHash()` returns the hash reflecting uncommitted changes (matching the `StateStore.RootHash()` contract)
+
+- `pkg/statestore/store.go`
+  - `Proof.Verify`: Restored proper ICS23 spec-based verification using `ics23.VerifyMembership` and `ics23.VerifyNonMembership` with `ics23.IavlSpec`, replacing the direct root hash calculation workaround
+
+### Test Coverage
+
+- All 49 statestore tests pass with race detection
+- Full blockberry test suite passes (all packages)
+
+### Design Decisions
+
+1. **Hash vs WorkingHash**: avlberry v1.1.0 splits `Hash()` semantics — `Hash()` on `MutableTree` returns the last committed root hash, while `WorkingHash()` returns the current working tree hash. `RootHash()` uses `WorkingHash()` (uncommitted state), while `GetProof()` uses `Hash()` (committed state) since proofs are generated against committed versions.
+
+2. **ICS23 spec restoration**: With v1.1.0 including version in inner op prefixes (>= 4 bytes), standard `ics23.VerifyMembership`/`ics23.VerifyNonMembership` with `IavlSpec` now works correctly, eliminating the need for the direct root hash calculation workaround.

@@ -97,55 +97,17 @@ func (p *Proof) Verify(rootHash []byte) (bool, error) {
 		return false, fmt.Errorf("%w: failed to unmarshal proof: %v", types.ErrInvalidProof, err)
 	}
 
-	// Verify by computing the root hash from the proof and comparing.
+	// Get the IAVL proof spec
+	spec := ics23.IavlSpec
+
+	// Verify based on proof type (existence or non-existence)
 	if p.Exists {
-		existProof := commitmentProof.GetExist()
-		if existProof == nil {
-			return false, fmt.Errorf("%w: not an existence proof", types.ErrInvalidProof)
-		}
-		// Verify the proof key and value match
-		if !bytes.Equal(existProof.Key, p.Key) || !bytes.Equal(existProof.Value, p.Value) {
-			return false, nil
-		}
-		calculatedRoot, err := existProof.Calculate()
-		if err != nil {
-			return false, fmt.Errorf("%w: failed to calculate root: %v", types.ErrInvalidProof, err)
-		}
-		return bytes.Equal(calculatedRoot, rootHash), nil
+		// Existence proof - verify key/value exists at root
+		return ics23.VerifyMembership(spec, rootHash, &commitmentProof, p.Key, p.Value), nil
 	}
 
-	// Non-existence proof
-	nonExistProof := commitmentProof.GetNonexist()
-	if nonExistProof == nil {
-		return false, fmt.Errorf("%w: not a non-existence proof", types.ErrInvalidProof)
-	}
-	if !bytes.Equal(nonExistProof.Key, p.Key) {
-		return false, nil
-	}
-	// Verify neighbor proofs calculate to the same root
-	if nonExistProof.Left != nil {
-		leftRoot, err := nonExistProof.Left.Calculate()
-		if err != nil {
-			return false, fmt.Errorf("%w: failed to calculate left root: %v", types.ErrInvalidProof, err)
-		}
-		if !bytes.Equal(leftRoot, rootHash) {
-			return false, nil
-		}
-	}
-	if nonExistProof.Right != nil {
-		rightRoot, err := nonExistProof.Right.Calculate()
-		if err != nil {
-			return false, fmt.Errorf("%w: failed to calculate right root: %v", types.ErrInvalidProof, err)
-		}
-		if !bytes.Equal(rightRoot, rootHash) {
-			return false, nil
-		}
-	}
-	// At least one neighbor must be present
-	if nonExistProof.Left == nil && nonExistProof.Right == nil {
-		return false, fmt.Errorf("%w: no neighbor proofs", types.ErrInvalidProof)
-	}
-	return true, nil
+	// Non-existence proof - verify key does not exist
+	return ics23.VerifyNonMembership(spec, rootHash, &commitmentProof, p.Key), nil
 }
 
 // VerifyConsistent checks that the proof's stored root hash matches the given root hash.

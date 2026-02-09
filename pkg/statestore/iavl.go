@@ -130,7 +130,7 @@ func (s *IAVLStore) RootHash() []byte {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.tree.Hash()
+	return s.tree.WorkingHash()
 }
 
 // Version returns the latest committed version number.
@@ -215,16 +215,10 @@ func (s *IAVLStore) GetVersioned(key []byte, version int64) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	// avlberry doesn't have GetVersioned, so create a temporary tree and load the version
-	tmpTree := avlberry.NewMutableTree(s.db, 0, true, avlberry.NewNopLogger())
-	if _, err := tmpTree.LoadVersion(version); err != nil {
-		return nil, fmt.Errorf("loading version %d: %w", version, err)
-	}
-	value, err := tmpTree.Get(key)
+	value, err := s.tree.GetVersioned(key, version)
 	if err != nil {
 		return nil, fmt.Errorf("getting versioned key: %w", err)
 	}
-	// Do NOT close tmpTree — it shares the same underlying DB
 	return value, nil
 }
 

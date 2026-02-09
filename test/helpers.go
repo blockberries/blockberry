@@ -553,7 +553,7 @@ func (tn *TestNode) handleMessage(msg streams.IncomingMessage) {
 }
 
 // MockApplication is a test application that implements abi.Application and
-// handlers.ConsensusHandler for testing purposes.
+// consensus.ConsensusHandler for testing purposes.
 type MockApplication struct {
 	mu                sync.Mutex
 	CheckedTxs        []*abi.Transaction
@@ -658,7 +658,7 @@ func (m *MockApplication) ExecutedTxCount() int {
 	return len(m.ExecutedTxs)
 }
 
-// HandleConsensusMessage implements handlers.ConsensusHandler.
+// HandleConsensusMessage implements consensus.ConsensusHandler.
 func (m *MockApplication) HandleConsensusMessage(peerID peer.ID, data []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

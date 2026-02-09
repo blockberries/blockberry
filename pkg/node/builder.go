@@ -9,6 +9,7 @@ import (
 
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/config"
+	"github.com/blockberries/blockberry/pkg/consensus"
 	"github.com/blockberries/blockberry/internal/handlers"
 	"github.com/blockberries/blockberry/pkg/mempool"
 	"github.com/blockberries/blockberry/internal/p2p"
@@ -25,7 +26,7 @@ type NodeBuilder struct {
 	// Pluggable components (optional)
 	mempool          mempool.Mempool
 	blockStore       blockstore.BlockStore
-	consensusHandler handlers.ConsensusHandler
+	consensusHandler consensus.ConsensusHandler
 	blockValidator   types.BlockValidator
 	callbacks        *types.NodeCallbacks
 
@@ -57,7 +58,7 @@ func (b *NodeBuilder) WithBlockStore(bs blockstore.BlockStore) *NodeBuilder {
 }
 
 // WithConsensusHandler sets the consensus message handler.
-func (b *NodeBuilder) WithConsensusHandler(ch handlers.ConsensusHandler) *NodeBuilder {
+func (b *NodeBuilder) WithConsensusHandler(ch consensus.ConsensusHandler) *NodeBuilder {
 	if b.err != nil {
 		return b
 	}

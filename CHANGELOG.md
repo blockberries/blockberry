@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-02-09
+
+### Added
+
+- **`consensus.ConsensusHandler`**: Moved `ConsensusHandler` interface from `internal/handlers` to the public `pkg/consensus` package, allowing external modules to implement consensus message handling without importing internal packages.
+- **`node.NetworkBridge`**: Added `NetworkBridge` type and `Node.NetworkBridge()` method providing a public interface to the node's network layer. Implements `Send`, `Broadcast`, and `ConnectedPeers` for use by external modules.
+
+### Changed
+
+- **State store backend**: Replaced `github.com/cosmos/iavl` with `github.com/blockberries/avlberry` for merkleized state storage. avlberry is our own AVL+ tree library with full ICS-23 proof compatibility.
+- **ICS23 proof verification**: Restored standard spec-based verification using `ics23.VerifyMembership` and `ics23.VerifyNonMembership` with `ics23.IavlSpec`, enabled by avlberry v1.1.0's spec-compliant inner op prefixes.
+- **GetVersioned**: Now uses avlberry's native `GetVersioned(key, version)` API instead of a temporary tree workaround.
+- **RootHash**: Uses `WorkingHash()` to correctly reflect uncommitted changes (avlberry v1.1.0 splits `Hash()` into committed vs working semantics).
+- Updated `github.com/cosmos/ics23/go` from v0.10.0 to v0.11.0.
+- `NodeBuilder.WithConsensusHandler()` and `WithConsensusHandler()` option now accept `consensus.ConsensusHandler` instead of `handlers.ConsensusHandler`.
+
+### Removed
+
+- Removed `github.com/cosmos/iavl` dependency and all transitive cosmos SDK dependencies.
+- Removed `handlers.ConsensusHandler` (moved to `consensus.ConsensusHandler`).
+
 ## [0.2.0] - 2026-02-02
 
 ### Added

@@ -12,14 +12,6 @@ import (
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
-// ConsensusHandler defines the interface for handling consensus messages.
-// Applications implement this interface to receive consensus messages from peers.
-// Deprecated: Use consensus.ConsensusEngine instead for new implementations.
-type ConsensusHandler interface {
-	// HandleConsensusMessage processes an incoming consensus message from a peer.
-	HandleConsensusMessage(peerID peer.ID, data []byte) error
-}
-
 // Consensus message type IDs for BFT message routing.
 const (
 	// MsgTypeProposal is a block proposal message.
@@ -33,7 +25,7 @@ const (
 )
 
 // ConsensusReactor routes consensus messages between peers and the consensus engine.
-// It supports both the legacy ConsensusHandler interface and the new ConsensusEngine interface.
+// It supports both the legacy consensus.ConsensusHandler interface and the new ConsensusEngine interface.
 // The reactor automatically detects BFT engines and custom stream-aware engines to route
 // messages appropriately.
 type ConsensusReactor struct {
@@ -45,7 +37,7 @@ type ConsensusReactor struct {
 	engine consensus.ConsensusEngine
 
 	// Legacy handler (deprecated, for backward compatibility)
-	handler ConsensusHandler
+	handler consensus.ConsensusHandler
 
 	// Custom streams registered by StreamAwareConsensus engines
 	customStreams map[string]bool
@@ -138,7 +130,7 @@ func (r *ConsensusReactor) IsRunning() bool {
 
 // SetHandler sets the consensus handler for incoming messages.
 // Deprecated: Use SetEngine instead for new implementations.
-func (r *ConsensusReactor) SetHandler(handler ConsensusHandler) {
+func (r *ConsensusReactor) SetHandler(handler consensus.ConsensusHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.handler = handler
@@ -146,7 +138,7 @@ func (r *ConsensusReactor) SetHandler(handler ConsensusHandler) {
 
 // GetHandler returns the current consensus handler.
 // Deprecated: Use GetEngine instead for new implementations.
-func (r *ConsensusReactor) GetHandler() ConsensusHandler {
+func (r *ConsensusReactor) GetHandler() consensus.ConsensusHandler {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.handler

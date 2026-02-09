@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/blockberries/blockberry/pkg/config"
-	"github.com/blockberries/blockberry/internal/handlers"
+	"github.com/blockberries/blockberry/pkg/consensus"
 	"github.com/blockberries/blockberry/pkg/mempool"
 	"github.com/blockberries/blockberry/pkg/types"
 )
@@ -216,7 +216,7 @@ func TestNodeBuilder_ConsensusHandlerInterface(t *testing.T) {
 	cfg := testConfig(t)
 
 	// Verify the handler type matches the interface
-	var _ handlers.ConsensusHandler = &mockConsensusHandler{}
+	var _ consensus.ConsensusHandler = &mockConsensusHandler{}
 
 	node, err := NewNodeBuilder(cfg).
 		WithConsensusHandler(&mockConsensusHandler{}).

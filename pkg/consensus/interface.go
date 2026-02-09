@@ -35,6 +35,14 @@ import (
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
+// ConsensusHandler defines the interface for handling raw consensus messages.
+// Implement this interface to receive consensus messages from peers via the
+// consensus stream. For richer integration, implement ConsensusEngine instead.
+type ConsensusHandler interface {
+	// HandleConsensusMessage processes an incoming consensus message from a peer.
+	HandleConsensusMessage(peerID peer.ID, data []byte) error
+}
+
 // ConsensusEngine is the main interface for consensus implementations.
 // All consensus engines must implement this interface to integrate with blockberry.
 // The engine is responsible for validating and ordering blocks according to its

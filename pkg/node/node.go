@@ -17,6 +17,7 @@ import (
 
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/config"
+	"github.com/blockberries/blockberry/pkg/consensus"
 	"github.com/blockberries/blockberry/internal/container"
 	"github.com/blockberries/blockberry/internal/handlers"
 	"github.com/blockberries/blockberry/pkg/mempool"
@@ -96,7 +97,7 @@ func WithBlockStore(bs blockstore.BlockStore) Option {
 }
 
 // WithConsensusHandler sets the consensus handler.
-func WithConsensusHandler(ch handlers.ConsensusHandler) Option {
+func WithConsensusHandler(ch consensus.ConsensusHandler) Option {
 	return func(n *Node) {
 		if n.consensusReactor != nil {
 			n.consensusReactor.SetHandler(ch)
@@ -407,9 +408,16 @@ func (n *Node) Role() types.NodeRole {
 	return n.role
 }
 
-// Network returns the network layer.
+// Network returns the internal network layer.
 func (n *Node) Network() *p2p.Network {
 	return n.network
+}
+
+// NetworkBridge returns a public network bridge that implements
+// mempool.MempoolNetwork and consensus.Network interfaces.
+// Use this from external modules that cannot import internal/p2p.
+func (n *Node) NetworkBridge() *NetworkBridge {
+	return newNetworkBridge(n.network)
 }
 
 // BlockStore returns the block store.

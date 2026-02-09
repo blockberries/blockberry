@@ -17,7 +17,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/blockberries/blockberry/pkg/config"
-	"github.com/blockberries/blockberry/internal/handlers"
+	"github.com/blockberries/blockberry/pkg/consensus"
 	"github.com/blockberries/blockberry/pkg/node"
 	"github.com/blockberries/blockberry/pkg/types"
 )
@@ -278,4 +278,4 @@ func (c *MockConsensus) ProposeBlock(blockData []byte) error {
 }
 
 // Verify interface compliance
-var _ handlers.ConsensusHandler = (*MockConsensus)(nil)
+var _ consensus.ConsensusHandler = (*MockConsensus)(nil)

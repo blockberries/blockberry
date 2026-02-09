@@ -38,7 +38,7 @@ type ExtendVoteRequest struct {
 	Hash []byte
 
 	// Height is the block height.
-	Height uint64
+	Height int64
 
 	// Time is the block timestamp.
 	Time time.Time
@@ -60,7 +60,7 @@ type VerifyVoteExtRequest struct {
 	ValidatorAddress []byte
 
 	// Height is the block height.
-	Height uint64
+	Height int64
 
 	// VoteExtension is the extension data to verify.
 	VoteExtension []byte
@@ -111,7 +111,7 @@ type FinalizeBlockRequest struct {
 	Hash []byte
 
 	// Height is the block height.
-	Height uint64
+	Height int64
 
 	// Time is the block timestamp.
 	Time time.Time
@@ -126,7 +126,7 @@ type FinalizeBlockResponse struct {
 	Events []Event
 
 	// TxResults contains the execution result for each transaction.
-	TxResults []TxExecResult
+	TxResults []TxResult
 
 	// ValidatorUpdates contains changes to the validator set.
 	ValidatorUpdates []ValidatorUpdate
@@ -188,7 +188,7 @@ func (app *BaseFinalityApplication) FinalizeBlock(ctx context.Context, req *Fina
 	// This is a default implementation that returns empty results.
 	// Real implementations should call BeginBlock, ExecuteTx for each tx, and EndBlock.
 	return &FinalizeBlockResponse{
-		TxResults: make([]TxExecResult, len(req.Txs)),
+		TxResults: make([]TxResult, len(req.Txs)),
 		AppHash:   nil,
 	}
 }

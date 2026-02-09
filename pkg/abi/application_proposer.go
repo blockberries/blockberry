@@ -42,7 +42,7 @@ type PrepareRequest struct {
 	Misbehavior []Misbehavior
 
 	// Height is the block height being proposed.
-	Height uint64
+	Height int64
 
 	// Time is the proposed block timestamp.
 	Time time.Time
@@ -73,7 +73,7 @@ type ProcessRequest struct {
 	Hash []byte
 
 	// Height is the proposed block height.
-	Height uint64
+	Height int64
 
 	// Time is the proposed block timestamp.
 	Time time.Time
@@ -142,7 +142,7 @@ type Misbehavior struct {
 	Validator Validator
 
 	// Height is the height at which the misbehavior occurred.
-	Height uint64
+	Height int64
 
 	// Time is when the misbehavior was detected.
 	Time time.Time

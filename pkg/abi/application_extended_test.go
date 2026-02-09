@@ -19,7 +19,7 @@ func TestSnapshotApplication(t *testing.T) {
 			Hash:     []byte("hash"),
 			Metadata: []byte("metadata"),
 		}
-		assert.Equal(t, uint64(100), snapshot.Height)
+		assert.Equal(t, int64(100), snapshot.Height)
 		assert.Equal(t, uint32(1), snapshot.Format)
 		assert.Equal(t, uint32(10), snapshot.Chunks)
 		assert.Equal(t, []byte("hash"), snapshot.Hash)
@@ -216,7 +216,7 @@ func TestFinalityApplication(t *testing.T) {
 
 		resp := &FinalizeBlockResponse{
 			Events:           []Event{{Type: "test"}},
-			TxResults:        []TxExecResult{{Code: CodeOK}},
+			TxResults:        []TxResult{{Code: 0}},
 			ValidatorUpdates: []ValidatorUpdate{{Power: 100}},
 			AppHash:          []byte("apphash"),
 		}

@@ -1,6 +1,45 @@
 package abi
 
+// QueryResult contains the result of a query.
+// This is the type returned by Application.Query().
+type QueryResult struct {
+	// Code is the result code (0 = success, non-zero = error).
+	Code uint32
+
+	// Codespace partitions error codes by module (e.g., "staking", "bank").
+	Codespace string
+
+	// Data contains the query result data.
+	Data []byte
+
+	// Log is a human-readable log message for errors.
+	Log string
+
+	// Info contains additional diagnostic information.
+	Info string
+
+	// Index can be used to disambiguate multi-key query results.
+	Index int64
+
+	// Height is the block height at which the query was executed.
+	Height int64
+
+	// ProofOps contains merkle proofs if requested.
+	ProofOps []ProofOp
+}
+
+// IsSuccess returns true if the query result indicates success.
+// Returns false if the receiver is nil.
+func (r *QueryResult) IsSuccess() bool {
+	if r == nil {
+		return false
+	}
+	return r.Code == 0
+}
+
 // QueryRequest represents a request to read application state.
+// Used internally by the framework; the Application interface uses
+// positional parameters directly.
 type QueryRequest struct {
 	// Path is the query path (e.g., "/accounts/{address}", "/store/key").
 	Path string
@@ -9,13 +48,14 @@ type QueryRequest struct {
 	Data []byte
 
 	// Height specifies the historical height to query. 0 means latest.
-	Height uint64
+	Height int64
 
 	// Prove requests a Merkle proof be included in the response.
 	Prove bool
 }
 
 // QueryResponse represents the response from a state query.
+// Used internally by the framework for RPC responses.
 type QueryResponse struct {
 	// Code indicates success (0) or failure (non-zero).
 	Code ResultCode
@@ -33,7 +73,7 @@ type QueryResponse struct {
 	Proof *Proof
 
 	// Height is the height at which the query was executed.
-	Height uint64
+	Height int64
 
 	// Index is the index of the key in the tree (for iteration).
 	Index int64

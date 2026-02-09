@@ -45,7 +45,7 @@ type TxIndexResult struct {
 	Index uint32
 
 	// Result is the execution result including events.
-	Result *TxExecResult
+	Result *TxResult
 }
 
 // TxIndexBatch allows batching multiple index operations.

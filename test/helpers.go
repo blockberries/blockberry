@@ -556,9 +556,9 @@ func (tn *TestNode) handleMessage(msg streams.IncomingMessage) {
 // consensus.ConsensusHandler for testing purposes.
 type MockApplication struct {
 	mu                sync.Mutex
-	CheckedTxs        []*abi.Transaction
-	ExecutedTxs       []*abi.Transaction
-	BlocksBegun       []uint64
+	CheckedTxs        [][]byte
+	ExecutedTxs       [][]byte
+	BlocksBegun       []int64
 	BlocksEnded       int
 	Commits           int
 	AppHash           []byte
@@ -578,33 +578,17 @@ func NewMockApplication() *MockApplication {
 // Ensure MockApplication implements abi.Application.
 var _ abi.Application = (*MockApplication)(nil)
 
-// Info returns application metadata.
-func (m *MockApplication) Info() abi.ApplicationInfo {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var height uint64
-	if len(m.BlocksBegun) > 0 {
-		height = m.BlocksBegun[len(m.BlocksBegun)-1]
-	}
-	return abi.ApplicationInfo{
-		Name:    "mock-application",
-		Version: "1.0.0",
-		AppHash: m.AppHash,
-		Height:  height,
-	}
-}
-
 // InitChain initializes the chain.
-func (m *MockApplication) InitChain(genesis *abi.Genesis) error {
+func (m *MockApplication) InitChain(ctx context.Context, validators []abi.Validator, appState []byte) error {
 	return nil
 }
 
 // CheckTx records a transaction check and accepts all.
-func (m *MockApplication) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (m *MockApplication) CheckTx(ctx context.Context, tx []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.CheckedTxs = append(m.CheckedTxs, tx)
-	return &abi.TxCheckResult{Code: abi.CodeOK}
+	return nil
 }
 
 // BeginBlock records a block beginning.
@@ -616,32 +600,32 @@ func (m *MockApplication) BeginBlock(ctx context.Context, header *abi.BlockHeade
 }
 
 // ExecuteTx records a transaction execution.
-func (m *MockApplication) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
+func (m *MockApplication) ExecuteTx(ctx context.Context, tx []byte) (*abi.TxResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.ExecutedTxs = append(m.ExecutedTxs, tx)
-	return &abi.TxExecResult{Code: abi.CodeOK}
+	return &abi.TxResult{Code: 0}, nil
 }
 
 // EndBlock records a block end.
-func (m *MockApplication) EndBlock(ctx context.Context) *abi.EndBlockResult {
+func (m *MockApplication) EndBlock(ctx context.Context) (*abi.EndBlockResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.BlocksEnded++
-	return &abi.EndBlockResult{}
+	return &abi.EndBlockResult{}, nil
 }
 
 // Commit records a commit.
-func (m *MockApplication) Commit(ctx context.Context) *abi.CommitResult {
+func (m *MockApplication) Commit(ctx context.Context) (*abi.CommitResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Commits++
-	return &abi.CommitResult{AppHash: m.AppHash}
+	return &abi.CommitResult{AppHash: m.AppHash}, nil
 }
 
 // Query returns an OK response.
-func (m *MockApplication) Query(ctx context.Context, req *abi.QueryRequest) *abi.QueryResponse {
-	return &abi.QueryResponse{Code: abi.CodeOK}
+func (m *MockApplication) Query(ctx context.Context, path string, data []byte, height int64) (*abi.QueryResult, error) {
+	return &abi.QueryResult{Code: 0}, nil
 }
 
 // TxCount returns the number of checked transactions.

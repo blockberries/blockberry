@@ -13,16 +13,9 @@ import (
 func TestNullApplication_Creation(t *testing.T) {
 	app := NewNullApplication()
 	require.NotNil(t, app)
-	require.Equal(t, uint64(0), app.LastBlockHeight)
+	require.Equal(t, int64(0), app.LastBlockHeight)
 	require.Nil(t, app.LastBlockHash)
 	require.Len(t, app.AppHash, 32)
-}
-
-func TestNullApplication_Info(t *testing.T) {
-	app := NewNullApplication()
-	info := app.Info()
-	assert.Equal(t, "null-application", info.Name)
-	assert.Equal(t, "1.0.0", info.Version)
 }
 
 func TestNullApplication_CheckTx(t *testing.T) {
@@ -30,14 +23,14 @@ func TestNullApplication_CheckTx(t *testing.T) {
 	ctx := context.Background()
 
 	// Should accept any transaction
-	result := app.CheckTx(ctx, &abi.Transaction{Data: nil})
-	assert.True(t, result.IsOK())
+	err := app.CheckTx(ctx, nil)
+	assert.NoError(t, err)
 
-	result = app.CheckTx(ctx, &abi.Transaction{Data: []byte{}})
-	assert.True(t, result.IsOK())
+	err = app.CheckTx(ctx, []byte{})
+	assert.NoError(t, err)
 
-	result = app.CheckTx(ctx, &abi.Transaction{Data: []byte("valid transaction")})
-	assert.True(t, result.IsOK())
+	err = app.CheckTx(ctx, []byte("valid transaction"))
+	assert.NoError(t, err)
 }
 
 func TestNullApplication_BlockFlow(t *testing.T) {
@@ -45,26 +38,28 @@ func TestNullApplication_BlockFlow(t *testing.T) {
 	ctx := context.Background()
 
 	// Begin block
-	height := uint64(100)
+	height := int64(100)
 	prevHash := []byte("prevhash")
-	err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, PrevHash: prevHash})
+	err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, LastBlockHash: prevHash})
 	require.NoError(t, err)
 	require.Equal(t, height, app.LastBlockHeight)
 	require.Equal(t, prevHash, app.LastBlockHash)
 
 	// Execute transactions
 	for i := 0; i < 10; i++ {
-		tx := &abi.Transaction{Data: []byte{byte(i)}}
-		result := app.ExecuteTx(ctx, tx)
-		assert.True(t, result.IsOK())
+		result, err := app.ExecuteTx(ctx, []byte{byte(i)})
+		require.NoError(t, err)
+		assert.True(t, result.IsSuccess())
 	}
 
 	// End block
-	endResult := app.EndBlock(ctx)
+	endResult, err := app.EndBlock(ctx)
+	require.NoError(t, err)
 	assert.NotNil(t, endResult)
 
 	// Commit
-	commitResult := app.Commit(ctx)
+	commitResult, err := app.Commit(ctx)
+	require.NoError(t, err)
 	assert.NotNil(t, commitResult)
 	assert.Equal(t, app.AppHash, commitResult.AppHash)
 }
@@ -74,12 +69,14 @@ func TestNullApplication_Query(t *testing.T) {
 	ctx := context.Background()
 
 	// Query should return OK
-	result := app.Query(ctx, &abi.QueryRequest{Path: "path", Data: []byte("data")})
-	assert.True(t, result.IsOK())
+	result, err := app.Query(ctx, "path", []byte("data"), 0)
+	require.NoError(t, err)
+	assert.True(t, result.IsSuccess())
 
 	// Empty query should also work
-	result = app.Query(ctx, &abi.QueryRequest{Path: "", Data: nil})
-	assert.True(t, result.IsOK())
+	result, err = app.Query(ctx, "", nil, 0)
+	require.NoError(t, err)
+	assert.True(t, result.IsSuccess())
 }
 
 func TestNullApplication_ImplementsInterface(t *testing.T) {
@@ -93,20 +90,23 @@ func TestNullApplication_MultipleBlocks(t *testing.T) {
 	ctx := context.Background()
 
 	// Process multiple blocks
-	for height := uint64(1); height <= 5; height++ {
+	for height := int64(1); height <= 5; height++ {
 		prevHash := []byte{byte(height)}
 
-		err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, PrevHash: prevHash})
+		err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, LastBlockHash: prevHash})
 		require.NoError(t, err)
 
 		// Execute a transaction per block
-		result := app.ExecuteTx(ctx, &abi.Transaction{Data: []byte{byte(height)}})
-		assert.True(t, result.IsOK())
+		result, err := app.ExecuteTx(ctx, []byte{byte(height)})
+		require.NoError(t, err)
+		assert.True(t, result.IsSuccess())
 
-		endResult := app.EndBlock(ctx)
+		endResult, err := app.EndBlock(ctx)
+		require.NoError(t, err)
 		assert.NotNil(t, endResult)
 
-		commitResult := app.Commit(ctx)
+		commitResult, err := app.Commit(ctx)
+		require.NoError(t, err)
 		assert.NotNil(t, commitResult)
 
 		// State should be updated
@@ -117,6 +117,6 @@ func TestNullApplication_MultipleBlocks(t *testing.T) {
 
 func TestNullApplication_InitChain(t *testing.T) {
 	app := NewNullApplication()
-	err := app.InitChain(&abi.Genesis{ChainID: "test-chain"})
+	err := app.InitChain(context.Background(), nil, nil)
 	require.NoError(t, err)
 }

@@ -49,13 +49,13 @@ type SyncInfo struct {
 	LatestAppHash []byte
 
 	// LatestBlockHeight is the height of the latest block.
-	LatestBlockHeight uint64
+	LatestBlockHeight int64
 
 	// LatestBlockTime is the timestamp of the latest block.
 	LatestBlockTime time.Time
 
 	// EarliestBlockHeight is the earliest available block height.
-	EarliestBlockHeight uint64
+	EarliestBlockHeight int64
 
 	// EarliestBlockTime is the timestamp of the earliest block.
 	EarliestBlockTime time.Time
@@ -140,7 +140,7 @@ type BroadcastResult struct {
 	Data []byte
 
 	// Height is the block height (only set for BroadcastCommit).
-	Height uint64
+	Height int64
 }
 
 // PeerInfo contains information about a connected peer.
@@ -194,19 +194,19 @@ type TxResult struct {
 	Hash []byte
 
 	// Height is the block height containing this transaction.
-	Height uint64
+	Height int64
 
 	// Index is the transaction's index in the block.
 	Index uint32
 
 	// Result is the execution result.
-	Result *abi.TxExecResult
+	Result *abi.TxResult
 }
 
 // ConsensusState contains the current consensus state.
 type ConsensusState struct {
 	// Height is the current height.
-	Height uint64
+	Height int64
 
 	// Round is the current round.
 	Round uint32

@@ -14,52 +14,53 @@ import "context"
 //  4. Commit - Called to finalize and persist state changes
 //
 // CheckTx and Query can be called at any time and may run concurrently.
+//
+// Transactions are treated as opaque bytes. The framework handles ordering
+// and finality; the application handles interpretation and execution.
 type Application interface {
-	// Info returns metadata about the application.
-	// Called on startup to verify application state matches the blockchain.
-	Info() ApplicationInfo
-
 	// InitChain is called once at genesis to initialize the application.
-	// The genesis parameter contains initial validators and app-specific state.
-	InitChain(genesis *Genesis) error
+	// validators contains the initial validator set, appState contains
+	// application-specific genesis state (opaque to framework).
+	InitChain(ctx context.Context, validators []Validator, appState []byte) error
 
 	// CheckTx validates a transaction for inclusion in the mempool.
 	// This is a lightweight check before block execution.
-	// Returns a result indicating whether the transaction should be accepted.
+	// Returns nil if the transaction should be accepted, or an error
+	// describing why it is invalid.
 	//
 	// CheckTx may be called concurrently from multiple goroutines.
 	// The implementation must be thread-safe.
-	CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
+	CheckTx(ctx context.Context, tx []byte) error
 
 	// BeginBlock is called at the start of block processing.
 	// The application should prepare for transaction execution.
 	//
 	// The header contains block metadata including height, time, and proposer.
-	// Evidence of validator misbehavior is also included.
 	BeginBlock(ctx context.Context, header *BlockHeader) error
 
 	// ExecuteTx executes a transaction during block processing.
 	// Called once for each transaction in the block, in order.
 	//
 	// Unlike CheckTx, this must update application state.
-	// Returns the execution result including events and state changes.
-	ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
+	// Returns the execution result including events and gas usage.
+	ExecuteTx(ctx context.Context, tx []byte) (*TxResult, error)
 
 	// EndBlock is called after all transactions have been processed.
 	// The application can return validator updates and consensus parameter changes.
-	EndBlock(ctx context.Context) *EndBlockResult
+	EndBlock(ctx context.Context) (*EndBlockResult, error)
 
 	// Commit finalizes the block and persists state changes.
 	// Returns the new application state hash.
 	//
 	// After Commit returns, the state changes are permanent and the
 	// application should be ready for the next block.
-	Commit(ctx context.Context) *CommitResult
+	Commit(ctx context.Context) (*CommitResult, error)
 
 	// Query reads application state.
 	// This can be called at any time and should not modify state.
+	// The height parameter specifies which historical state to query (0 = latest).
 	//
 	// Query may be called concurrently from multiple goroutines.
 	// The implementation must be thread-safe.
-	Query(ctx context.Context, req *QueryRequest) *QueryResponse
+	Query(ctx context.Context, path string, data []byte, height int64) (*QueryResult, error)
 }

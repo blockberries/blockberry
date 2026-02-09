@@ -4,6 +4,9 @@ import "bytes"
 
 // Validator represents a consensus validator.
 type Validator struct {
+	// Name is the human-readable validator name.
+	Name string
+
 	// Address is the validator's unique address (typically derived from PublicKey).
 	Address []byte
 
@@ -25,6 +28,9 @@ func (v Validator) Equal(other Validator) bool {
 
 // ValidatorUpdate represents a change to the validator set.
 type ValidatorUpdate struct {
+	// Name is the human-readable validator name.
+	Name string
+
 	// PublicKey is the validator's public key.
 	PublicKey []byte
 
@@ -55,7 +61,7 @@ type ValidatorSet interface {
 	TotalVotingPower() int64
 
 	// Proposer returns the proposer for the given height and round.
-	Proposer(height uint64, round uint32) *Validator
+	Proposer(height int64, round uint32) *Validator
 
 	// VerifySignature verifies a signature from a validator.
 	VerifySignature(validatorIdx uint16, digest, sig []byte) bool
@@ -153,11 +159,11 @@ func (vs *SimpleValidatorSet) TotalVotingPower() int64 {
 
 // Proposer returns the proposer for the given height and round using round-robin.
 // Returns a deep copy to prevent external mutation.
-func (vs *SimpleValidatorSet) Proposer(height uint64, round uint32) *Validator {
+func (vs *SimpleValidatorSet) Proposer(height int64, round uint32) *Validator {
 	if len(vs.validators) == 0 {
 		return nil
 	}
-	idx := (height + uint64(round)) % uint64(len(vs.validators))
+	idx := (uint64(height) + uint64(round)) % uint64(len(vs.validators))
 	v := vs.validators[idx]
 	return &Validator{
 		Address:     append([]byte(nil), v.Address...),

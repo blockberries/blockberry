@@ -11,8 +11,8 @@ func TestNullTxIndexer_Index(t *testing.T) {
 		Hash:   []byte("test-hash"),
 		Height: 100,
 		Index:  0,
-		Result: &TxExecResult{
-			Code: CodeOK,
+		Result: &TxResult{
+			Code: 0,
 		},
 	}
 
@@ -164,8 +164,8 @@ func TestTxIndexResult_Fields(t *testing.T) {
 		Hash:   []byte("test-hash"),
 		Height: 12345,
 		Index:  42,
-		Result: &TxExecResult{
-			Code:    CodeOK,
+		Result: &TxResult{
+			Code:    0,
 			Data:    []byte("result-data"),
 			GasUsed: 50000,
 		},
@@ -180,7 +180,7 @@ func TestTxIndexResult_Fields(t *testing.T) {
 	if result.Index != 42 {
 		t.Errorf("Index = %d, want %d", result.Index, 42)
 	}
-	if result.Result.Code != CodeOK {
-		t.Errorf("Result.Code = %d, want %d", result.Result.Code, CodeOK)
+	if result.Result.Code != 0 {
+		t.Errorf("Result.Code = %d, want %d", result.Result.Code, 0)
 	}
 }

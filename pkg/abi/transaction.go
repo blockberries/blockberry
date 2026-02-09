@@ -117,25 +117,38 @@ func (r *TxCheckResult) IsOK() bool {
 	return r != nil && r.Code.IsOK()
 }
 
-// TxExecResult is returned from Application.ExecuteTx during block execution.
-type TxExecResult struct {
-	// Code indicates success (0) or failure (non-zero).
-	Code ResultCode
+// TxResult is returned from Application.ExecuteTx during block execution.
+type TxResult struct {
+	// Code is the result code (0 = success, non-zero = error).
+	Code uint32
 
-	// Error provides a human-readable error message if Code != 0.
-	Error error
+	// Codespace partitions error codes by module (e.g., "staking", "bank").
+	Codespace string
 
-	// GasUsed is the actual gas consumed during execution.
-	GasUsed uint64
-
-	// Events are the events emitted during execution.
-	Events []Event
-
-	// Data is optional return data from execution.
+	// Data contains any result data from execution.
 	Data []byte
+
+	// Log is a human-readable log message for errors.
+	Log string
+
+	// Info contains additional diagnostic information.
+	Info string
+
+	// GasWanted is the gas requested by the transaction.
+	GasWanted int64
+
+	// GasUsed is the actual gas consumed.
+	GasUsed int64
+
+	// Events are indexed events emitted during execution.
+	Events []Event
 }
 
-// IsOK returns true if the execution succeeded.
-func (r *TxExecResult) IsOK() bool {
-	return r != nil && r.Code.IsOK()
+// IsSuccess returns true if the transaction result indicates success.
+// Returns false if the receiver is nil.
+func (r *TxResult) IsSuccess() bool {
+	if r == nil {
+		return false
+	}
+	return r.Code == 0
 }

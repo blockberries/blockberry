@@ -21,7 +21,7 @@ type mockRPCServer struct {
 	statusResult     *rpc.NodeStatus
 	netInfoResult    *rpc.NetInfo
 	broadcastResult  *rpc.BroadcastResult
-	queryResult      *abi.QueryResponse
+	queryResult      *abi.QueryResult
 	blockResult      *rpc.BlockResult
 	txResult         *rpc.TxResult
 	txSearchResults  []*rpc.TxResult
@@ -51,11 +51,11 @@ func (m *mockRPCServer) BroadcastTx(ctx context.Context, tx []byte, mode rpc.Bro
 	return m.broadcastResult, m.err
 }
 
-func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height uint64, prove bool) (*abi.QueryResponse, error) {
+func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*abi.QueryResult, error) {
 	return m.queryResult, m.err
 }
 
-func (m *mockRPCServer) Block(ctx context.Context, height uint64) (*rpc.BlockResult, error) {
+func (m *mockRPCServer) Block(ctx context.Context, height int64) (*rpc.BlockResult, error) {
 	return m.blockResult, m.err
 }
 
@@ -272,9 +272,9 @@ func TestBroadcastTx_MissingTx(t *testing.T) {
 
 func TestQuery(t *testing.T) {
 	mock := &mockRPCServer{
-		queryResult: &abi.QueryResponse{
-			Code:   abi.CodeOK,
-			Value:  []byte("result value"),
+		queryResult: &abi.QueryResult{
+			Code:   0,
+			Data:   []byte("result value"),
 			Height: 50,
 		},
 	}

@@ -26,11 +26,11 @@ type Server interface {
 	BroadcastTx(ctx context.Context, tx []byte, mode BroadcastMode) (*BroadcastResult, error)
 
 	// Query performs an application query.
-	Query(ctx context.Context, path string, data []byte, height uint64, prove bool) (*abi.QueryResponse, error)
+	Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*abi.QueryResult, error)
 
 	// Block returns a block by height.
 	// Use height 0 for the latest block.
-	Block(ctx context.Context, height uint64) (*BlockResult, error)
+	Block(ctx context.Context, height int64) (*BlockResult, error)
 
 	// BlockByHash returns a block by hash.
 	BlockByHash(ctx context.Context, hash []byte) (*BlockResult, error)

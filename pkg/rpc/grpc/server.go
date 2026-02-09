@@ -657,9 +657,9 @@ func (s *Server) Query(ctx context.Context, req *schema.QueryRequest) (*schema.Q
 		return nil, status.Error(codes.InvalidArgument, "path is required")
 	}
 
-	height := uint64(0)
+	height := int64(0)
 	if req.Height != 0 {
-		height = uint64(req.Height)
+		height = int64(req.Height)
 	}
 
 	result, err := s.rpcServer.Query(ctx, *req.Path, req.Data, height, req.Prove)
@@ -671,11 +671,11 @@ func (s *Server) Query(ctx context.Context, req *schema.QueryRequest) (*schema.Q
 	resultHeight := int64(result.Height)
 	resp := &schema.QueryResponse{
 		Code:   &code,
-		Value:  result.Value,
+		Value:  result.Data,
 		Height: resultHeight,
 	}
-	if result.Error != nil {
-		resp.Log = result.Error.Error()
+	if result.Log != "" {
+		resp.Log = result.Log
 	}
 	// Note: Proof serialization not implemented - would need custom serialization
 
@@ -688,7 +688,7 @@ func (s *Server) Block(ctx context.Context, req *schema.BlockRequest) (*schema.B
 		return nil, status.Error(codes.InvalidArgument, "height is required")
 	}
 
-	result, err := s.rpcServer.Block(ctx, uint64(*req.Height))
+	result, err := s.rpcServer.Block(ctx, int64(*req.Height))
 	if err != nil {
 		return nil, toGRPCError(err)
 	}
@@ -930,14 +930,14 @@ func blockResultToResponse(result *rpc.BlockResult) *schema.BlockResponse {
 		Height:        ptr(int64(block.Header.Height)),
 		Hash:          result.BlockID.Hash,
 		Time:          ptr(block.Header.Time.Unix()),
-		LastBlockHash: block.Header.PrevHash,
+		LastBlockHash: block.Header.LastBlockHash,
 		// DataHash, ValidatorsHash, AppHash not in BlockHeader - use empty
 	}
 
-	// Add transactions (serialize each to bytes)
+	// Add transactions
 	for _, tx := range block.Txs {
 		if tx != nil {
-			grpcBlock.Txs = append(grpcBlock.Txs, tx.Data)
+			grpcBlock.Txs = append(grpcBlock.Txs, tx)
 		}
 	}
 
@@ -964,12 +964,12 @@ func txResultToRPC(result *rpc.TxResult) schema.GrpcTxResult {
 
 	if result.Result != nil {
 		rpcResult.Code = ptr(int32(result.Result.Code))
-		if result.Result.Error != nil {
-			rpcResult.Log = result.Result.Error.Error()
+		if result.Result.Log != "" {
+			rpcResult.Log = result.Result.Log
 		}
 		rpcResult.Data = result.Result.Data
-		rpcResult.GasWanted = ptr(int64(0)) // Not available in TxExecResult
-		rpcResult.GasUsed = ptr(int64(result.Result.GasUsed))
+		rpcResult.GasWanted = ptr(result.Result.GasWanted)
+		rpcResult.GasUsed = ptr(result.Result.GasUsed)
 	}
 
 	return rpcResult

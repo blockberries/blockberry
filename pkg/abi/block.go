@@ -5,14 +5,35 @@ import "time"
 // BlockHeader contains block metadata passed to BeginBlock.
 // This is the information the application receives at the start of block processing.
 type BlockHeader struct {
+	// ChainID identifies the blockchain network.
+	ChainID string
+
 	// Height is the block height (1-indexed).
-	Height uint64
+	Height int64
 
 	// Time is the block timestamp.
 	Time time.Time
 
-	// PrevHash is the hash of the previous block.
-	PrevHash []byte
+	// LastBlockHash is the hash of the previous block.
+	LastBlockHash []byte
+
+	// LastCommitHash is the merkle root of the previous block's commit.
+	LastCommitHash []byte
+
+	// ValidatorsHash is the merkle root of the current validator set.
+	ValidatorsHash []byte
+
+	// AppHash is the application state root from the previous block.
+	AppHash []byte
+
+	// ConsensusHash is the hash of consensus parameters.
+	ConsensusHash []byte
+
+	// DAGRound is the highest DAG round included in this block.
+	DAGRound uint64
+
+	// Proposer is the human-readable name of the block proposer.
+	Proposer string
 
 	// ProposerAddress is the address of the block proposer.
 	ProposerAddress []byte
@@ -33,7 +54,7 @@ type Evidence struct {
 	Type EvidenceType
 
 	// Height is the height at which the misbehavior occurred.
-	Height uint64
+	Height int64
 
 	// Time is when the misbehavior occurred.
 	Time time.Time
@@ -94,7 +115,7 @@ type CommitResult struct {
 
 	// RetainHeight is the suggested minimum height to retain for queries.
 	// Heights below this may be pruned.
-	RetainHeight uint64
+	RetainHeight int64
 }
 
 // ConsensusParams define consensus rules that can be updated by the application.
@@ -107,6 +128,12 @@ type ConsensusParams struct {
 
 	// Validator contains validator-related parameters.
 	Validator ValidatorParams
+
+	// MaxBlockTxs is the maximum number of transactions per block.
+	MaxBlockTxs int64
+
+	// MaxBlockGas is the maximum gas per block (-1 for unlimited).
+	MaxBlockGas int64
 }
 
 // BlockParams define block size limits.
@@ -141,8 +168,8 @@ type Block struct {
 	// Header contains block metadata.
 	Header BlockHeader
 
-	// Txs contains the transactions in this block.
-	Txs []*Transaction
+	// Txs contains the raw transactions in this block.
+	Txs [][]byte
 
 	// LastCommit contains the commit from the previous block.
 	LastCommit *Commit
@@ -151,7 +178,7 @@ type Block struct {
 // Commit contains validator signatures for a block.
 type Commit struct {
 	// Height is the block height.
-	Height uint64
+	Height int64
 
 	// Round is the consensus round.
 	Round uint32

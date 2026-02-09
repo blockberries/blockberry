@@ -75,13 +75,13 @@ func TestTxCheckResult(t *testing.T) {
 	})
 }
 
-func TestTxExecResult(t *testing.T) {
-	t.Run("IsOK", func(t *testing.T) {
-		result := &TxExecResult{Code: CodeOK}
-		assert.True(t, result.IsOK())
+func TestTxResult(t *testing.T) {
+	t.Run("IsSuccess", func(t *testing.T) {
+		result := &TxResult{Code: 0}
+		assert.True(t, result.IsSuccess())
 
-		result.Code = CodeInsufficientGas
-		assert.False(t, result.IsOK())
+		result.Code = 1
+		assert.False(t, result.IsSuccess())
 	})
 }
 
@@ -216,46 +216,42 @@ func TestBaseApplication(t *testing.T) {
 	app := &BaseApplication{}
 	ctx := context.Background()
 
-	t.Run("Info", func(t *testing.T) {
-		info := app.Info()
-		assert.Equal(t, "base", info.Name)
-	})
-
 	t.Run("InitChain", func(t *testing.T) {
-		err := app.InitChain(&Genesis{ChainID: "test"})
+		err := app.InitChain(ctx, nil, nil)
 		assert.NoError(t, err)
 	})
 
 	t.Run("CheckTx_FailClosed", func(t *testing.T) {
-		result := app.CheckTx(ctx, &Transaction{Data: []byte("tx")})
-		assert.False(t, result.IsOK())
-		assert.Equal(t, CodeNotAuthorized, result.Code)
+		err := app.CheckTx(ctx, []byte("tx"))
+		assert.Error(t, err)
 	})
 
 	t.Run("ExecuteTx_FailClosed", func(t *testing.T) {
-		result := app.ExecuteTx(ctx, &Transaction{Data: []byte("tx")})
-		assert.False(t, result.IsOK())
-		assert.Equal(t, CodeNotAuthorized, result.Code)
+		result, err := app.ExecuteTx(ctx, []byte("tx"))
+		assert.Error(t, err)
+		assert.Nil(t, result)
 	})
 
 	t.Run("Query_FailClosed", func(t *testing.T) {
-		result := app.Query(ctx, &QueryRequest{Path: "/test"})
-		assert.False(t, result.IsOK())
-		assert.Equal(t, CodeNotAuthorized, result.Code)
+		result, err := app.Query(ctx, "/test", nil, 0)
+		assert.Error(t, err)
+		assert.Nil(t, result)
 	})
 
 	t.Run("BeginBlock", func(t *testing.T) {
-		err := app.BeginBlock(ctx, &BlockHeader{Height: 1})
+		err := app.BeginBlock(ctx, &BlockHeader{Height: int64(1)})
 		assert.NoError(t, err)
 	})
 
 	t.Run("EndBlock", func(t *testing.T) {
-		result := app.EndBlock(ctx)
+		result, err := app.EndBlock(ctx)
+		assert.NoError(t, err)
 		assert.NotNil(t, result)
 	})
 
 	t.Run("Commit", func(t *testing.T) {
-		result := app.Commit(ctx)
+		result, err := app.Commit(ctx)
+		assert.NoError(t, err)
 		assert.NotNil(t, result)
 	})
 }
@@ -265,31 +261,33 @@ func TestAcceptAllApplication(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("CheckTx_AcceptsAll", func(t *testing.T) {
-		result := app.CheckTx(ctx, &Transaction{Data: []byte("any")})
-		assert.True(t, result.IsOK())
+		err := app.CheckTx(ctx, []byte("any"))
+		assert.NoError(t, err)
 	})
 
 	t.Run("ExecuteTx_AcceptsAll", func(t *testing.T) {
-		result := app.ExecuteTx(ctx, &Transaction{Data: []byte("any")})
-		assert.True(t, result.IsOK())
+		result, err := app.ExecuteTx(ctx, []byte("any"))
+		assert.NoError(t, err)
+		assert.True(t, result.IsSuccess())
 	})
 
 	t.Run("Query_AcceptsAll", func(t *testing.T) {
-		result := app.Query(ctx, &QueryRequest{Path: "/any"})
-		assert.True(t, result.IsOK())
+		result, err := app.Query(ctx, "/any", nil, 0)
+		assert.NoError(t, err)
+		assert.True(t, result.IsSuccess())
 	})
 }
 
 func TestBlockHeader(t *testing.T) {
 	header := BlockHeader{
-		Height:          100,
+		Height:          int64(100),
 		Time:            time.Now(),
-		PrevHash:        []byte("prevhash"),
+		LastBlockHash:   []byte("prevhash"),
 		ProposerAddress: []byte("proposer"),
 	}
 
-	assert.Equal(t, uint64(100), header.Height)
-	assert.NotEmpty(t, header.PrevHash)
+	assert.Equal(t, int64(100), header.Height)
+	assert.NotEmpty(t, header.LastBlockHash)
 }
 
 func TestEvidenceType(t *testing.T) {

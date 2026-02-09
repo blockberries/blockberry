@@ -285,7 +285,7 @@ func (s *Server) broadcastTx(ctx context.Context, params json.RawMessage, mode r
 type queryParams struct {
 	Path   string `json:"path"`
 	Data   string `json:"data"` // hex-encoded
-	Height uint64 `json:"height"`
+	Height int64  `json:"height"`
 	Prove  bool   `json:"prove"`
 }
 
@@ -308,7 +308,7 @@ func (s *Server) handleQuery(ctx context.Context, params json.RawMessage) (inter
 }
 
 type blockParams struct {
-	Height uint64 `json:"height"`
+	Height int64 `json:"height"`
 }
 
 func (s *Server) handleBlock(ctx context.Context, params json.RawMessage) (interface{}, error) {

@@ -34,8 +34,8 @@ func TestTxIndexer_IndexAndGet(t *testing.T) {
 		Hash:   []byte("tx-hash-1"),
 		Height: 100,
 		Index:  0,
-		Result: &abi.TxExecResult{
-			Code: abi.CodeOK,
+		Result: &abi.TxResult{
+			Code: 0,
 			Events: []abi.Event{
 				{
 					Type: "transfer",
@@ -95,7 +95,7 @@ func TestTxIndexer_Delete(t *testing.T) {
 	err := idx.Index(&abi.TxIndexResult{
 		Hash:   []byte("tx-hash-1"),
 		Height: 100,
-		Result: &abi.TxExecResult{
+		Result: &abi.TxResult{
 			Events: []abi.Event{
 				{Type: "test", Attributes: []abi.Attribute{{Key: "key", Value: []byte("value"), Index: true}}},
 			},
@@ -158,7 +158,7 @@ func TestTxIndexer_SearchByEvent(t *testing.T) {
 	err := idx.Index(&abi.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
-		Result: &abi.TxExecResult{
+		Result: &abi.TxResult{
 			Events: []abi.Event{
 				{
 					Type: "transfer",
@@ -174,7 +174,7 @@ func TestTxIndexer_SearchByEvent(t *testing.T) {
 	err = idx.Index(&abi.TxIndexResult{
 		Hash:   []byte("tx-2"),
 		Height: 101,
-		Result: &abi.TxExecResult{
+		Result: &abi.TxResult{
 			Events: []abi.Event{
 				{
 					Type: "transfer",
@@ -401,7 +401,7 @@ func TestTxIndexer_IndexAllEvents(t *testing.T) {
 	err = idx.Index(&abi.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
-		Result: &abi.TxExecResult{
+		Result: &abi.TxResult{
 			Events: []abi.Event{
 				{
 					Type: "test",

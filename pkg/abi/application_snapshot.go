@@ -18,7 +18,7 @@ type SnapshotApplication interface {
 
 	// LoadSnapshotChunk loads a specific chunk from a snapshot.
 	// Returns the chunk data or an error if the chunk is not available.
-	LoadSnapshotChunk(height uint64, format uint32, chunk uint32) ([]byte, error)
+	LoadSnapshotChunk(height int64, format uint32, chunk uint32) ([]byte, error)
 
 	// OfferSnapshot is called when a peer offers a snapshot for syncing.
 	// The application should validate and decide whether to accept it.
@@ -33,7 +33,7 @@ type SnapshotApplication interface {
 // Snapshot represents a point-in-time application state snapshot.
 type Snapshot struct {
 	// Height is the block height at which the snapshot was taken.
-	Height uint64
+	Height int64
 
 	// Format is the snapshot format version.
 	// Applications can use different formats for different serialization schemes.
@@ -148,7 +148,7 @@ func (app *BaseSnapshotApplication) ListSnapshots() []*Snapshot {
 }
 
 // LoadSnapshotChunk returns an error by default.
-func (app *BaseSnapshotApplication) LoadSnapshotChunk(height uint64, format uint32, chunk uint32) ([]byte, error) {
+func (app *BaseSnapshotApplication) LoadSnapshotChunk(height int64, format uint32, chunk uint32) ([]byte, error) {
 	return nil, ErrNotImplemented
 }
 

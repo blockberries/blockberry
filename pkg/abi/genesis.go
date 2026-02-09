@@ -20,7 +20,7 @@ type Genesis struct {
 	AppState []byte
 
 	// InitialHeight is the initial block height (default 1).
-	InitialHeight uint64
+	InitialHeight int64
 }
 
 // ApplicationInfo provides metadata about the application.
@@ -36,7 +36,7 @@ type ApplicationInfo struct {
 	AppHash []byte
 
 	// Height is the last committed block height.
-	Height uint64
+	Height int64
 
 	// LastBlockTime is the timestamp of the last committed block.
 	LastBlockTime time.Time

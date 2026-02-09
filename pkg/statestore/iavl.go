@@ -5,16 +5,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cosmos/iavl"
-	idb "github.com/cosmos/iavl/db"
+	"github.com/blockberries/avlberry"
+	avldb "github.com/blockberries/avlberry/db"
 
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
-// IAVLStore implements StateStore using a cosmos/iavl merkle tree.
+// IAVLStore implements StateStore using an avlberry AVL+ merkle tree.
 type IAVLStore struct {
-	tree     *iavl.MutableTree
-	db       idb.DB
+	tree     *avlberry.MutableTree
+	db       avlberry.DB
 	pruneCfg *StatePruneConfig
 	pruning  bool
 	mu       sync.RWMutex
@@ -24,12 +24,12 @@ type IAVLStore struct {
 // path is the directory for persistent storage.
 // cacheSize is the number of nodes to cache in memory.
 func NewIAVLStore(path string, cacheSize int) (*IAVLStore, error) {
-	db, err := idb.NewGoLevelDB("state", path)
+	db, err := avldb.NewGoLevelDB("state", path)
 	if err != nil {
 		return nil, fmt.Errorf("opening leveldb for iavl: %w", err)
 	}
 
-	tree := iavl.NewMutableTree(db, cacheSize, false, iavl.NewNopLogger())
+	tree := avlberry.NewMutableTree(db, cacheSize, false, avlberry.NewNopLogger())
 
 	// Load the latest version if it exists
 	if _, err := tree.Load(); err != nil {
@@ -45,8 +45,8 @@ func NewIAVLStore(path string, cacheSize int) (*IAVLStore, error) {
 
 // NewMemoryIAVLStore creates an in-memory IAVL store for testing.
 func NewMemoryIAVLStore(cacheSize int) (*IAVLStore, error) {
-	db := idb.NewMemDB()
-	tree := iavl.NewMutableTree(db, cacheSize, false, iavl.NewNopLogger())
+	db := avldb.NewMemDB()
+	tree := avlberry.NewMutableTree(db, cacheSize, false, avlberry.NewNopLogger())
 
 	return &IAVLStore{
 		tree: tree,
@@ -130,7 +130,7 @@ func (s *IAVLStore) RootHash() []byte {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.tree.WorkingHash()
+	return s.tree.Hash()
 }
 
 // Version returns the latest committed version number.
@@ -184,7 +184,7 @@ func (s *IAVLStore) GetProof(key []byte) (*Proof, error) {
 		Key:        key,
 		Value:      value,
 		Exists:     value != nil,
-		RootHash:   s.tree.WorkingHash(),
+		RootHash:   s.tree.Hash(),
 		Version:    s.tree.Version(),
 		ProofBytes: proofBytes,
 	}, nil
@@ -195,7 +195,7 @@ func (s *IAVLStore) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	return s.db.Close()
+	return s.tree.Close()
 }
 
 // VersionExists checks if a specific version exists.
@@ -203,7 +203,11 @@ func (s *IAVLStore) VersionExists(version int64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return s.tree.VersionExists(version)
+	exists, err := s.tree.VersionExists(version)
+	if err != nil {
+		return false
+	}
+	return exists
 }
 
 // GetVersioned retrieves a value at a specific version.
@@ -211,10 +215,16 @@ func (s *IAVLStore) GetVersioned(key []byte, version int64) ([]byte, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	value, err := s.tree.GetVersioned(key, version)
+	// avlberry doesn't have GetVersioned, so create a temporary tree and load the version
+	tmpTree := avlberry.NewMutableTree(s.db, 0, true, avlberry.NewNopLogger())
+	if _, err := tmpTree.LoadVersion(version); err != nil {
+		return nil, fmt.Errorf("loading version %d: %w", version, err)
+	}
+	value, err := tmpTree.Get(key)
 	if err != nil {
 		return nil, fmt.Errorf("getting versioned key: %w", err)
 	}
+	// Do NOT close tmpTree — it shares the same underlying DB
 	return value, nil
 }
 
@@ -246,8 +256,11 @@ func (s *IAVLStore) PruneVersions(beforeVersion int64) (*StatePruneResult, error
 	s.pruning = true
 	defer func() { s.pruning = false }()
 
-	// Get available versions (IAVL returns []int)
-	availVersions := s.tree.AvailableVersions()
+	// Get available versions
+	availVersions, err := s.tree.AvailableVersions()
+	if err != nil {
+		return nil, fmt.Errorf("getting available versions: %w", err)
+	}
 	if len(availVersions) == 0 {
 		return &StatePruneResult{
 			OldestVersion: 0,
@@ -272,12 +285,12 @@ func (s *IAVLStore) PruneVersions(beforeVersion int64) (*StatePruneResult, error
 	// Count versions that will be deleted
 	var prunedCount int64
 	for _, v := range availVersions {
-		if int64(v) < pruneTarget {
+		if v < pruneTarget {
 			prunedCount++
 		}
 	}
 
-	// Delete versions up to pruneTarget-1 (IAVL's DeleteVersionsTo is inclusive)
+	// Delete versions up to pruneTarget-1 (DeleteVersionsTo is inclusive)
 	if pruneTarget > 1 {
 		if err := s.tree.DeleteVersionsTo(pruneTarget - 1); err != nil {
 			return nil, fmt.Errorf("deleting versions to %d: %w", pruneTarget-1, err)
@@ -285,10 +298,13 @@ func (s *IAVLStore) PruneVersions(beforeVersion int64) (*StatePruneResult, error
 	}
 
 	// Get new oldest version
-	availVersions = s.tree.AvailableVersions()
+	availVersions, err = s.tree.AvailableVersions()
+	if err != nil {
+		return nil, fmt.Errorf("getting available versions after prune: %w", err)
+	}
 	var oldestVersion int64
 	if len(availVersions) > 0 {
-		oldestVersion = int64(availVersions[0])
+		oldestVersion = availVersions[0]
 	}
 
 	return &StatePruneResult{
@@ -304,12 +320,12 @@ func (s *IAVLStore) AvailableVersions() (oldest, newest int64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	versions := s.tree.AvailableVersions()
-	if len(versions) == 0 {
+	versions, err := s.tree.AvailableVersions()
+	if err != nil || len(versions) == 0 {
 		return 0, 0
 	}
 
-	return int64(versions[0]), int64(versions[len(versions)-1])
+	return versions[0], versions[len(versions)-1]
 }
 
 // StatePruneConfig returns the current state pruning configuration.
@@ -331,12 +347,11 @@ func (s *IAVLStore) AllVersions() []int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	versions := s.tree.AvailableVersions()
-	result := make([]int64, len(versions))
-	for i, v := range versions {
-		result[i] = int64(v)
+	versions, err := s.tree.AvailableVersions()
+	if err != nil {
+		return nil
 	}
-	return result
+	return versions
 }
 
 // Ensure IAVLStore implements PrunableStateStore.

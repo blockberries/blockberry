@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **sync/statesync.go**: Fixed critical deadlock in `requestMissingChunks` where calling `failWithError` attempted to acquire an already-held mutex. Changed to call `transitionToFailed` directly.
-- **statestore/snapshot.go**: Fixed resource leak where IAVL importer was not closed if `Commit()` failed.
+- **statestore/snapshot.go**: Fixed resource leak where avlberry importer was not closed if `Commit()` failed.
 
 ### Removed
 
@@ -109,7 +109,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **statestore/snapshot.go**: Fixed critical memory exhaustion vulnerabilities in snapshot deserialization:
   - `decodeSnapshotMetadata`: Added size limits for hash (64B), app hash (64B), metadata (1MB), and chunks (100K max)
-  - `decodeExportNode`: Added size limits for IAVL keys (4KB) and values (10MB)
+  - `decodeExportNode`: Added size limits for AVL+ keys (4KB) and values (10MB)
   - These fixes prevent denial-of-service attacks where malicious peers send crafted snapshots with extremely large length fields
 
 ## [0.1.1] - 2026-01-29
@@ -137,7 +137,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `PriorityMempool`: Heap-based ordering with configurable priority function
   - `TTLMempool`: Automatic transaction expiration with background cleanup
 - **Block Store**: LevelDB-based persistent storage with memory option for testing
-- **State Store**: IAVL-based merkleized storage with ICS23 proof generation and verification
+- **State Store**: AVL+ merkleized storage with ICS23 proof generation and verification
 
 #### P2P Networking
 - Built on Glueberry with encrypted streams and automatic reconnection
@@ -191,7 +191,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Dependencies
 - `github.com/blockberries/glueberry` v1.0.1 - P2P networking
 - `github.com/blockberries/cramberry` v1.2.0 - Binary serialization
-- `github.com/cosmos/iavl` v1.3.5 - Merkleized KV store
+- `github.com/blockberries/avlberry` - Merkleized KV store
 - `github.com/cosmos/ics23/go` v0.10.0 - Proof verification
 - `github.com/prometheus/client_golang` v1.22.0 - Metrics
 - `github.com/hashicorp/golang-lru/v2` v2.0.7 - LRU caches

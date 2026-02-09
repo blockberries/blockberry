@@ -9,7 +9,7 @@ import (
 	_ "github.com/BurntSushi/toml"
 	_ "github.com/blockberries/cramberry/pkg/cramberry"
 	_ "github.com/blockberries/glueberry"
-	_ "github.com/cosmos/iavl"
+	_ "github.com/blockberries/avlberry"
 	_ "github.com/stretchr/testify/require"
 	_ "github.com/syndtr/goleveldb/leveldb"
 )

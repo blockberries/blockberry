@@ -84,7 +84,7 @@ The project follows standard Go project layout with clear separation between:
         │                     │                     │
 ┌───────▼──────┐    ┌────────▼────────┐   ┌───────▼──────┐
 │   Mempool    │    │  Block Storage  │   │ State Storage│
-│  (pluggable) │    │   (pluggable)   │   │    (IAVL)    │
+│  (pluggable) │    │   (pluggable)   │   │    (AVL+)    │
 └──────────────┘    └─────────────────┘   └──────────────┘
         │                     │                     │
 ┌───────▼──────────────────────▼─────────────────────▼──────────┐
@@ -3597,16 +3597,16 @@ certs, err := certStore.GetCertificatesForHeight(height)
 
 ```text
 
-### 4. Cosmos IAVL Integration
+### 4. avlberry Integration
 
 **Purpose:** Merkleized key-value store for application state.
 
 **Usage:**
 
 ```go
-import "github.com/cosmos/iavl"
+import "github.com/blockberries/avlberry/iavl"
 
-// Create IAVL tree
+// Create AVL+ tree
 tree, err := iavl.NewMutableTree(db, cacheSize)
 
 // Set key-value
@@ -3619,7 +3619,7 @@ value, err := tree.Get([]byte("key"))
 hash, version, err := tree.SaveVersion()
 
 // Load previous version
-tree, err = iavl.NewMutableTree(db, cacheSize)
+tree, err = iavl.NewMutableTree(db, cacheSize)  // avlberry
 tree.LoadVersion(version)
 
 // Merkle proof
@@ -3639,7 +3639,7 @@ proof, err := tree.GetVersionedProof([]byte("key"), version)
 // Storage
 "github.com/syndtr/goleveldb/leveldb"
 "github.com/dgraph-io/badger/v4"
-"github.com/cosmos/iavl"
+"github.com/blockberries/avlberry/iavl"
 
 // Utilities
 "github.com/BurntSushi/toml"  // Config parsing
@@ -3700,6 +3700,6 @@ Applications building on Blockberry must implement:
 2. Transaction validation logic
 3. Block validation logic
 4. Consensus protocol (or use provided integrations)
-5. State management (using provided IAVL store)
+5. State management (using provided AVL+ store)
 
 The framework handles all infrastructure concerns (networking, storage, mempool), allowing applications to focus on business logic.

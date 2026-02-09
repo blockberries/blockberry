@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cosmos/iavl"
+	"github.com/blockberries/avlberry"
 )
 
 // Snapshot errors.
@@ -163,7 +163,7 @@ func (s *FileSnapshotStore) Create(height int64) (*Snapshot, error) {
 
 	for {
 		node, err := exporter.Next()
-		if errors.Is(err, iavl.ErrorExportDone) {
+		if errors.Is(err, avlberry.ErrExportDone) {
 			break
 		}
 		if err != nil {
@@ -600,7 +600,7 @@ func decodeSnapshotMetadata(data []byte) (*Snapshot, error) {
 // IAVL export node encoding
 // Format: key_length (4 bytes) + key + value_length (4 bytes) + value + height (1 byte) + version (8 bytes)
 
-func encodeExportNode(w io.Writer, node *iavl.ExportNode) error {
+func encodeExportNode(w io.Writer, node *avlberry.ExportNode) error {
 	// Key length + key
 	if err := binary.Write(w, binary.BigEndian, uint32(len(node.Key))); err != nil {
 		return err
@@ -636,8 +636,8 @@ const (
 	maxIAVLValueSize = 10 * 1024 * 1024   // 10MB value limit
 )
 
-func decodeExportNode(r io.Reader) (*iavl.ExportNode, error) {
-	node := &iavl.ExportNode{}
+func decodeExportNode(r io.Reader) (*avlberry.ExportNode, error) {
+	node := &avlberry.ExportNode{}
 
 	// Key length + key
 	var keyLen uint32

@@ -69,7 +69,7 @@ Blockberry is a **generic blockchain node framework** written in Go that provide
 | **Glueberry** | `../glueberry` (v1.2.10) | Secure P2P networking with encrypted streams |
 | **Cramberry** | `../cramberry` (v1.5.5) | High-performance binary serialization with polymorphic support |
 | **Looseberry** | `../looseberry` (local) | DAG-based mempool with certified batch ordering |
-| **Cosmos IAVL** | v1.3.5 | Immutable AVL tree for merkleized state storage |
+| **avlberry** | `../avlberry` (local) | AVL+ tree for merkleized state storage |
 | **LevelDB** | syndtr/goleveldb | Persistent key-value store for blocks |
 | **BadgerDB** | dgraph-io/badger v4.9.0 | Alternative high-performance storage backend |
 | **Prometheus** | client_golang v1.22.0 | Metrics collection and exposition |
@@ -343,7 +343,7 @@ Blockberry is designed as a framework, not a monolith:
 │  │                     Storage Layer                                   │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐             │  │
 │  │  │  BlockStore  │  │  StateStore  │  │  CertStore   │             │  │
-│  │  │  (LevelDB)   │  │  (IAVL)      │  │  (Loosebrry) │             │  │
+│  │  │  (LevelDB)   │  │  (AVL+)      │  │  (Loosebrry) │             │  │
 │  │  └──────────────┘  └──────────────┘  └──────────────┘             │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                           │
@@ -484,7 +484,7 @@ func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExe
 
 - `LevelDBBlockStore`: Production-ready block storage
 - `BadgerDBBlockStore`: High-performance alternative
-- `IAVLStateStore`: Cosmos IAVL merkle tree wrapper
+- `IAVLStateStore`: avlberry AVL+ merkle tree wrapper
 - `MemoryBlockStore`: In-memory for testing
 
 ### 3.3 Component Interaction Diagram
@@ -678,7 +678,7 @@ blockberry/
 │   ├── metrics/          # Prometheus metrics collection
 │   ├── node/             # Main Node type and lifecycle
 │   ├── rpc/              # RPC servers (gRPC, JSON-RPC, WebSocket)
-│   ├── statestore/       # IAVL-based merkleized state storage
+│   ├── statestore/       # AVL+ merkleized state storage (avlberry)
 │   ├── tracing/          # OpenTelemetry distributed tracing
 │   └── types/            # Common types and interfaces
 │
@@ -725,11 +725,12 @@ require (
     github.com/blockberries/cramberry v1.5.5
     github.com/blockberries/glueberry v1.2.10
     github.com/blockberries/looseberry v0.0.0  // Local replace
-    github.com/cosmos/iavl v1.3.5
+    github.com/blockberries/avlberry v0.0.0  // Local replace
     // ... more dependencies
 )
 
 replace github.com/blockberries/looseberry => ../looseberry
+replace github.com/blockberries/avlberry => ../avlberry
 
 ```text
 
@@ -1889,7 +1890,7 @@ func (p *BackgroundPruner) prune(currentHeight int64) {
 
 #### Overview
 
-The **StateStore** manages merkleized application state using IAVL (Immutable AVL) trees from Cosmos SDK. Each version represents a committed block height.
+The **StateStore** manages merkleized application state using AVL+ trees from avlberry. Each version represents a committed block height.
 
 #### File: pkg/statestore/store.go
 
@@ -1911,7 +1912,7 @@ type StateStore interface {
 
 ```text
 
-#### IAVL Implementation
+#### AVL+ Implementation (avlberry)
 
 **File:** pkg/statestore/iavl.go
 
@@ -1920,7 +1921,7 @@ type IAVLStateStore struct {
     tree      *iavl.MutableTree
     db        dbm.DB
     cacheSize int
-    mu        sync.Mutex  // IAVL not thread-safe
+    mu        sync.Mutex  // avlberry not thread-safe
 }
 
 func NewIAVLStore(path string, cacheSize int) (*IAVLStateStore, error) {
@@ -1960,7 +1961,7 @@ func (s *IAVLStateStore) Commit() ([]byte, int64, error) {
 
     hash, version, err := s.tree.SaveVersion()
     if err != nil {
-        return nil, 0, fmt.Errorf("saving IAVL version: %w", err)
+        return nil, 0, fmt.Errorf("saving AVL+ version: %w", err)
     }
 
     return hash, version, nil
@@ -3161,9 +3162,9 @@ keep_recent = 1000
 
 ### 8.2 State Storage
 
-#### IAVL Merkle Tree
+#### AVL+ Merkle Tree
 
-Blockberry uses **Cosmos IAVL** (Immutable AVL tree) for state storage:
+Blockberry uses **avlberry** (AVL+ tree) for state storage:
 
 **Properties:**
 
@@ -3210,13 +3211,13 @@ Compatible with Cosmos IBC:
 
 ```go
 func (s *IAVLStateStore) GetProof(key []byte) (*Proof, error) {
-    value, iavlProof, err := s.tree.GetWithProof(key)
+    value, avlProof, err := s.tree.GetWithProof(key)
     if err != nil {
         return nil, err
     }
 
     // Convert to ICS23 format
-    ics23Proof := convertToICS23(iavlProof)
+    ics23Proof := convertToICS23(avlProof)
 
     return &Proof{
         Key:        key,
@@ -4665,7 +4666,7 @@ require (
     github.com/blockberries/cramberry v1.5.5
     github.com/blockberries/glueberry v1.2.10
     github.com/blockberries/looseberry v0.0.0
-    github.com/cosmos/iavl v1.3.5
+    github.com/blockberries/avlberry v0.0.0
     github.com/cosmos/ics23/go v0.10.0
     github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
     github.com/dgraph-io/badger/v4 v4.9.0
@@ -4675,6 +4676,7 @@ require (
 )
 
 replace github.com/blockberries/looseberry => ../looseberry
+replace github.com/blockberries/avlberry => ../avlberry
 
 ```text
 
@@ -4685,7 +4687,7 @@ replace github.com/blockberries/looseberry => ../looseberry
 | **Glueberry** | P2P networking | MIT |
 | **Cramberry** | Binary serialization | MIT |
 | **Looseberry** | DAG mempool | MIT |
-| **Cosmos IAVL** | Merkle tree | Apache 2.0 |
+| **avlberry** | Merkle tree | MIT |
 | **LevelDB** | Key-value store | BSD-3 |
 | **BadgerDB** | Key-value store | Apache 2.0 |
 | **Prometheus** | Metrics | Apache 2.0 |
@@ -4972,7 +4974,7 @@ Security principle where systems default to denial/rejection rather than accepta
 **Glueberry**
 Secure P2P networking library providing encrypted streams, peer discovery, and connection management.
 
-**IAVL (Immutable AVL Tree)**
+**AVL+ (avlberry)**
 Self-balancing binary tree used for merkleized state storage. Provides cryptographic proofs of state.
 
 **ICS23**

@@ -200,7 +200,7 @@ type ConsensusEngine interface {
 
 #### `statestore.StateStore` (pkg/statestore/store.go)
 
-**Contract**: Merkleized key-value state storage (IAVL-based).
+**Contract**: Merkleized key-value state storage (AVL+ based, via avlberry).
 
 ```go
 type StateStore interface {
@@ -218,14 +218,14 @@ type StateStore interface {
 
 ```text
 
-**Implementation**: `IAVLStateStore` wrapping cosmos/iavl.
+**Implementation**: `IAVLStateStore` wrapping avlberry.
 
 **Design Patterns**:
 
-- **Adapter Pattern**: Wraps cosmos/iavl with Blockberry interface
+- **Adapter Pattern**: Wraps avlberry with Blockberry interface
 - **Proof of Existence**: ICS23-compatible merkle proofs
 
-**Goroutine Safety**: Thread-safe through IAVL's internal locking.
+**Goroutine Safety**: Thread-safe through avlberry's internal locking.
 
 ---
 
@@ -643,7 +643,7 @@ func (a *GlueberryStreamAdapter) RouteMessage(msg streams.IncomingMessage) error
 
 **StateStore Adapter** (pkg/statestore/store.go):
 
-- Adapts cosmos/iavl to Blockberry's StateStore interface
+- Adapts avlberry to Blockberry's StateStore interface
 - Adds ICS23 proof generation
 
 ---
@@ -940,7 +940,7 @@ blockberry/
 │   ├── metrics/      # Prometheus metrics
 │   ├── node/         # Main Node type
 │   ├── rpc/          # RPC servers
-│   ├── statestore/   # State storage (IAVL)
+│   ├── statestore/   # State storage (AVL+)
 │   ├── tracing/      # OpenTelemetry
 │   └── types/        # Common types
 ├── internal/         # Private implementation (not importable)
@@ -1610,7 +1610,7 @@ err := node.PrepareStreams(peerID, peerPubKey, streamNames)
 
 ---
 
-### 11.3 Cosmos IAVL Integration
+### 11.3 avlberry Integration
 
 **Adapter Pattern**:
 
@@ -1627,7 +1627,7 @@ func (s *IAVLStateStore) Get(key []byte) ([]byte, error) {
 
 **ICS23 Proofs**:
 
-- Cosmos-compatible merkle proofs
+- ICS23-compatible merkle proofs
 - Interoperability with IBC
 
 ---

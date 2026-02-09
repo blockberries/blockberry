@@ -4,11 +4,11 @@ go 1.25.6
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/blockberries/avlberry v0.0.0
 	github.com/blockberries/cramberry v1.5.5
 	github.com/blockberries/glueberry v1.2.10
 	github.com/blockberries/looseberry v0.0.0
-	github.com/cosmos/iavl v1.3.5
-	github.com/cosmos/ics23/go v0.10.0
+	github.com/cosmos/ics23/go v0.11.0
 	github.com/dgraph-io/badger/v4 v4.9.0
 	github.com/gobwas/ws v1.4.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -30,27 +30,24 @@ require (
 )
 
 require (
-	cosmossdk.io/core v0.12.1-0.20240725072823-6a2d039e1212 // indirect
 	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/cosmos/gogoproto v1.5.0 // indirect
+	github.com/cosmos/gogoproto v1.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
 	github.com/dgraph-io/ristretto/v2 v2.2.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/emicklei/dot v1.6.2 // indirect
 	github.com/flynn/noise v1.1.0 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
-	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
-	github.com/google/btree v1.1.2 // indirect
+	github.com/google/btree v1.1.3 // indirect
 	github.com/google/flatbuffers v25.2.10+incompatible // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
@@ -142,5 +139,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.4.1 // indirect
 )
+
+replace github.com/blockberries/avlberry => ../avlberry
 
 replace github.com/blockberries/looseberry => ../looseberry

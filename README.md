@@ -94,7 +94,7 @@ Blockberry is a **generic blockchain node framework** that provides production-r
 ├─────────────────────────────────────────┤
 │  Storage (BlockStore + StateStore)      │
 │  - LevelDB / BadgerDB / In-memory       │
-│  - IAVL merkle trees for state          │
+│  - AVL+ merkle trees for state           │
 └─────────────────────────────────────────┘
 
 ```text
@@ -491,7 +491,7 @@ blockberry/
 │   ├── metrics/          # Prometheus metrics
 │   ├── node/             # Node lifecycle
 │   ├── rpc/              # RPC servers
-│   ├── statestore/       # State storage (IAVL)
+│   ├── statestore/       # State storage (AVL+)
 │   ├── tracing/          # OpenTelemetry tracing
 │   └── types/            # Common types
 ├── internal/             # Private implementation (not importable)
@@ -520,7 +520,7 @@ blockberry/
 - [**Glueberry**](https://github.com/blockberries/glueberry) v1.2.10 - P2P networking with encrypted streams
 - [**Cramberry**](https://github.com/blockberries/cramberry) v1.5.5 - High-performance binary serialization
 - [**Looseberry**](https://github.com/blockberries/looseberry) (optional) - DAG mempool with certified batching
-- [**Cosmos IAVL**](https://github.com/cosmos/iavl) v1.3.5 - Immutable AVL tree for merkleized state
+- [**avlberry**](https://github.com/blockberries/avlberry) - AVL+ tree for merkleized state
 
 ### Storage
 
@@ -620,7 +620,7 @@ limitations under the License.
 ## Acknowledgments
 
 - [**Tendermint**](https://tendermint.com/) - Inspiration for BFT consensus interfaces
-- [**Cosmos SDK**](https://cosmos.network/) - IAVL tree implementation
+- [**Cosmos SDK**](https://cosmos.network/) - Inspiration for merkleized state patterns
 - **The Go Community** - Excellent tooling and libraries
 
 ---

@@ -11,7 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/rpc"
 )
 
@@ -21,13 +22,13 @@ type mockRPCServer struct {
 	statusResult     *rpc.NodeStatus
 	netInfoResult    *rpc.NetInfo
 	broadcastResult  *rpc.BroadcastResult
-	queryResult      *abi.QueryResult
+	queryResult      *bapitypes.StateQueryResult
 	blockResult      *rpc.BlockResult
 	txResult         *rpc.TxResult
 	txSearchResults  []*rpc.TxResult
 	peersResult      []rpc.PeerInfo
 	consensusResult  *rpc.ConsensusState
-	subscribeChannel chan abi.Event
+	subscribeChannel chan bapitypes.Event
 	err              error
 }
 
@@ -51,7 +52,7 @@ func (m *mockRPCServer) BroadcastTx(ctx context.Context, tx []byte, mode rpc.Bro
 	return m.broadcastResult, m.err
 }
 
-func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*abi.QueryResult, error) {
+func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*bapitypes.StateQueryResult, error) {
 	return m.queryResult, m.err
 }
 
@@ -79,11 +80,11 @@ func (m *mockRPCServer) ConsensusState(ctx context.Context) (*rpc.ConsensusState
 	return m.consensusResult, m.err
 }
 
-func (m *mockRPCServer) Subscribe(ctx context.Context, subscriber string, query abi.Query) (<-chan abi.Event, error) {
+func (m *mockRPCServer) Subscribe(ctx context.Context, subscriber string, query events.Query) (<-chan bapitypes.Event, error) {
 	return m.subscribeChannel, m.err
 }
 
-func (m *mockRPCServer) Unsubscribe(ctx context.Context, subscriber string, query abi.Query) error {
+func (m *mockRPCServer) Unsubscribe(ctx context.Context, subscriber string, query events.Query) error {
 	return m.err
 }
 
@@ -199,7 +200,7 @@ func TestServer_HandleStatus(t *testing.T) {
 func TestServer_HandleBroadcastTxSync(t *testing.T) {
 	mock := &mockRPCServer{
 		broadcastResult: &rpc.BroadcastResult{
-			Code: abi.CodeOK,
+			Code: 0,
 			Hash: []byte("tx-hash"),
 		},
 	}
@@ -226,7 +227,7 @@ func TestServer_HandleBroadcastTxSync(t *testing.T) {
 func TestServer_HandleBroadcastTxAsync(t *testing.T) {
 	mock := &mockRPCServer{
 		broadcastResult: &rpc.BroadcastResult{
-			Code: abi.CodeOK,
+			Code: 0,
 			Hash: []byte("tx-hash"),
 		},
 	}
@@ -253,7 +254,7 @@ func TestServer_HandleBroadcastTxAsync(t *testing.T) {
 func TestServer_HandleBroadcastTxCommit(t *testing.T) {
 	mock := &mockRPCServer{
 		broadcastResult: &rpc.BroadcastResult{
-			Code:   abi.CodeOK,
+			Code:   0,
 			Hash:   []byte("tx-hash"),
 			Height: 100,
 		},
@@ -305,8 +306,8 @@ func TestServer_HandleBroadcastTx_InvalidHex(t *testing.T) {
 func TestServer_HandleBlock(t *testing.T) {
 	mock := &mockRPCServer{
 		blockResult: &rpc.BlockResult{
-			Block: &abi.Block{
-				Header: abi.BlockHeader{
+			Block: &rpc.Block{
+				Header: rpc.BlockHeader{
 					Height: 100,
 				},
 			},
@@ -337,8 +338,8 @@ func TestServer_HandleBlock(t *testing.T) {
 func TestServer_HandleBlockByHash(t *testing.T) {
 	mock := &mockRPCServer{
 		blockResult: &rpc.BlockResult{
-			Block: &abi.Block{
-				Header: abi.BlockHeader{
+			Block: &rpc.Block{
+				Header: rpc.BlockHeader{
 					Height: 100,
 				},
 			},
@@ -463,9 +464,9 @@ func TestServer_HandleTxSearch_DefaultPagination(t *testing.T) {
 
 func TestServer_HandleQuery(t *testing.T) {
 	mock := &mockRPCServer{
-		queryResult: &abi.QueryResult{
-			Code: 0,
-			Data: []byte("value"),
+		queryResult: &bapitypes.StateQueryResult{
+			Code:  0,
+			Value: []byte("value"),
 		},
 	}
 	config := rpc.DefaultServerConfig()
@@ -541,7 +542,7 @@ func TestServer_HandlePeers(t *testing.T) {
 }
 
 func TestServer_HandleSubscribe(t *testing.T) {
-	ch := make(chan abi.Event, 1)
+	ch := make(chan bapitypes.Event, 1)
 	mock := &mockRPCServer{
 		subscribeChannel: ch,
 	}
@@ -839,7 +840,7 @@ func TestParseQuery(t *testing.T) {
 		{
 			name:     "type query",
 			input:    "type=Transfer",
-			wantType: "type=Transfer",
+			wantType: "kind=Transfer",
 		},
 		{
 			name:     "attribute query",

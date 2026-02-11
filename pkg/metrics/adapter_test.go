@@ -3,33 +3,31 @@ package metrics
 import (
 	"testing"
 	"time"
-
-	"github.com/blockberries/blockberry/pkg/abi"
 )
 
-func TestNewABIMetricsAdapter(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestNewFrameworkMetricsAdapter(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 	if adapter == nil {
-		t.Fatal("NewABIMetricsAdapter returned nil")
+		t.Fatal("NewFrameworkMetricsAdapter returned nil")
 	}
 	if adapter.prom == nil {
 		t.Fatal("adapter.prom is nil")
 	}
 }
 
-func TestNewABIMetricsAdapterFrom(t *testing.T) {
+func TestNewFrameworkMetricsAdapterFrom(t *testing.T) {
 	prom := NewPrometheusMetrics("test")
-	adapter := NewABIMetricsAdapterFrom(prom)
+	adapter := NewFrameworkMetricsAdapterFrom(prom)
 	if adapter == nil {
-		t.Fatal("NewABIMetricsAdapterFrom returned nil")
+		t.Fatal("NewFrameworkMetricsAdapterFrom returned nil")
 	}
 	if adapter.prom != prom {
 		t.Error("adapter.prom should be the provided instance")
 	}
 }
 
-func TestABIMetricsAdapter_Consensus(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Consensus(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	// These should not panic
 	adapter.ConsensusHeight(100)
@@ -39,8 +37,8 @@ func TestABIMetricsAdapter_Consensus(t *testing.T) {
 	adapter.ConsensusBlockSize(1024 * 1024)
 }
 
-func TestABIMetricsAdapter_Mempool(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Mempool(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	adapter.MempoolSize(50, 1024*1024)
 	adapter.MempoolTxAdded()
@@ -48,21 +46,18 @@ func TestABIMetricsAdapter_Mempool(t *testing.T) {
 	adapter.MempoolTxRejected("mempool_full")
 }
 
-func TestABIMetricsAdapter_App(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_App(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
-	adapter.AppBeginBlock(10 * time.Millisecond)
-	adapter.AppExecuteTx(5*time.Millisecond, true)
-	adapter.AppExecuteTx(5*time.Millisecond, false)
-	adapter.AppEndBlock(8 * time.Millisecond)
+	adapter.AppExecuteBlock(50 * time.Millisecond)
 	adapter.AppCommit(100 * time.Millisecond)
 	adapter.AppQuery(2*time.Millisecond, "/store/key")
 	adapter.AppCheckTx(1*time.Millisecond, true)
 	adapter.AppCheckTx(1*time.Millisecond, false)
 }
 
-func TestABIMetricsAdapter_Network(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Network(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	adapter.NetworkPeers(10)
 	adapter.NetworkBytesSent("pex", 1024)
@@ -72,8 +67,8 @@ func TestABIMetricsAdapter_Network(t *testing.T) {
 	adapter.NetworkMessageError("pex", "decode_error")
 }
 
-func TestABIMetricsAdapter_Storage(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Storage(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	adapter.BlockStoreHeight(50000)
 	adapter.BlockStoreSizeBytes(100 * 1024 * 1024)
@@ -82,8 +77,8 @@ func TestABIMetricsAdapter_Storage(t *testing.T) {
 	adapter.StateStoreSet(200 * time.Microsecond)
 }
 
-func TestABIMetricsAdapter_Sync(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Sync(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	// Test syncing state
 	adapter.SyncProgress(1000, 50000)
@@ -94,15 +89,15 @@ func TestABIMetricsAdapter_Sync(t *testing.T) {
 	adapter.SyncProgress(50000, 50000)
 }
 
-func TestABIMetricsAdapter_SyncZeroTarget(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_SyncZeroTarget(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	// Should not panic with zero target
 	adapter.SyncProgress(0, 0)
 }
 
-func TestABIMetricsAdapter_Handler(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Handler(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	handler := adapter.Handler()
 	if handler == nil {
@@ -110,8 +105,8 @@ func TestABIMetricsAdapter_Handler(t *testing.T) {
 	}
 }
 
-func TestABIMetricsAdapter_Prometheus(t *testing.T) {
-	adapter := NewABIMetricsAdapter("test")
+func TestFrameworkMetricsAdapter_Prometheus(t *testing.T) {
+	adapter := NewFrameworkMetricsAdapter("test")
 
 	prom := adapter.Prometheus()
 	if prom == nil {
@@ -122,7 +117,10 @@ func TestABIMetricsAdapter_Prometheus(t *testing.T) {
 	}
 }
 
-func TestABIMetricsAdapter_Interface(t *testing.T) {
-	// Verify ABIMetricsAdapter implements abi.Metrics at compile time
-	var _ abi.Metrics = (*ABIMetricsAdapter)(nil)
+func TestFrameworkMetricsAdapter_Interface(t *testing.T) {
+	var _ FrameworkMetrics = (*FrameworkMetricsAdapter)(nil)
+}
+
+func TestNullFrameworkMetrics_Interface(t *testing.T) {
+	var _ FrameworkMetrics = NullFrameworkMetrics{}
 }

@@ -28,7 +28,7 @@ package consensus
 import (
 	"github.com/libp2p/go-libp2p/core/peer"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/bapi"
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/mempool"
 	"github.com/blockberries/blockberry/pkg/statestore"
@@ -93,8 +93,8 @@ type ConsensusDependencies struct {
 	// Mempool provides transaction management.
 	Mempool mempool.Mempool
 
-	// Application is the application-specific logic (ABI v2.0).
-	Application abi.Application
+	// Application is the application-specific logic (BAPI).
+	Application bapi.Lifecycle
 
 	// Callbacks allow consensus to notify the node of events.
 	Callbacks *ConsensusCallbacks

@@ -224,7 +224,7 @@ type Mempool interface {
 
 ```go
 type MyApp struct {
-    *abi.BaseApplication  // Inherit safe defaults
+    *bapi.BaseApplication  // Inherit safe defaults
     customState *State
 }
 
@@ -379,12 +379,12 @@ Blockberry is designed as a framework, not a monolith:
 
 ```go
 type MyApp struct {
-    *abi.BaseApplication  // Safe defaults
+    *bapi.BaseApplication  // Safe defaults
     state map[string][]byte
 }
 
-func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    // Parse, validate, apply transaction
+func (app *MyApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    // Parse, validate, apply all transactions in block
     // Update app.state
     // Return result with events
 }
@@ -397,7 +397,7 @@ func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExe
 
 - Order transactions into blocks
 - Achieve agreement on block validity
-- Drive application lifecycle (BeginBlock, ExecuteTx, EndBlock, Commit)
+- Drive application lifecycle (ExecuteBlock, Commit)
 - Handle validator set changes
 
 **Key Interfaces:**
@@ -506,9 +506,7 @@ func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExe
 │                                                   ▼          │
 │                                         ┌──────────────────┐│
 │                                         │   Application    ││
-│                                         │ (BeginBlock,     ││
-│                                         │  ExecuteTx,      ││
-│                                         │  EndBlock,       ││
+│                                         │ (ExecuteBlock,   ││
 │                                         │  Commit)         ││
 │                                         └─────┬────────────┘│
 │                                               │              │
@@ -544,7 +542,7 @@ Peer → Network → Mempool.AddTx → App.CheckTx → Mempool (stored)
 Consensus.ReapTxs ← Mempool ← Block Proposal
        │
        ▼
-App.BeginBlock → App.ExecuteTx (loop) → App.EndBlock → App.Commit
+App.ExecuteBlock → App.Commit
        │                                                      │
        ▼                                                      ▼
 BlockStore.SaveBlock                              StateStore.Commit
@@ -606,7 +604,7 @@ Commit Block                   Commit Block                         │
     │                                                                ▼
     │                                                         Sync & Apply
     ▼                                                                │
-BeginBlock → ExecuteTx → EndBlock → Commit                          │
+ExecuteBlock → Commit                                                │
     │                                                                │
     ▼                                                                ▼
 SaveBlock + SaveState                                   SaveBlock + SaveState
@@ -667,7 +665,6 @@ blockberry/
 │   └── blockberry/        # Main CLI entry point
 │
 ├── pkg/                   # Public API (stable, importable)
-│   ├── abi/              # Application Binary Interface v2.0
 │   ├── blockstore/       # Block storage interfaces and implementations
 │   ├── config/           # Configuration structures and loading
 │   ├── consensus/        # Consensus engine interfaces and factory
@@ -739,12 +736,11 @@ replace github.com/blockberries/avlberry => ../avlberry
 ```text
 cmd/blockberry
     └─▶ pkg/node
-            ├─▶ pkg/abi
+            ├─▶ bapi (github.com/blockberries/bapi)
             ├─▶ pkg/mempool
             │       └─▶ pkg/types
             ├─▶ pkg/consensus
-            │       ├─▶ pkg/types
-            │       └─▶ pkg/abi
+            │       └─▶ pkg/types
             ├─▶ pkg/blockstore
             │       └─▶ pkg/types
             ├─▶ pkg/statestore
@@ -1059,24 +1055,20 @@ func (n *Node) eventLoop() {
 
 ---
 
-### 5.2 Application Binary Interface (pkg/abi/)
+### 5.2 Application Lifecycle Interface (bapi)
 
 #### Overview
 
-The **ABI** defines the contract between the blockchain framework and application-specific logic. Applications implement the `Application` interface to define their state machine behavior.
+The **application lifecycle interface** defines the contract between the blockchain framework and application-specific logic. Applications implement the `bapi.Lifecycle` interface (from `github.com/blockberries/bapi`) to define their state machine behavior. Types are in the `bapitypes` package (`github.com/blockberries/bapi/types`).
 
-#### File: pkg/abi/application.go
-
-**Core Interface:**
+#### Core Interface (github.com/blockberries/bapi)
 
 ```go
-type Application interface {
+type Lifecycle interface {
     Info() ApplicationInfo
-    InitChain(genesis *Genesis) error
+    Handshake(genesis *Genesis) error
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
     Query(ctx context.Context, req *QueryRequest) *QueryResponse
 }
@@ -1085,10 +1077,10 @@ type Application interface {
 
 #### Lifecycle Methods
 
-**1. InitChain** (called once at genesis)
+**1. Handshake** (called once at genesis)
 
 ```go
-func (app *MyApp) InitChain(genesis *Genesis) error {
+func (app *MyApp) Handshake(genesis *Genesis) error {
     // Initialize state from genesis
     // Set initial validators
     // Return error if initialization fails
@@ -1114,50 +1106,24 @@ func (app *MyApp) CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult {
 
 ```text
 
-**3. BeginBlock** (start of block execution)
+**3. ExecuteBlock** (execute all transactions in a block)
 
 ```go
-func (app *MyApp) BeginBlock(ctx context.Context, header *BlockHeader) error {
-    // Prepare for block execution
-    // Process evidence (slash validators)
-    // Update block-level state
-}
-
-```text
-
-**4. ExecuteTx** (execute single transaction)
-
-```go
-func (app *MyApp) ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult {
-    // Parse transaction
+func (app *MyApp) ExecuteBlock(ctx context.Context, block *Block) *BlockResult {
+    // Process all transactions in order
     // Apply state changes
     // Emit events
     // Must be deterministic
 
-    return &TxExecResult{
-        Code:    CodeOK,
-        Events:  events,
-        GasUsed: 850,
+    return &BlockResult{
+        Code:   CodeOK,
+        Events: events,
     }
 }
 
 ```text
 
-**5. EndBlock** (finalize block)
-
-```go
-func (app *MyApp) EndBlock(ctx context.Context) *EndBlockResult {
-    // Return validator updates
-    // Return consensus parameter changes
-
-    return &EndBlockResult{
-        ValidatorUpdates: validatorUpdates,
-    }
-}
-
-```text
-
-**6. Commit** (persist state)
+**4. Commit** (persist state)
 
 ```go
 func (app *MyApp) Commit(ctx context.Context) *CommitResult {
@@ -1172,7 +1138,7 @@ func (app *MyApp) Commit(ctx context.Context) *CommitResult {
 
 ```text
 
-**7. Query** (read state, concurrent)
+**5. Query** (read state, concurrent)
 
 ```go
 func (app *MyApp) Query(ctx context.Context, req *QueryRequest) *QueryResponse {
@@ -1210,7 +1176,7 @@ func (app *BaseApplication) CheckTx(ctx context.Context, tx *Transaction) *TxChe
 
 ```go
 type MyApp struct {
-    *abi.BaseApplication  // Inherit safe defaults
+    *bapi.BaseApplication  // Inherit safe defaults
     state *AppState
 }
 
@@ -1228,22 +1194,13 @@ The framework drives execution; applications respond to callbacks:
 ```text
 Framework                     Application
     │                              │
-    │  1. BeginBlock(header)       │
+    │  1. ExecuteBlock(block)      │
     ├─────────────────────────────▶│
     │                              │
-    │  2. ExecuteTx(tx1)           │
+    │  2. Commit()                 │
     ├─────────────────────────────▶│
     │                              │
-    │  3. ExecuteTx(tx2)           │
-    ├─────────────────────────────▶│
-    │                              │
-    │  4. EndBlock()               │
-    ├─────────────────────────────▶│
-    │                              │
-    │  5. Commit()                 │
-    ├─────────────────────────────▶│
-    │                              │
-    │  6. Query(req)               │
+    │  3. Query(req)               │
     ├─────────────────────────────▶│
 
 ```text
@@ -2079,7 +2036,7 @@ type ConsensusDependencies struct {
     BlockStore  blockstore.BlockStore
     StateStore  *statestore.StateStore
     Mempool     mempool.Mempool
-    Application abi.Application
+    Application bapi.Lifecycle
     Callbacks   *ConsensusCallbacks
     Config      *ConsensusConfig
 }
@@ -2157,18 +2114,11 @@ func (c *NullConsensus) ProcessBlock(block *Block) error {
     // Execute through application
     ctx := context.Background()
 
-    if err := c.deps.Application.BeginBlock(ctx, &block.Header); err != nil {
-        return err
+    blockResult := c.deps.Application.ExecuteBlock(ctx, block)
+    if blockResult.Code != bapitypes.CodeOK {
+        return blockResult.Error
     }
 
-    for _, tx := range block.Transactions {
-        result := c.deps.Application.ExecuteTx(ctx, &abi.Transaction{Data: tx})
-        if result.Code != abi.CodeOK {
-            return result.Error
-        }
-    }
-
-    c.deps.Application.EndBlock(ctx)
     commitResult := c.deps.Application.Commit(ctx)
 
     // Save block
@@ -2393,7 +2343,7 @@ func (n *Node) eventLoop() {
 **Buffered Channels (Non-Blocking):**
 
 ```go
-ch := make(chan abi.Event, b.config.BufferSize)
+ch := make(chan bapitypes.Event, b.config.BufferSize)
 
 // Non-blocking send with timeout
 timer := time.NewTimer(timeout)
@@ -2542,7 +2492,7 @@ if cb != nil {
 
 #### Application Methods
 
-From `pkg/abi/application.go`:
+From `github.com/blockberries/bapi`:
 
 **Thread-Safe (Concurrent):**
 
@@ -2551,24 +2501,20 @@ From `pkg/abi/application.go`:
 
 **Single-Threaded (Sequential):**
 
-- `BeginBlock(ctx, header)`
-- `ExecuteTx(ctx, tx)`
-- `EndBlock(ctx)`
+- `ExecuteBlock(ctx, block)`
 - `Commit(ctx)`
 
 **Contract:**
 
 ```go
 // Applications must ensure CheckTx and Query are thread-safe
-type Application interface {
+type Lifecycle interface {
     // Thread-safe: may be called concurrently
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
     Query(ctx context.Context, req *QueryRequest) *QueryResponse
 
     // Sequential: called from single goroutine
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
 }
 
@@ -3310,7 +3256,7 @@ The ABI is the primary contract between framework and application. See [Section 
 **Lifecycle Flow:**
 
 ```text
-InitChain (once) → [CheckTx (concurrent)] → BeginBlock → ExecuteTx (loop) → EndBlock → Commit → [Query (concurrent)]
+Handshake (once) → [CheckTx (concurrent)] → ExecuteBlock → Commit → [Query (concurrent)]
 
 ```text
 
@@ -3718,8 +3664,6 @@ max_subscribers_per_query = 100
 ```text
 blockberry/
 ├── pkg/
-│   ├── abi/
-│   │   └── application_test.go
 │   ├── mempool/
 │   │   ├── simple_test.go
 │   │   ├── priority_test.go
@@ -3794,11 +3738,11 @@ func (s *NoOpBlockStore) SaveBlock(...) error {
 
 // AcceptAllApplication: Accepts everything
 type AcceptAllApplication struct {
-    *abi.BaseApplication
+    *bapi.BaseApplication
 }
 
-func (app *AcceptAllApplication) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+func (app *AcceptAllApplication) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
 // NullConsensus: No-op consensus
@@ -3826,9 +3770,9 @@ func makeTestNode(t *testing.T) *Node {
     return node
 }
 
-func makeTestTransaction(t *testing.T) *abi.Transaction {
+func makeTestTransaction(t *testing.T) *bapitypes.Transaction {
     data := []byte("test transaction")
-    return &abi.Transaction{Data: data}
+    return &bapitypes.Transaction{Data: data}
 }
 
 ```text
@@ -4552,13 +4496,9 @@ http://localhost:9090/metrics
 
 ```text
 Trace: Block Execution
-  Span: BeginBlock (50ms)
-  Span: ExecuteTx #1 (10ms)
-  Span: ExecuteTx #2 (12ms)
-  Span: ExecuteTx #3 (15ms)
-  Span: EndBlock (20ms)
+  Span: ExecuteBlock (87ms)
   Span: Commit (30ms)
-Total: 137ms
+Total: 117ms
 
 ```text
 

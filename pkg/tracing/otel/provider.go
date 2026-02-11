@@ -15,31 +15,18 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.26.0"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/tracing"
 )
 
 // ProviderConfig contains configuration for creating a TracerProvider.
 type ProviderConfig struct {
-	// ServiceName is the name of the service.
-	ServiceName string
-
-	// ServiceVersion is the version of the service.
+	ServiceName    string
 	ServiceVersion string
-
-	// Environment is the deployment environment (e.g., "production", "staging").
-	Environment string
-
-	// Exporter specifies the exporter type: "otlp-grpc", "otlp-http", "stdout", "none".
-	Exporter string
-
-	// Endpoint is the exporter endpoint (for OTLP exporters).
-	Endpoint string
-
-	// SampleRate is the sampling rate (0.0 to 1.0).
-	SampleRate float64
-
-	// Insecure disables TLS for the connection (for development).
-	Insecure bool
+	Environment    string
+	Exporter       string
+	Endpoint       string
+	SampleRate     float64
+	Insecure       bool
 }
 
 // DefaultProviderConfig returns sensible defaults for provider configuration.
@@ -55,8 +42,8 @@ func DefaultProviderConfig() ProviderConfig {
 	}
 }
 
-// ProviderFromConfig creates a TracerProvider from an abi.TracerConfig.
-func ProviderFromConfig(cfg abi.TracerConfig) (*sdktrace.TracerProvider, error) {
+// ProviderFromConfig creates a TracerProvider from a tracing.TracerConfig.
+func ProviderFromConfig(cfg tracing.TracerConfig) (*sdktrace.TracerProvider, error) {
 	return NewProvider(ProviderConfig{
 		ServiceName:    cfg.ServiceName,
 		ServiceVersion: cfg.ServiceVersion,
@@ -64,7 +51,7 @@ func ProviderFromConfig(cfg abi.TracerConfig) (*sdktrace.TracerProvider, error) 
 		Exporter:       cfg.Exporter,
 		Endpoint:       cfg.ExporterEndpoint,
 		SampleRate:     cfg.SampleRate,
-		Insecure:       true, // Default to insecure for development
+		Insecure:       true,
 	})
 }
 
@@ -72,9 +59,6 @@ func ProviderFromConfig(cfg abi.TracerConfig) (*sdktrace.TracerProvider, error) 
 func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 	ctx := context.Background()
 
-	// Create resource with service information
-	// Note: We create a new resource without merging with Default() to avoid
-	// schema URL conflicts between different semconv versions.
 	res := resource.NewWithAttributes(
 		semconv.SchemaURL,
 		semconv.ServiceName(cfg.ServiceName),
@@ -82,7 +66,6 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		semconv.DeploymentEnvironment(cfg.Environment),
 	)
 
-	// Create exporter
 	var exporter sdktrace.SpanExporter
 	switch cfg.Exporter {
 	case "otlp-grpc", "otlp":
@@ -119,9 +102,6 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		exporter = exp
 
 	case "jaeger":
-		// Jaeger now supports OTLP natively.
-		// Use OTLP gRPC to send to Jaeger's OTLP endpoint (default: localhost:4317).
-		// For older Jaeger setups, use "jaeger-thrift" if needed.
 		opts := []otlptracegrpc.Option{
 			otlptracegrpc.WithEndpoint(cfg.Endpoint),
 		}
@@ -135,11 +115,8 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		exporter = exp
 
 	case "zipkin":
-		// Zipkin exporter sends traces in Zipkin's native JSON format.
-		// Default endpoint: http://localhost:9411/api/v2/spans
 		endpoint := cfg.Endpoint
 		if endpoint == "" || endpoint == "localhost:4317" {
-			// Use default Zipkin endpoint if OTLP default was specified
 			endpoint = "http://localhost:9411/api/v2/spans"
 		}
 		exp, err := zipkin.New(endpoint)
@@ -149,14 +126,12 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		exporter = exp
 
 	case "none", "":
-		// No exporter - traces will be recorded but not exported
 		exporter = nil
 
 	default:
 		return nil, fmt.Errorf("unknown exporter type: %s", cfg.Exporter)
 	}
 
-	// Create sampler
 	var sampler sdktrace.Sampler
 	if cfg.SampleRate <= 0 {
 		sampler = sdktrace.NeverSample()
@@ -166,7 +141,6 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		sampler = sdktrace.TraceIDRatioBased(cfg.SampleRate)
 	}
 
-	// Create provider options
 	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sampler),
@@ -175,17 +149,14 @@ func NewProvider(cfg ProviderConfig) (*sdktrace.TracerProvider, error) {
 		opts = append(opts, sdktrace.WithBatcher(exporter))
 	}
 
-	// Create provider
 	provider := sdktrace.NewTracerProvider(opts...)
 
 	return provider, nil
 }
 
 // SetupGlobalTracer sets up the global OpenTelemetry tracer and propagator.
-// This should be called once at application startup.
-func SetupGlobalTracer(cfg abi.TracerConfig) (*Tracer, func(context.Context) error, error) {
+func SetupGlobalTracer(cfg tracing.TracerConfig) (*Tracer, func(context.Context) error, error) {
 	if !cfg.Enabled {
-		// Return null tracer when disabled
 		return nil, func(context.Context) error { return nil }, nil
 	}
 
@@ -194,10 +165,8 @@ func SetupGlobalTracer(cfg abi.TracerConfig) (*Tracer, func(context.Context) err
 		return nil, nil, fmt.Errorf("creating provider: %w", err)
 	}
 
-	// Set as global provider
 	otel.SetTracerProvider(provider)
 
-	// Set up propagator based on format
 	var prop propagation.TextMapPropagator
 	switch cfg.PropagationFormat {
 	case "w3c", "":
@@ -206,8 +175,6 @@ func SetupGlobalTracer(cfg abi.TracerConfig) (*Tracer, func(context.Context) err
 			propagation.Baggage{},
 		)
 	case "b3":
-		// B3 propagation requires additional import
-		// For now, fall back to W3C
 		prop = propagation.NewCompositeTextMapPropagator(
 			propagation.TraceContext{},
 			propagation.Baggage{},
@@ -220,10 +187,8 @@ func SetupGlobalTracer(cfg abi.TracerConfig) (*Tracer, func(context.Context) err
 	}
 	otel.SetTextMapPropagator(prop)
 
-	// Create tracer
 	tracer := NewTracerWithProvider(cfg.ServiceName, provider)
 
-	// Return shutdown function
 	shutdown := func(ctx context.Context) error {
 		return provider.Shutdown(ctx)
 	}

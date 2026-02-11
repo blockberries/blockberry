@@ -1,4 +1,5 @@
-package abi
+// Package tracing provides distributed tracing interfaces and utilities.
+package tracing
 
 import (
 	"context"
@@ -25,7 +26,6 @@ type Tracer interface {
 // Span represents a single operation within a trace.
 type Span interface {
 	// End completes the span.
-	// Must be called when the operation is complete.
 	End()
 
 	// SetName updates the span name.
@@ -41,7 +41,6 @@ type Span interface {
 	AddEvent(name string, attrs ...SpanAttribute)
 
 	// RecordError records an error on the span.
-	// This does not set the span status; call SetStatus separately if needed.
 	RecordError(err error)
 
 	// SetStatus sets the span status.
@@ -56,20 +55,11 @@ type Span interface {
 
 // SpanContext contains the identifiers and flags for a span.
 type SpanContext struct {
-	// TraceID is the trace identifier.
-	TraceID [16]byte
-
-	// SpanID is the span identifier.
-	SpanID [8]byte
-
-	// TraceFlags contains trace flags.
+	TraceID    [16]byte
+	SpanID     [8]byte
 	TraceFlags byte
-
-	// TraceState contains vendor-specific trace state.
 	TraceState string
-
-	// Remote indicates if this context was received from a remote source.
-	Remote bool
+	Remote     bool
 }
 
 // IsValid returns true if the span context has valid trace and span IDs.
@@ -122,13 +112,8 @@ func SpanBytes(key string, value []byte) SpanAttribute {
 type StatusCode int
 
 const (
-	// StatusUnset is the default status.
 	StatusUnset StatusCode = iota
-
-	// StatusOK indicates the operation completed successfully.
 	StatusOK
-
-	// StatusError indicates an error occurred.
 	StatusError
 )
 
@@ -161,19 +146,10 @@ type spanConfig struct {
 type SpanKind int
 
 const (
-	// SpanKindInternal is the default, indicating an internal operation.
 	SpanKindInternal SpanKind = iota
-
-	// SpanKindServer indicates a server-side operation.
 	SpanKindServer
-
-	// SpanKindClient indicates a client-side operation.
 	SpanKindClient
-
-	// SpanKindProducer indicates a message producer.
 	SpanKindProducer
-
-	// SpanKindConsumer indicates a message consumer.
 	SpanKindConsumer
 )
 
@@ -196,18 +172,13 @@ func (k SpanKind) String() string {
 // Link represents a link to another span.
 type Link struct {
 	SpanContext SpanContext
-	Attributes  []SpanAttribute
+	Attributes []SpanAttribute
 }
 
 // Carrier is the interface for propagating span context.
 type Carrier interface {
-	// Get returns the value for a key.
 	Get(key string) string
-
-	// Set sets a key-value pair.
 	Set(key, value string)
-
-	// Keys returns all keys in the carrier.
 	Keys() []string
 }
 
@@ -234,28 +205,22 @@ func (c MapCarrier) Keys() []string {
 }
 
 // NullTracer is a no-op implementation of Tracer.
-// Use this when tracing is disabled.
 type NullTracer struct{}
 
-// StartSpan returns a no-op span.
 func (NullTracer) StartSpan(ctx context.Context, name string, opts ...SpanOption) (context.Context, Span) {
 	return ctx, nullSpan{}
 }
 
-// SpanFromContext always returns nil.
 func (NullTracer) SpanFromContext(ctx context.Context) Span {
 	return nil
 }
 
-// Extract returns the context unchanged.
 func (NullTracer) Extract(ctx context.Context, carrier Carrier) context.Context {
 	return ctx
 }
 
-// Inject does nothing.
 func (NullTracer) Inject(ctx context.Context, carrier Carrier) {}
 
-// nullSpan is a no-op span.
 type nullSpan struct{}
 
 func (nullSpan) End()                                          {}
@@ -263,12 +228,11 @@ func (nullSpan) SetName(name string)                           {}
 func (nullSpan) SetAttribute(key string, value any)            {}
 func (nullSpan) SetAttributes(attrs ...SpanAttribute)          {}
 func (nullSpan) AddEvent(name string, attrs ...SpanAttribute)  {}
-func (nullSpan) RecordError(err error)                     {}
+func (nullSpan) RecordError(err error)                         {}
 func (nullSpan) SetStatus(code StatusCode, description string) {}
-func (nullSpan) IsRecording() bool                         { return false }
-func (nullSpan) SpanContext() SpanContext                  { return SpanContext{} }
+func (nullSpan) IsRecording() bool                             { return false }
+func (nullSpan) SpanContext() SpanContext                       { return SpanContext{} }
 
-// Ensure implementations satisfy interfaces.
 var (
 	_ Tracer  = NullTracer{}
 	_ Span    = nullSpan{}
@@ -277,30 +241,13 @@ var (
 
 // TracerConfig contains configuration for the tracer.
 type TracerConfig struct {
-	// Enabled enables tracing.
-	Enabled bool
-
-	// ServiceName is the name of the service for tracing.
-	ServiceName string
-
-	// ServiceVersion is the version of the service.
-	ServiceVersion string
-
-	// Environment is the deployment environment (e.g., "production", "staging").
-	Environment string
-
-	// SampleRate is the fraction of traces to sample (0.0 to 1.0).
-	SampleRate float64
-
-	// Exporter specifies the trace exporter type.
-	// Supported values: "jaeger", "zipkin", "otlp", "stdout", "none"
-	Exporter string
-
-	// ExporterEndpoint is the endpoint for the trace exporter.
-	ExporterEndpoint string
-
-	// PropagationFormat specifies the context propagation format.
-	// Supported values: "w3c", "b3", "jaeger"
+	Enabled           bool
+	ServiceName       string
+	ServiceVersion    string
+	Environment       string
+	SampleRate        float64
+	Exporter          string
+	ExporterEndpoint  string
 	PropagationFormat string
 }
 
@@ -320,19 +267,17 @@ func DefaultTracerConfig() TracerConfig {
 
 // Standard span names for common operations.
 const (
-	SpanCheckTx     = "CheckTx"
-	SpanBeginBlock  = "BeginBlock"
-	SpanExecuteTx   = "ExecuteTx"
-	SpanEndBlock    = "EndBlock"
-	SpanCommit      = "Commit"
-	SpanQuery       = "Query"
-	SpanBroadcastTx = "BroadcastTx"
-	SpanBlockSync   = "BlockSync"
-	SpanStateSync   = "StateSync"
-	SpanConsensus   = "Consensus"
-	SpanPropose     = "Propose"
-	SpanPrevote     = "Prevote"
-	SpanPrecommit   = "Precommit"
+	SpanCheckTx      = "CheckTx"
+	SpanExecuteBlock = "ExecuteBlock"
+	SpanCommit       = "Commit"
+	SpanQuery        = "Query"
+	SpanBroadcastTx  = "BroadcastTx"
+	SpanBlockSync    = "BlockSync"
+	SpanStateSync    = "StateSync"
+	SpanConsensus    = "Consensus"
+	SpanPropose      = "Propose"
+	SpanPrevote      = "Prevote"
+	SpanPrecommit    = "Precommit"
 )
 
 // Standard attribute keys for spans.

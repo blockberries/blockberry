@@ -7,7 +7,7 @@
 
 - [Package Index](#package-index)
 - [Package Documentation](#package-documentation)
-  - [pkg/abi](#pkgabi)
+  - [bapi (Application Lifecycle)](#bapi-application-lifecycle)
   - [pkg/blockstore](#pkgblockstore)
   - [pkg/config](#pkgconfig)
   - [pkg/consensus](#pkgconsensus)
@@ -25,7 +25,7 @@
 
 | Package | Purpose |
 |---------|---------|
-| [pkg/abi](#pkgabi) | Application Binary Interface - main contract between framework and application |
+| [bapi](#bapi-application-lifecycle) | Application Lifecycle Interface - main contract between framework and application (external module) |
 | [pkg/blockstore](#pkgblockstore) | Block and certificate storage interfaces and implementations |
 | [pkg/config](#pkgconfig) | Configuration structures and validation |
 | [pkg/consensus](#pkgconsensus) | Pluggable consensus engine interfaces |
@@ -44,34 +44,30 @@
 
 ## Package Documentation
 
-### pkg/abi
+### bapi (Application Lifecycle)
 
-Package `abi` provides the Application Binary Interface for Blockberry applications.
+Package `bapi` (`github.com/blockberries/bapi`) provides the Application Lifecycle Interface for Blockberry applications. Types are in `github.com/blockberries/bapi/types` (aliased as `bapitypes`).
 
 #### Package Overview
 
-The ABI is the main contract between the blockchain framework and application logic. Applications implement the `Application` interface to define their state machine behavior. The framework calls these methods during block execution in a well-defined order:
+The application lifecycle interface is the main contract between the blockchain framework and application logic. Applications implement the `Lifecycle` interface to define their state machine behavior. The framework calls these methods during block execution in a well-defined order:
 
-1. **InitChain** - Called once at genesis
+1. **Handshake** - Called once at genesis
 2. **CheckTx** - Called to validate transactions before mempool inclusion (concurrent)
-3. **BeginBlock** - Called at start of block processing
-4. **ExecuteTx** - Called for each transaction in the block (sequential)
-5. **EndBlock** - Called after all transactions are processed
-6. **Commit** - Called to finalize and persist state
-7. **Query** - Called to read state (concurrent, anytime)
+3. **ExecuteBlock** - Called to execute all transactions in a block (sequential)
+4. **Commit** - Called to finalize and persist state
+5. **Query** - Called to read state (concurrent, anytime)
 
 #### Interfaces
 
-##### Application
+##### Lifecycle
 
 ```go
-type Application interface {
+type Lifecycle interface {
     Info() ApplicationInfo
-    InitChain(genesis *Genesis) error
+    Handshake(genesis *Genesis) error
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
     Query(ctx context.Context, req *QueryRequest) *QueryResponse
 }
@@ -86,15 +82,11 @@ The main interface for blockchain applications. All methods are called by the fr
 
 - **Info()** - Returns metadata about the application (name, version, app hash, last height). Called on startup to verify application state matches blockchain state.
 
-- **InitChain(genesis)** - Initializes the application at genesis. The genesis parameter contains initial validators and app-specific genesis state. Called exactly once when starting from height 0. Returns an error if initialization fails.
+- **Handshake(genesis)** - Initializes the application at genesis. The genesis parameter contains initial validators and app-specific genesis state. Called exactly once when starting from height 0. Returns an error if initialization fails.
 
 - **CheckTx(ctx, tx)** - Validates a transaction for mempool inclusion. This is a lightweight pre-execution check. Must not modify state. Returns `TxCheckResult` indicating accept/reject. May be called concurrently.
 
-- **BeginBlock(ctx, header)** - Called at the start of block processing. The header contains block metadata (height, time, proposer) and evidence of validator misbehavior. Prepares for transaction execution. Returns an error if block cannot be processed.
-
-- **ExecuteTx(ctx, tx)** - Executes a transaction and updates application state. Called once for each transaction in the block, in order. Returns `TxExecResult` with execution status, events, and gas used. Must be deterministic.
-
-- **EndBlock(ctx)** - Called after all transactions are processed. Can return validator set updates and consensus parameter changes. Returns `EndBlockResult`.
+- **ExecuteBlock(ctx, block)** - Executes all transactions in a block and updates application state. Called once per block with all transactions. Returns `BlockResult` with execution status and events. Must be deterministic.
 
 - **Commit(ctx)** - Finalizes the block and persists all state changes. Returns `CommitResult` with the new application state hash. After Commit, state changes are permanent.
 
@@ -104,54 +96,53 @@ The main interface for blockchain applications. All methods are called by the fr
 
 ```go
 type MyApp struct {
-    abi.BaseApplication  // Embed for safe defaults
+    bapi.BaseApplication  // Embed for safe defaults
     state *AppState
 }
 
-func (app *MyApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *MyApp) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Validate transaction format
     if len(tx.Data) == 0 {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidTx,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidTx,
             Error: errors.New("empty transaction"),
         }
     }
 
     // Check balance, signature, nonce, etc.
     if !app.state.HasSufficientBalance(tx) {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInsufficientFunds,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInsufficientFunds,
             Error: errors.New("insufficient balance"),
         }
     }
 
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
-func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    // Execute transaction and update state
-    events, err := app.state.Apply(tx)
+func (app *MyApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    // Execute all transactions and update state
+    events, err := app.state.ApplyBlock(block)
     if err != nil {
-        return &abi.TxExecResult{
-            Code:  abi.CodeExecutionFailed,
+        return &bapitypes.BlockResult{
+            Code:  bapitypes.CodeExecutionFailed,
             Error: err,
         }
     }
 
-    return &abi.TxExecResult{
-        Code:   abi.CodeOK,
+    return &bapitypes.BlockResult{
+        Code:   bapitypes.CodeOK,
         Events: events,
-        GasUsed: 1000,
     }
 }
 
-func (app *MyApp) Commit(ctx context.Context) *abi.CommitResult {
+func (app *MyApp) Commit(ctx context.Context) *bapitypes.CommitResult {
     hash, err := app.state.Commit()
     if err != nil {
-        return &abi.CommitResult{Error: err}
+        return &bapitypes.CommitResult{Error: err}
     }
 
-    return &abi.CommitResult{
+    return &bapitypes.CommitResult{
         AppHash: hash,
     }
 }
@@ -169,7 +160,7 @@ type Validator interface {
 
 ```text
 
-Represents a consensus validator. Used in validator set updates returned by `EndBlock`.
+Represents a consensus validator. Used in validator set updates returned by `ExecuteBlock`.
 
 **Method Details:**
 
@@ -267,7 +258,7 @@ type BlockHeader struct {
 
 ```text
 
-Block metadata passed to BeginBlock.
+Block metadata included in the Block passed to ExecuteBlock.
 
 **Fields:**
 
@@ -276,20 +267,26 @@ Block metadata passed to BeginBlock.
 - `Proposer` - Proposer's validator address
 - `Evidence` - Evidence of validator misbehavior
 
-##### EndBlockResult
+##### BlockResult
 
 ```go
-type EndBlockResult struct {
+type BlockResult struct {
+    Code             uint32
+    Error            error
+    Events           []Event
     ValidatorUpdates []ValidatorUpdate
     ConsensusParams  *ConsensusParams
 }
 
 ```text
 
-Result of EndBlock processing.
+Result of ExecuteBlock processing.
 
 **Fields:**
 
+- `Code` - Result code (CodeOK = 0 for success)
+- `Error` - Error message if execution failed
+- `Events` - Events emitted during execution (for indexing)
 - `ValidatorUpdates` - Validator set changes (additions, removals, power updates)
 - `ConsensusParams` - Updated consensus parameters (optional)
 
@@ -366,7 +363,7 @@ type Genesis struct {
 
 ```text
 
-Genesis state for InitChain.
+Genesis state for Handshake.
 
 **Fields:**
 
@@ -392,13 +389,13 @@ Creates a new BaseApplication with safe fail-closed defaults.
 
 ```go
 type MyApp struct {
-    *abi.BaseApplication
+    *bapi.BaseApplication
     // Add your fields
 }
 
 func NewMyApp() *MyApp {
     return &MyApp{
-        BaseApplication: abi.NewBaseApplication(),
+        BaseApplication: bapi.NewBaseApplication(),
     }
 }
 
@@ -967,18 +964,11 @@ func (c *MyConsensus) ProcessBlock(block *consensus.Block) error {
     }
 
     // Execute block through application
-    if err := c.deps.Application.BeginBlock(ctx, header); err != nil {
-        return err
+    blockResult := c.deps.Application.ExecuteBlock(ctx, block)
+    if blockResult.Code != bapitypes.CodeOK {
+        return blockResult.Error
     }
 
-    for _, tx := range block.Transactions {
-        result := c.deps.Application.ExecuteTx(ctx, &abi.Transaction{Data: tx})
-        if result.Code != abi.CodeOK {
-            return result.Error
-        }
-    }
-
-    c.deps.Application.EndBlock(ctx)
     commitResult := c.deps.Application.Commit(ctx)
 
     // Save block
@@ -1050,7 +1040,7 @@ type ConsensusDependencies struct {
     BlockStore  blockstore.BlockStore
     StateStore  *statestore.StateStore
     Mempool     mempool.Mempool
-    Application abi.Application
+    Application bapi.Lifecycle
     Callbacks   *ConsensusCallbacks
     Config      *ConsensusConfig
 }
@@ -2483,68 +2473,71 @@ package main
 
 import (
     "context"
-    "github.com/blockberries/blockberry/pkg/abi"
+    "github.com/blockberries/bapi"
+    bapitypes "github.com/blockberries/bapi/types"
 )
 
 type MyApp struct {
-    *abi.BaseApplication
+    *bapi.BaseApplication
     state map[string]string
 }
 
 func NewMyApp() *MyApp {
     return &MyApp{
-        BaseApplication: &abi.BaseApplication{},
+        BaseApplication: &bapi.BaseApplication{},
         state:          make(map[string]string),
     }
 }
 
-func (app *MyApp) Info() abi.ApplicationInfo {
-    return abi.ApplicationInfo{
+func (app *MyApp) Info() bapitypes.ApplicationInfo {
+    return bapitypes.ApplicationInfo{
         Name:    "my-app",
         Version: "1.0.0",
     }
 }
 
-func (app *MyApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *MyApp) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Validate transaction
     if len(tx.Data) == 0 {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidTx,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidTx,
             Error: errors.New("empty transaction"),
         }
     }
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
-func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    // Parse and execute transaction
-    key, value := parseTx(tx.Data)
-    app.state[key] = value
+func (app *MyApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    // Parse and execute all transactions in block
+    for _, txData := range block.Txs {
+        key, value := parseTx(txData)
+        app.state[key] = value
+    }
 
-    return &abi.TxExecResult{
-        Code: abi.CodeOK,
-        Events: []abi.Event{
-            {Type: "state.update", Attributes: map[string]string{"key": key}},
+    return &bapitypes.BlockResult{
+        Code: bapitypes.CodeOK,
+        Events: []bapitypes.Event{
+            {Type: "block.executed"},
         },
     }
 }
 
-func (app *MyApp) Commit(ctx context.Context) *abi.CommitResult {
+func (app *MyApp) Commit(ctx context.Context) *bapitypes.CommitResult {
     // Compute state hash
     hash := computeStateHash(app.state)
-    return &abi.CommitResult{AppHash: hash}
+    return &bapitypes.CommitResult{AppHash: hash}
 }
 
-func (app *MyApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.QueryResponse {
+func (app *MyApp) Query(ctx context.Context, req *bapitypes.QueryRequest) *bapitypes.QueryResponse {
     value, exists := app.state[string(req.Data)]
     if !exists {
-        return &abi.QueryResponse{
-            Code:  abi.CodeNotFound,
+        return &bapitypes.QueryResponse{
+            Code:  bapitypes.CodeNotFound,
             Error: errors.New("key not found"),
         }
     }
-    return &abi.QueryResponse{
-        Code: abi.CodeOK,
+    return &bapitypes.QueryResponse{
+        Code: bapitypes.CodeOK,
         Data: []byte(value),
     }
 }

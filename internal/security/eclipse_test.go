@@ -3,12 +3,10 @@ package security
 import (
 	"testing"
 	"time"
-
-	"github.com/blockberries/blockberry/pkg/abi"
 )
 
 func TestEclipseProtector_Basic(t *testing.T) {
-	cfg := abi.DefaultEclipseMitigationConfig()
+	cfg := DefaultEclipseMitigationConfig()
 	protector := NewEclipseProtector(cfg)
 
 	// Initially should accept peers
@@ -28,7 +26,7 @@ func TestEclipseProtector_Basic(t *testing.T) {
 }
 
 func TestEclipseProtector_SubnetLimit(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      2,
 		MaxPeersFromSameSource: 10,
 		RequireOutboundPercent: 0, // Disable for this test
@@ -52,7 +50,7 @@ func TestEclipseProtector_SubnetLimit(t *testing.T) {
 }
 
 func TestEclipseProtector_OutboundRequirement(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      10,
 		MaxPeersFromSameSource: 10,
 		RequireOutboundPercent: 20,
@@ -86,7 +84,7 @@ func TestEclipseProtector_OutboundRequirement(t *testing.T) {
 }
 
 func TestEclipseProtector_TrustedPeers(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      1, // Very restrictive
 		MaxPeersFromSameSource: 1,
 		RequireOutboundPercent: 0,
@@ -117,7 +115,7 @@ func TestEclipseProtector_TrustedPeers(t *testing.T) {
 }
 
 func TestEclipseProtector_Misbehavior(t *testing.T) {
-	cfg := abi.DefaultEclipseMitigationConfig()
+	cfg := DefaultEclipseMitigationConfig()
 	protector := NewEclipseProtector(cfg)
 
 	// Connect and trust a peer
@@ -138,7 +136,7 @@ func TestEclipseProtector_Misbehavior(t *testing.T) {
 }
 
 func TestEclipseProtector_Disconnect(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      2,
 		MaxPeersFromSameSource: 10,
 		RequireOutboundPercent: 0,
@@ -168,7 +166,7 @@ func TestEclipseProtector_Disconnect(t *testing.T) {
 }
 
 func TestEclipseProtector_Diversity(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      10,
 		MaxPeersFromSameSource: 10,
 		RequireOutboundPercent: 20,
@@ -196,7 +194,7 @@ func TestEclipseProtector_Diversity(t *testing.T) {
 }
 
 func TestEclipseProtector_LowDiversity(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      10,
 		MaxPeersFromSameSource: 10,
 		RequireOutboundPercent: 50, // Higher requirement to lower balance score
@@ -219,7 +217,7 @@ func TestEclipseProtector_LowDiversity(t *testing.T) {
 }
 
 func TestEclipseProtector_RecordPeerSource(t *testing.T) {
-	cfg := abi.EclipseMitigationConfig{
+	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      10,
 		MaxPeersFromSameSource: 2,
 		RequireOutboundPercent: 0,
@@ -266,7 +264,7 @@ func TestExtractSubnet(t *testing.T) {
 }
 
 func TestEclipseProtector_ConnectionCounts(t *testing.T) {
-	cfg := abi.DefaultEclipseMitigationConfig()
+	cfg := DefaultEclipseMitigationConfig()
 	protector := NewEclipseProtector(cfg)
 
 	// Add mix of inbound and outbound

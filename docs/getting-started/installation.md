@@ -294,7 +294,7 @@ package main
 
 import (
     "fmt"
-    "github.com/blockberries/blockberry/pkg/abi"
+    "github.com/blockberries/bapi"
     "github.com/blockberries/blockberry/pkg/config"
     "github.com/blockberries/blockberry/pkg/node"
 )
@@ -305,7 +305,7 @@ func main() {
     cfg.Node.ChainID = "test-chain"
 
     // Create application
-    app := abi.NewBaseApplication()
+    app := bapi.NewBaseApplication()
 
     // Validate we can create a node
     fmt.Println("✓ Blockberry packages imported successfully")

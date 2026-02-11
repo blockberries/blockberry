@@ -41,18 +41,16 @@ The architecture prioritizes safety, extensibility, and maintainability while su
 
 ### 1.1 Core Application Interfaces
 
-#### `abi.Application` (pkg/abi/application.go)
+#### `bapi.Lifecycle` (github.com/blockberries/bapi)
 
 **Contract**: Primary interface between blockchain framework and application logic.
 
 ```go
-type Application interface {
+type Lifecycle interface {
     Info() ApplicationInfo
-    InitChain(genesis *Genesis) error
+    Handshake(genesis *Genesis) error
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult      // Thread-safe
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
     Query(ctx context.Context, req *QueryRequest) *QueryResponse      // Thread-safe
 }
@@ -66,11 +64,11 @@ type Application interface {
 
 **Design Patterns**:
 
-- **Template Method**: Structured lifecycle (BeginBlock → ExecuteTx → EndBlock → Commit)
+- **Template Method**: Structured lifecycle (ExecuteBlock → Commit)
 - **Fail-Closed Security**: BaseApplication rejects by default, requiring explicit overrides
 - **Thread-Safety Contract**: CheckTx and Query explicitly documented as concurrent-safe
 
-**Goroutine Safety**: CheckTx and Query MUST be thread-safe per contract. Lifecycle methods (BeginBlock, ExecuteTx, EndBlock, Commit) are called sequentially by the framework.
+**Goroutine Safety**: CheckTx and Query MUST be thread-safe per contract. Lifecycle methods (ExecuteBlock, Commit) are called sequentially by the framework.
 
 ---
 
@@ -424,7 +422,7 @@ if n.stopping.Load() {
 **Buffered Channels** (pkg/events/bus.go):
 
 ```go
-ch := make(chan abi.Event, b.config.BufferSize)  // Buffered for non-blocking
+ch := make(chan bapitypes.Event, b.config.BufferSize)  // Buffered for non-blocking
 
 ```text
 
@@ -730,8 +728,8 @@ const (
 **Event Bus** (pkg/events/bus.go):
 
 ```go
-func (b *Bus) Subscribe(ctx context.Context, subscriber string, query abi.Query) (<-chan abi.Event, error)
-func (b *Bus) Publish(ctx context.Context, event abi.Event) error
+func (b *Bus) Subscribe(ctx context.Context, subscriber string, query events.Query) (<-chan bapitypes.Event, error)
+func (b *Bus) Publish(ctx context.Context, event bapitypes.Event) error
 
 ```text
 
@@ -746,14 +744,10 @@ func (b *Bus) Publish(ctx context.Context, event abi.Event) error
 
 #### Template Method Pattern
 
-**Application Lifecycle** (pkg/abi/application.go):
+**Application Lifecycle** (github.com/blockberries/bapi):
 
 ```text
-BeginBlock
-  ↓
-ExecuteTx (loop)
-  ↓
-EndBlock
+ExecuteBlock
   ↓
 Commit
 
@@ -884,7 +878,7 @@ type ConsensusDependencies struct {
     BlockStore   blockstore.BlockStore
     StateStore   *statestore.StateStore
     Mempool      mempool.Mempool
-    Application  abi.Application
+    Application  bapi.Lifecycle
     Callbacks    *ConsensusCallbacks
     Config       *ConsensusConfig
 }
@@ -929,7 +923,6 @@ func (cb *ConsensusCallbacks) InvokeOnBlockCommitted(height int64, hash []byte) 
 ```text
 blockberry/
 ├── pkg/              # Public API (importable)
-│   ├── abi/          # Application Binary Interface (v2.0)
 │   ├── blockstore/   # Block storage
 │   ├── config/       # Configuration
 │   ├── consensus/    # Consensus interfaces
@@ -1973,7 +1966,7 @@ The architecture balances flexibility with safety, performance with maintainabil
 
 | Component | Primary Interface | Implementation(s) | Location |
 |-----------|-------------------|-------------------|----------|
-| Application | `abi.Application` | BaseApplication | pkg/abi/ |
+| Application | `bapi.Lifecycle` | BaseApplication | github.com/blockberries/bapi |
 | BlockStore | `blockstore.BlockStore` | LevelDB, BadgerDB, Memory | pkg/blockstore/ |
 | Mempool | `mempool.Mempool` | Simple, Priority, TTL | pkg/mempool/ |
 | Consensus | `consensus.ConsensusEngine` | NullConsensus | pkg/consensus/ |
@@ -1981,7 +1974,7 @@ The architecture balances flexibility with safety, performance with maintainabil
 | Node | `node.Node` | Node | pkg/node/ |
 | Network | `p2p.Network` | Network | internal/p2p/ |
 | Container | `container.Container` | Container | internal/container/ |
-| EventBus | `abi.EventBus` | Bus | pkg/events/ |
+| EventBus | `events.EventBus` | Bus | pkg/events/ |
 
 ---
 
@@ -2013,7 +2006,7 @@ The architecture balances flexibility with safety, performance with maintainabil
 | Facade | Node | pkg/node/node.go |
 | Strategy | Mempool types | pkg/mempool/ |
 | Observer | EventBus | pkg/events/bus.go |
-| Template Method | Application lifecycle | pkg/abi/application.go |
+| Template Method | Application lifecycle | github.com/blockberries/bapi |
 | Null Object | NoOpBlockStore | pkg/blockstore/noop.go |
 | Singleton | DefaultFactory | pkg/consensus/factory.go |
 | Dependency Injection | Container | internal/container/container.go |

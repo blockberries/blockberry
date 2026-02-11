@@ -1,4 +1,4 @@
-package abi
+package security
 
 import (
 	"time"
@@ -20,10 +20,10 @@ type ResourceLimits struct {
 	MaxMsgSize int64 // Maximum message size for network messages
 
 	// Connection limits
-	MaxPeers          int // Maximum number of peer connections
-	MaxInboundPeers   int // Maximum inbound peer connections
-	MaxOutboundPeers  int // Maximum outbound peer connections
-	MaxPendingPeers   int // Maximum pending peer connections
+	MaxPeers         int // Maximum number of peer connections
+	MaxInboundPeers  int // Maximum inbound peer connections
+	MaxOutboundPeers int // Maximum outbound peer connections
+	MaxPendingPeers  int // Maximum pending peer connections
 
 	// Subscription limits
 	MaxSubscribers         int // Maximum total subscriptions
@@ -246,6 +246,17 @@ func DefaultBandwidthLimiterConfig() BandwidthLimiterConfig {
 	}
 }
 
+// SecurityError represents a security-related error.
+type SecurityError struct {
+	Code    int
+	Message string
+}
+
+// Error implements the error interface.
+func (e *SecurityError) Error() string {
+	return e.Message
+}
+
 // Security-related errors.
 var (
 	ErrInvalidLimit    = &SecurityError{Code: 1, Message: "invalid resource limit"}
@@ -257,14 +268,3 @@ var (
 	ErrMessageTooLarge = &SecurityError{Code: 7, Message: "message exceeds size limit"}
 	ErrTxTooLarge      = &SecurityError{Code: 8, Message: "transaction exceeds size limit"}
 )
-
-// SecurityError represents a security-related error.
-type SecurityError struct {
-	Code    int
-	Message string
-}
-
-// Error implements the error interface.
-func (e *SecurityError) Error() string {
-	return e.Message
-}

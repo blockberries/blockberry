@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/tracing"
 )
 
 func TestDefaultProviderConfig(t *testing.T) {
@@ -31,7 +31,6 @@ func TestNewProvider_None(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 
-	// Cleanup
 	err = provider.Shutdown(context.Background())
 	require.NoError(t, err)
 }
@@ -47,7 +46,6 @@ func TestNewProvider_Stdout(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 
-	// Cleanup
 	err = provider.Shutdown(context.Background())
 	require.NoError(t, err)
 }
@@ -94,7 +92,7 @@ func TestNewProvider_SampleRates(t *testing.T) {
 }
 
 func TestProviderFromConfig(t *testing.T) {
-	cfg := abi.TracerConfig{
+	cfg := tracing.TracerConfig{
 		Enabled:        true,
 		ServiceName:    "test-service",
 		ServiceVersion: "1.0.0",
@@ -112,7 +110,7 @@ func TestProviderFromConfig(t *testing.T) {
 }
 
 func TestSetupGlobalTracer_Disabled(t *testing.T) {
-	cfg := abi.TracerConfig{
+	cfg := tracing.TracerConfig{
 		Enabled: false,
 	}
 
@@ -121,13 +119,12 @@ func TestSetupGlobalTracer_Disabled(t *testing.T) {
 	require.Nil(t, tracer)
 	require.NotNil(t, shutdown)
 
-	// Shutdown should work even when disabled
 	err = shutdown(context.Background())
 	require.NoError(t, err)
 }
 
 func TestSetupGlobalTracer_Enabled(t *testing.T) {
-	cfg := abi.TracerConfig{
+	cfg := tracing.TracerConfig{
 		Enabled:           true,
 		ServiceName:       "test-service",
 		ServiceVersion:    "1.0.0",
@@ -142,13 +139,11 @@ func TestSetupGlobalTracer_Enabled(t *testing.T) {
 	require.NotNil(t, tracer)
 	require.NotNil(t, shutdown)
 
-	// Use the tracer
 	ctx := context.Background()
 	ctx, span := tracer.StartSpan(ctx, "test-span")
 	span.SetAttribute("key", "value")
 	span.End()
 
-	// Cleanup
 	err = shutdown(ctx)
 	require.NoError(t, err)
 }
@@ -158,7 +153,7 @@ func TestSetupGlobalTracer_PropagationFormats(t *testing.T) {
 
 	for _, format := range formats {
 		t.Run(format, func(t *testing.T) {
-			cfg := abi.TracerConfig{
+			cfg := tracing.TracerConfig{
 				Enabled:           true,
 				ServiceName:       "test-service",
 				Exporter:          "none",
@@ -177,8 +172,6 @@ func TestSetupGlobalTracer_PropagationFormats(t *testing.T) {
 }
 
 func TestNewProvider_Jaeger(t *testing.T) {
-	// Note: This test just verifies the exporter can be created.
-	// The actual connection to Jaeger will fail in test environment.
 	cfg := ProviderConfig{
 		ServiceName: "test-service",
 		Exporter:    "jaeger",
@@ -191,15 +184,12 @@ func TestNewProvider_Jaeger(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 
-	// Cleanup - may timeout since Jaeger isn't running
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_ = provider.Shutdown(ctx)
 }
 
 func TestNewProvider_Zipkin(t *testing.T) {
-	// Note: This test just verifies the exporter can be created.
-	// The actual connection to Zipkin will fail in test environment.
 	cfg := ProviderConfig{
 		ServiceName: "test-service",
 		Exporter:    "zipkin",
@@ -211,18 +201,16 @@ func TestNewProvider_Zipkin(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, provider)
 
-	// Cleanup - may timeout since Zipkin isn't running
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	_ = provider.Shutdown(ctx)
 }
 
 func TestNewProvider_Zipkin_DefaultEndpoint(t *testing.T) {
-	// When using Zipkin with OTLP default endpoint, should use Zipkin default
 	cfg := ProviderConfig{
 		ServiceName: "test-service",
 		Exporter:    "zipkin",
-		Endpoint:    "localhost:4317", // OTLP default
+		Endpoint:    "localhost:4317",
 		SampleRate:  1.0,
 	}
 
@@ -265,7 +253,6 @@ func TestExporterTypes(t *testing.T) {
 			require.NoError(t, err)
 			require.NotNil(t, provider)
 
-			// Quick shutdown
 			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 			defer cancel()
 			_ = provider.Shutdown(ctx)

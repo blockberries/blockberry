@@ -189,7 +189,8 @@ import (
     "context"
     "log"
 
-    "github.com/blockberries/blockberry/pkg/abi"
+    "github.com/blockberries/bapi"
+    "github.com/blockberries/bapi/types"
     "github.com/blockberries/blockberry/pkg/config"
     "github.com/blockberries/blockberry/pkg/node"
 )
@@ -222,34 +223,33 @@ func main() {
     select {}
 }
 
-// MyApplication implements the ABI interface
+// MyApplication implements the bapi.Lifecycle interface
 type MyApplication struct {
-    abi.BaseApplication
+    bapi.BaseApplication
 }
 
-func (app *MyApplication) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *MyApplication) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Validate transaction
     if len(tx.Data) == 0 {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidTx,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidTx,
             Error: errors.New("empty transaction"),
         }
     }
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
-func (app *MyApplication) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    // Execute transaction and update state
-    return &abi.TxExecResult{
-        Code:    abi.CodeOK,
-        GasUsed: 1000,
+func (app *MyApplication) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    // Execute block and update state
+    return &bapitypes.BlockResult{
+        Code:    bapitypes.CodeOK,
     }
 }
 
-func (app *MyApplication) Commit(ctx context.Context) *abi.CommitResult {
+func (app *MyApplication) Commit(ctx context.Context) *bapitypes.CommitResult {
     // Persist state changes
     hash := computeStateHash()
-    return &abi.CommitResult{AppHash: hash}
+    return &bapitypes.CommitResult{AppHash: hash}
 }
 
 ```text
@@ -355,21 +355,19 @@ For complete configuration options, see [API_REFERENCE.md - Configuration Refere
 
 ### Implement the Application Interface
 
-Applications must implement the `abi.Application` interface:
+Applications must implement the `bapi.Lifecycle` interface:
 
 ```go
-type Application interface {
+type Lifecycle interface {
     // Lifecycle
     Info() ApplicationInfo
-    InitChain(genesis *Genesis) error
+    Handshake(genesis *Genesis) error
 
     // Transaction validation (concurrent-safe)
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
 
     // Block execution (sequential)
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
 
     // State queries (concurrent-safe)
@@ -384,35 +382,35 @@ The `BaseApplication` provides fail-closed defaults:
 
 ```go
 type MyApp struct {
-    *abi.BaseApplication
+    *bapi.BaseApplication
     state *AppState
 }
 
 func NewMyApp() *MyApp {
     return &MyApp{
-        BaseApplication: abi.NewBaseApplication(),
+        BaseApplication: bapi.NewBaseApplication(),
         state:          NewAppState(),
     }
 }
 
 // Override only the methods you need
-func (app *MyApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *MyApp) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Your validation logic
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
-func (app *MyApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
+func (app *MyApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
     // Your execution logic
-    result := app.state.Apply(tx)
-    return &abi.TxExecResult{Code: abi.CodeOK, Events: result.Events}
+    result := app.state.Apply(block)
+    return &bapitypes.BlockResult{Code: bapitypes.CodeOK, Events: result.Events}
 }
 
-func (app *MyApp) Commit(ctx context.Context) *abi.CommitResult {
+func (app *MyApp) Commit(ctx context.Context) *bapitypes.CommitResult {
     hash, err := app.state.Commit()
     if err != nil {
-        return &abi.CommitResult{Error: err}
+        return &bapitypes.CommitResult{Error: err}
     }
-    return &abi.CommitResult{AppHash: hash}
+    return &bapitypes.CommitResult{AppHash: hash}
 }
 
 ```text
@@ -480,7 +478,6 @@ blockberry/
 ├── cmd/                  # CLI applications
 │   └── blockberry/       # Main CLI tool
 ├── pkg/                  # Public API (safe to import)
-│   ├── abi/              # Application Binary Interface
 │   ├── blockstore/       # Block storage
 │   ├── config/           # Configuration
 │   ├── consensus/        # Consensus interfaces

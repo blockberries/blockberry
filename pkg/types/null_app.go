@@ -3,67 +3,56 @@ package types
 import (
 	"context"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/bapi"
+	bapitypes "github.com/blockberries/bapi/types"
 )
 
-// NullApplication is a no-op implementation of abi.Application.
+// NullApplication is a no-op implementation of bapi.Lifecycle.
 // It accepts all transactions and returns empty results.
 // Useful for testing and as a starting point for new applications.
 type NullApplication struct {
-	// LastBlockHeight tracks the last committed block height.
-	LastBlockHeight int64
-
-	// LastBlockHash stores the last committed block hash.
-	LastBlockHash []byte
-
-	// AppHash is the current application hash (returned by Commit).
-	AppHash []byte
+	// AppHash is the current application hash.
+	AppHash bapitypes.AppHash
 }
 
 // NewNullApplication creates a new NullApplication.
 func NewNullApplication() *NullApplication {
-	return &NullApplication{
-		AppHash: make([]byte, 32), // Empty 32-byte hash
+	return &NullApplication{}
+}
+
+// Ensure NullApplication implements bapi.Lifecycle.
+var _ bapi.Lifecycle = (*NullApplication)(nil)
+
+// Handshake handles startup handshake. Returns empty response.
+func (app *NullApplication) Handshake(_ context.Context, _ bapitypes.HandshakeRequest) (bapitypes.HandshakeResponse, error) {
+	return bapitypes.HandshakeResponse{
+		AppHash: &app.AppHash,
+	}, nil
+}
+
+// CheckTx validates a transaction. Always accepts.
+func (app *NullApplication) CheckTx(_ context.Context, _ bapitypes.Tx, _ bapitypes.MempoolContext) (bapitypes.GateVerdict, error) {
+	return bapitypes.GateVerdict{Code: 0}, nil
+}
+
+// ExecuteBlock executes a finalized block. Returns empty outcome with AppHash.
+func (app *NullApplication) ExecuteBlock(_ context.Context, block bapitypes.FinalizedBlock) (bapitypes.BlockOutcome, error) {
+	outcomes := make([]bapitypes.TxOutcome, len(block.Txs))
+	for i := range block.Txs {
+		outcomes[i] = bapitypes.TxOutcome{Index: uint32(i), Code: 0}
 	}
+	return bapitypes.BlockOutcome{
+		TxOutcomes: outcomes,
+		AppHash:    app.AppHash,
+	}, nil
 }
 
-// Ensure NullApplication implements abi.Application.
-var _ abi.Application = (*NullApplication)(nil)
-
-
-// InitChain initializes the chain. Always returns nil.
-func (app *NullApplication) InitChain(ctx context.Context, validators []abi.Validator, appState []byte) error {
-	return nil
-}
-
-// CheckTx validates a transaction. Always accepts (returns nil).
-func (app *NullApplication) CheckTx(ctx context.Context, tx []byte) error {
-	return nil
-}
-
-// BeginBlock starts processing a new block.
-func (app *NullApplication) BeginBlock(ctx context.Context, header *abi.BlockHeader) error {
-	app.LastBlockHeight = header.Height
-	app.LastBlockHash = header.LastBlockHash
-	return nil
-}
-
-// ExecuteTx executes a transaction. Always succeeds (returns Code 0).
-func (app *NullApplication) ExecuteTx(ctx context.Context, tx []byte) (*abi.TxResult, error) {
-	return &abi.TxResult{Code: 0}, nil
-}
-
-// EndBlock ends block processing.
-func (app *NullApplication) EndBlock(ctx context.Context) (*abi.EndBlockResult, error) {
-	return &abi.EndBlockResult{}, nil
-}
-
-// Commit persists the application state and returns the app hash.
-func (app *NullApplication) Commit(ctx context.Context) (*abi.CommitResult, error) {
-	return &abi.CommitResult{AppHash: app.AppHash}, nil
+// Commit persists the application state. Returns empty result.
+func (app *NullApplication) Commit(_ context.Context) (bapitypes.CommitResult, error) {
+	return bapitypes.CommitResult{}, nil
 }
 
 // Query performs a read-only query. Always returns empty result.
-func (app *NullApplication) Query(ctx context.Context, path string, data []byte, height int64) (*abi.QueryResult, error) {
-	return &abi.QueryResult{Code: 0}, nil
+func (app *NullApplication) Query(_ context.Context, _ bapitypes.StateQuery) (bapitypes.StateQueryResult, error) {
+	return bapitypes.StateQueryResult{Code: 0}, nil
 }

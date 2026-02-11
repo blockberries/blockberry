@@ -6,7 +6,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
+	"github.com/blockberries/blockberry/pkg/indexer"
 )
 
 func createTestIndexer(t *testing.T) (*TxIndexer, func()) {
@@ -30,19 +31,19 @@ func TestTxIndexer_IndexAndGet(t *testing.T) {
 	idx, cleanup := createTestIndexer(t)
 	defer cleanup()
 
-	result := &abi.TxIndexResult{
+	result := &indexer.TxIndexResult{
 		Hash:   []byte("tx-hash-1"),
 		Height: 100,
 		Index:  0,
-		Result: &abi.TxResult{
+		Result: &bapitypes.TxOutcome{
 			Code: 0,
-			Events: []abi.Event{
+			Events: []bapitypes.Event{
 				{
-					Type: "transfer",
-					Attributes: []abi.Attribute{
-						{Key: "sender", Value: []byte("alice"), Index: true},
-						{Key: "recipient", Value: []byte("bob"), Index: true},
-						{Key: "amount", Value: []byte("100"), Index: false},
+					Kind: "transfer",
+					Attributes: []bapitypes.EventAttribute{
+						{Key: "sender", Value: "alice", Index: true},
+						{Key: "recipient", Value: "bob", Index: true},
+						{Key: "amount", Value: "100", Index: false},
 					},
 				},
 			},
@@ -66,7 +67,7 @@ func TestTxIndexer_Get_NotFound(t *testing.T) {
 	defer cleanup()
 
 	_, err := idx.Get([]byte("nonexistent"))
-	require.ErrorIs(t, err, abi.ErrTxNotFound)
+	require.ErrorIs(t, err, indexer.ErrTxNotFound)
 }
 
 func TestTxIndexer_Has(t *testing.T) {
@@ -77,7 +78,7 @@ func TestTxIndexer_Has(t *testing.T) {
 	require.False(t, idx.Has([]byte("tx-hash-1")))
 
 	// Index a transaction
-	err := idx.Index(&abi.TxIndexResult{
+	err := idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-hash-1"),
 		Height: 100,
 	})
@@ -92,12 +93,12 @@ func TestTxIndexer_Delete(t *testing.T) {
 	defer cleanup()
 
 	// Index a transaction
-	err := idx.Index(&abi.TxIndexResult{
+	err := idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-hash-1"),
 		Height: 100,
-		Result: &abi.TxResult{
-			Events: []abi.Event{
-				{Type: "test", Attributes: []abi.Attribute{{Key: "key", Value: []byte("value"), Index: true}}},
+		Result: &bapitypes.TxOutcome{
+			Events: []bapitypes.Event{
+				{Kind: "test", Attributes: []bapitypes.EventAttribute{{Key: "key", Value: "value", Index: true}}},
 			},
 		},
 	})
@@ -111,7 +112,7 @@ func TestTxIndexer_Delete(t *testing.T) {
 
 	// Get should return not found
 	_, err = idx.Get([]byte("tx-hash-1"))
-	require.ErrorIs(t, err, abi.ErrTxNotFound)
+	require.ErrorIs(t, err, indexer.ErrTxNotFound)
 }
 
 func TestTxIndexer_SearchByHeight(t *testing.T) {
@@ -120,7 +121,7 @@ func TestTxIndexer_SearchByHeight(t *testing.T) {
 
 	// Index transactions at different heights
 	for i := uint64(1); i <= 10; i++ {
-		err := idx.Index(&abi.TxIndexResult{
+		err := idx.Index(&indexer.TxIndexResult{
 			Hash:   []byte{byte(i)},
 			Height: i * 10,
 		})
@@ -155,15 +156,15 @@ func TestTxIndexer_SearchByEvent(t *testing.T) {
 	defer cleanup()
 
 	// Index transactions with events
-	err := idx.Index(&abi.TxIndexResult{
+	err := idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
-		Result: &abi.TxResult{
-			Events: []abi.Event{
+		Result: &bapitypes.TxOutcome{
+			Events: []bapitypes.Event{
 				{
-					Type: "transfer",
-					Attributes: []abi.Attribute{
-						{Key: "sender", Value: []byte("alice"), Index: true},
+					Kind: "transfer",
+					Attributes: []bapitypes.EventAttribute{
+						{Key: "sender", Value: "alice", Index: true},
 					},
 				},
 			},
@@ -171,15 +172,15 @@ func TestTxIndexer_SearchByEvent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = idx.Index(&abi.TxIndexResult{
+	err = idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-2"),
 		Height: 101,
-		Result: &abi.TxResult{
-			Events: []abi.Event{
+		Result: &bapitypes.TxOutcome{
+			Events: []bapitypes.Event{
 				{
-					Type: "transfer",
-					Attributes: []abi.Attribute{
-						{Key: "sender", Value: []byte("bob"), Index: true},
+					Kind: "transfer",
+					Attributes: []bapitypes.EventAttribute{
+						{Key: "sender", Value: "bob", Index: true},
 					},
 				},
 			},
@@ -212,7 +213,7 @@ func TestTxIndexer_SearchPagination(t *testing.T) {
 
 	// Index 25 transactions
 	for i := uint64(1); i <= 25; i++ {
-		err := idx.Index(&abi.TxIndexResult{
+		err := idx.Index(&indexer.TxIndexResult{
 			Hash:   []byte{byte(i)},
 			Height: 100, // All at same height
 		})
@@ -271,7 +272,7 @@ func TestTxIndexer_Batch(t *testing.T) {
 
 	// Add multiple transactions
 	for i := 0; i < 10; i++ {
-		err := batch.Add(&abi.TxIndexResult{
+		err := batch.Add(&indexer.TxIndexResult{
 			Hash:   []byte{byte(i)},
 			Height: uint64(100 + i),
 		})
@@ -299,7 +300,7 @@ func TestTxIndexer_BatchDelete(t *testing.T) {
 
 	// Index some transactions
 	for i := 0; i < 5; i++ {
-		err := idx.Index(&abi.TxIndexResult{
+		err := idx.Index(&indexer.TxIndexResult{
 			Hash:   []byte{byte(i)},
 			Height: uint64(100 + i),
 		})
@@ -332,7 +333,7 @@ func TestTxIndexer_BatchDiscard(t *testing.T) {
 
 	batch := idx.Batch()
 
-	err := batch.Add(&abi.TxIndexResult{
+	err := batch.Add(&indexer.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
 	})
@@ -354,7 +355,7 @@ func TestTxIndexer_Close(t *testing.T) {
 	defer cleanup()
 
 	// Index something
-	err := idx.Index(&abi.TxIndexResult{
+	err := idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
 	})
@@ -366,12 +367,12 @@ func TestTxIndexer_Close(t *testing.T) {
 
 	// Operations should fail
 	_, err = idx.Get([]byte("tx-1"))
-	require.ErrorIs(t, err, abi.ErrIndexCorrupted)
+	require.ErrorIs(t, err, indexer.ErrIndexCorrupted)
 
 	require.False(t, idx.Has([]byte("tx-1")))
 
-	err = idx.Index(&abi.TxIndexResult{Hash: []byte("tx-2"), Height: 101})
-	require.ErrorIs(t, err, abi.ErrIndexCorrupted)
+	err = idx.Index(&indexer.TxIndexResult{Hash: []byte("tx-2"), Height: 101})
+	require.ErrorIs(t, err, indexer.ErrIndexCorrupted)
 }
 
 func TestTxIndexer_IndexNilResult(t *testing.T) {
@@ -383,7 +384,7 @@ func TestTxIndexer_IndexNilResult(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should not panic on empty hash
-	err = idx.Index(&abi.TxIndexResult{Hash: nil})
+	err = idx.Index(&indexer.TxIndexResult{Hash: nil})
 	require.NoError(t, err)
 }
 
@@ -398,16 +399,16 @@ func TestTxIndexer_IndexAllEvents(t *testing.T) {
 	defer idx.Close()
 
 	// Index with non-indexed event
-	err = idx.Index(&abi.TxIndexResult{
+	err = idx.Index(&indexer.TxIndexResult{
 		Hash:   []byte("tx-1"),
 		Height: 100,
-		Result: &abi.TxResult{
-			Events: []abi.Event{
+		Result: &bapitypes.TxOutcome{
+			Events: []bapitypes.Event{
 				{
-					Type: "test",
-					Attributes: []abi.Attribute{
-						{Key: "indexed", Value: []byte("yes"), Index: true},
-						{Key: "not_indexed", Value: []byte("no"), Index: false},
+					Kind: "test",
+					Attributes: []bapitypes.EventAttribute{
+						{Key: "indexed", Value: "yes", Index: true},
+						{Key: "not_indexed", Value: "no", Index: false},
 					},
 				},
 			},
@@ -442,7 +443,7 @@ func TestKeyConstruction(t *testing.T) {
 	})
 
 	t.Run("txEventKey", func(t *testing.T) {
-		key := txEventKey("transfer", "sender", []byte("alice"), []byte("hash"))
+		key := txEventKey("transfer", "sender", "alice", []byte("hash"))
 		require.Contains(t, string(key), "transfer")
 		require.Contains(t, string(key), "sender")
 		require.Contains(t, string(key), "alice")

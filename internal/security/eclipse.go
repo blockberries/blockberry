@@ -4,18 +4,16 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/blockberries/blockberry/pkg/abi"
 )
 
-// EclipseProtector implements abi.EclipseMitigation.
+// EclipseProtector implements EclipseMitigation.
 // It tracks peer diversity and prevents eclipse attacks by:
 // 1. Limiting peers from the same subnet
 // 2. Limiting peers learned from the same source
 // 3. Requiring minimum outbound connections
 // 4. Tracking peer behavior and penalizing bad actors
 type EclipseProtector struct {
-	cfg abi.EclipseMitigationConfig
+	cfg EclipseMitigationConfig
 
 	// Peer tracking
 	peers       map[string]*peerInfo
@@ -43,7 +41,7 @@ type peerInfo struct {
 }
 
 // NewEclipseProtector creates a new eclipse attack protector.
-func NewEclipseProtector(cfg abi.EclipseMitigationConfig) *EclipseProtector {
+func NewEclipseProtector(cfg EclipseMitigationConfig) *EclipseProtector {
 	return &EclipseProtector{
 		cfg:          cfg,
 		peers:        make(map[string]*peerInfo),
@@ -370,5 +368,5 @@ func extractSubnet(addr string) string {
 	return subnet.String()
 }
 
-// Ensure EclipseProtector implements abi.EclipseMitigation.
-var _ abi.EclipseMitigation = (*EclipseProtector)(nil)
+// Ensure EclipseProtector implements EclipseMitigation.
+var _ EclipseMitigation = (*EclipseProtector)(nil)

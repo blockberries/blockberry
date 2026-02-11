@@ -10,7 +10,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/rpc"
 	schema "github.com/blockberries/blockberry/schema"
 )
@@ -21,13 +22,13 @@ type mockRPCServer struct {
 	statusResult     *rpc.NodeStatus
 	netInfoResult    *rpc.NetInfo
 	broadcastResult  *rpc.BroadcastResult
-	queryResult      *abi.QueryResult
+	queryResult      *bapitypes.StateQueryResult
 	blockResult      *rpc.BlockResult
 	txResult         *rpc.TxResult
 	txSearchResults  []*rpc.TxResult
 	peersResult      []rpc.PeerInfo
 	consensusResult  *rpc.ConsensusState
-	subscribeChannel chan abi.Event
+	subscribeChannel chan bapitypes.Event
 	err              error
 }
 
@@ -51,7 +52,7 @@ func (m *mockRPCServer) BroadcastTx(ctx context.Context, tx []byte, mode rpc.Bro
 	return m.broadcastResult, m.err
 }
 
-func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*abi.QueryResult, error) {
+func (m *mockRPCServer) Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*bapitypes.StateQueryResult, error) {
 	return m.queryResult, m.err
 }
 
@@ -79,11 +80,11 @@ func (m *mockRPCServer) ConsensusState(ctx context.Context) (*rpc.ConsensusState
 	return m.consensusResult, m.err
 }
 
-func (m *mockRPCServer) Subscribe(ctx context.Context, subscriber string, query abi.Query) (<-chan abi.Event, error) {
+func (m *mockRPCServer) Subscribe(ctx context.Context, subscriber string, query events.Query) (<-chan bapitypes.Event, error) {
 	return m.subscribeChannel, m.err
 }
 
-func (m *mockRPCServer) Unsubscribe(ctx context.Context, subscriber string, query abi.Query) error {
+func (m *mockRPCServer) Unsubscribe(ctx context.Context, subscriber string, query events.Query) error {
 	return m.err
 }
 
@@ -237,7 +238,7 @@ func TestStatus(t *testing.T) {
 func TestBroadcastTx(t *testing.T) {
 	mock := &mockRPCServer{
 		broadcastResult: &rpc.BroadcastResult{
-			Code: abi.CodeOK,
+			Code: 0,
 			Hash: []byte("txhash123"),
 			Log:  "success",
 		},
@@ -254,7 +255,7 @@ func TestBroadcastTx(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.Equal(t, int32(abi.CodeOK), *resp.Code)
+	require.Equal(t, int32(0), *resp.Code)
 	require.Equal(t, []byte("txhash123"), resp.Hash)
 }
 
@@ -272,9 +273,9 @@ func TestBroadcastTx_MissingTx(t *testing.T) {
 
 func TestQuery(t *testing.T) {
 	mock := &mockRPCServer{
-		queryResult: &abi.QueryResult{
+		queryResult: &bapitypes.StateQueryResult{
 			Code:   0,
-			Data:   []byte("result value"),
+			Value:  []byte("result value"),
 			Height: 50,
 		},
 	}
@@ -289,7 +290,7 @@ func TestQuery(t *testing.T) {
 	})
 	require.NoError(t, err)
 	require.NotNil(t, resp)
-	require.Equal(t, int32(abi.CodeOK), *resp.Code)
+	require.Equal(t, int32(0), *resp.Code)
 	require.Equal(t, []byte("result value"), resp.Value)
 	require.Equal(t, int64(50), resp.Height)
 }
@@ -297,8 +298,8 @@ func TestQuery(t *testing.T) {
 func TestBlock(t *testing.T) {
 	mock := &mockRPCServer{
 		blockResult: &rpc.BlockResult{
-			Block: &abi.Block{
-				Header: abi.BlockHeader{
+			Block: &rpc.Block{
+				Header: rpc.BlockHeader{
 					Height: 100,
 					Time:   time.Now(),
 				},
@@ -398,14 +399,14 @@ func TestParseQuery(t *testing.T) {
 			query := parseQuery(tt.input)
 			switch tt.expected {
 			case "all":
-				_, ok := query.(abi.QueryAll)
+				_, ok := query.(events.QueryAll)
 				require.True(t, ok)
 			case "type":
-				q, ok := query.(abi.QueryEventType)
+				q, ok := query.(events.QueryEventKind)
 				require.True(t, ok)
-				require.Equal(t, "Transfer", q.EventType)
+				require.Equal(t, "Transfer", q.Kind)
 			case "attribute":
-				q, ok := query.(abi.QueryAttribute)
+				q, ok := query.(events.QueryAttribute)
 				require.True(t, ok)
 				require.Equal(t, "sender", q.Key)
 				require.Equal(t, "abc123", q.Value)

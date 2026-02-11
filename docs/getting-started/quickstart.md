@@ -90,69 +90,68 @@ import (
     "os/signal"
     "syscall"
 
-    "github.com/blockberries/blockberry/pkg/abi"
+    "github.com/blockberries/bapi"
+    bapitypes "github.com/blockberries/bapi/types"
     "github.com/blockberries/blockberry/pkg/config"
     "github.com/blockberries/blockberry/pkg/node"
 )
 
-// SimpleApp implements the abi.Application interface
+// SimpleApp implements the bapi.Lifecycle interface
 type SimpleApp struct {
-    abi.BaseApplication
+    bapi.BaseApplication
     txCount int
 }
 
 // Info returns application metadata
-func (app *SimpleApp) Info() abi.ApplicationInfo {
-    return abi.ApplicationInfo{
+func (app *SimpleApp) Info() bapitypes.ApplicationInfo {
+    return bapitypes.ApplicationInfo{
         Name:    "simple-blockchain",
         Version: "1.0.0",
     }
 }
 
 // CheckTx validates a transaction before adding to mempool
-func (app *SimpleApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *SimpleApp) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Basic validation: transaction must not be empty
     if len(tx.Data) == 0 {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidTx,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidTx,
             Error: errors.New("empty transaction"),
         }
     }
 
     // Accept the transaction
-    return &abi.TxCheckResult{
-        Code:      abi.CodeOK,
+    return &bapitypes.TxCheckResult{
+        Code:      bapitypes.CodeOK,
         GasWanted: 1000,
     }
 }
 
-// ExecuteTx processes a transaction in a block
-func (app *SimpleApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    app.txCount++
+// ExecuteBlock processes all transactions in a block
+func (app *SimpleApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    app.txCount += len(block.Txs)
 
-    // Emit an event for this transaction
-    event := abi.Event{
-        Type: "tx.executed",
+    // Emit an event for the block
+    event := bapitypes.Event{
+        Type: "block.executed",
         Attributes: map[string]string{
-            "tx_hash": string(tx.Hash),
-            "count":   string(rune(app.txCount)),
+            "tx_count": string(rune(app.txCount)),
         },
     }
 
-    return &abi.TxExecResult{
-        Code:    abi.CodeOK,
-        Events:  []abi.Event{event},
-        GasUsed: 1000,
+    return &bapitypes.BlockResult{
+        Code:   bapitypes.CodeOK,
+        Events: []bapitypes.Event{event},
     }
 }
 
 // Commit finalizes the block and returns the app hash
-func (app *SimpleApp) Commit(ctx context.Context) *abi.CommitResult {
+func (app *SimpleApp) Commit(ctx context.Context) *bapitypes.CommitResult {
     // In a real app, you would compute a proper state hash
     // For this example, we'll use a dummy hash
     dummyHash := []byte("simple-app-hash")
 
-    return &abi.CommitResult{
+    return &bapitypes.CommitResult{
         AppHash: dummyHash,
     }
 }
@@ -265,11 +264,11 @@ Congratulations! You just:
 
 ### The Application
 
-The `SimpleApp` implements the `abi.Application` interface, which defines:
+The `SimpleApp` implements the `bapi.Lifecycle` interface, which defines:
 
 - `Info()` - Returns app metadata
 - `CheckTx()` - Validates transactions for the mempool
-- `ExecuteTx()` - Executes transactions in a block
+- `ExecuteBlock()` - Executes all transactions in a block
 - `Commit()` - Finalizes the block and returns app state hash
 
 ### The Node
@@ -450,22 +449,22 @@ level = "info"                  # Log level: debug/info/warn/error
 ```go
 // Minimal implementation
 type App struct {
-    abi.BaseApplication
+    bapi.BaseApplication
 }
 
-func (app *App) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *App) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     // Validate transaction
-    return &abi.TxCheckResult{Code: abi.CodeOK}
+    return &bapitypes.TxCheckResult{Code: bapitypes.CodeOK}
 }
 
-func (app *App) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    // Execute transaction
-    return &abi.TxExecResult{Code: abi.CodeOK}
+func (app *App) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
+    // Execute block
+    return &bapitypes.BlockResult{Code: bapitypes.CodeOK}
 }
 
-func (app *App) Commit(ctx context.Context) *abi.CommitResult {
+func (app *App) Commit(ctx context.Context) *bapitypes.CommitResult {
     // Return state hash
-    return &abi.CommitResult{AppHash: []byte("hash")}
+    return &bapitypes.CommitResult{AppHash: []byte("hash")}
 }
 
 ```text

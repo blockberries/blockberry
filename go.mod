@@ -5,7 +5,8 @@ go 1.25.6
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/blockberries/avlberry v0.0.0
-	github.com/blockberries/cramberry v1.5.5
+	github.com/blockberries/bapi v0.0.0-00010101000000-000000000000
+	github.com/blockberries/cramberry v1.6.0
 	github.com/blockberries/glueberry v1.2.10
 	github.com/blockberries/looseberry v0.0.0
 	github.com/cosmos/ics23/go v0.11.0
@@ -141,5 +142,7 @@ require (
 )
 
 replace github.com/blockberries/avlberry => ../avlberry
+
+replace github.com/blockberries/bapi => ../bapi
 
 replace github.com/blockberries/looseberry => ../looseberry

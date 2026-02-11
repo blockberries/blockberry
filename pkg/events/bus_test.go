@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
 )
 
 func TestBus_StartStop(t *testing.T) {
@@ -38,14 +38,14 @@ func TestBus_StartStop(t *testing.T) {
 func TestBus_SubscribeBeforeStart(t *testing.T) {
 	bus := NewBus()
 
-	_, err := bus.Subscribe(context.Background(), "test", abi.QueryAll{})
+	_, err := bus.Subscribe(context.Background(), "test", QueryAll{})
 	assert.Equal(t, ErrBusNotRunning, err)
 }
 
 func TestBus_PublishBeforeStart(t *testing.T) {
 	bus := NewBus()
 
-	err := bus.Publish(context.Background(), abi.Event{Type: "test"})
+	err := bus.Publish(context.Background(), bapitypes.Event{Kind: "test"})
 	assert.Equal(t, ErrBusNotRunning, err)
 }
 
@@ -55,46 +55,51 @@ func TestBus_SubscribeAndPublish(t *testing.T) {
 	defer bus.Stop()
 
 	// Subscribe
-	ch, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	ch, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
 	require.NotNil(t, ch)
 
 	// Publish
-	event := abi.NewEvent("TestEvent").AddStringAttribute("key", "value")
+	event := bapitypes.Event{
+		Kind: "TestEvent",
+		Attributes: []bapitypes.EventAttribute{
+			{Key: "key", Value: "value"},
+		},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event))
 
 	// Receive
 	select {
 	case received := <-ch:
-		assert.Equal(t, "TestEvent", received.Type)
+		assert.Equal(t, "TestEvent", received.Kind)
 		assert.Len(t, received.Attributes, 1)
 		assert.Equal(t, "key", received.Attributes[0].Key)
-		assert.Equal(t, "value", received.Attributes[0].StringValue())
+		assert.Equal(t, "value", received.Attributes[0].Value)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")
 	}
 }
 
-func TestBus_QueryEventType(t *testing.T) {
+func TestBus_QueryEventKind(t *testing.T) {
 	bus := NewBus()
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	// Subscribe to specific event type
-	query := abi.QueryEventType{EventType: "Transfer"}
+	// Subscribe to specific event kind
+	query := QueryEventKind{Kind: "Transfer"}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
 	// Publish matching event
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Transfer"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Transfer"}))
 
 	// Publish non-matching event
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Delegate"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Delegate"}))
 
 	// Should only receive Transfer
 	select {
 	case received := <-ch:
-		assert.Equal(t, "Transfer", received.Type)
+		assert.Equal(t, "Transfer", received.Kind)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")
 	}
@@ -108,33 +113,33 @@ func TestBus_QueryEventType(t *testing.T) {
 	}
 }
 
-func TestBus_QueryEventTypes(t *testing.T) {
+func TestBus_QueryEventKinds(t *testing.T) {
 	bus := NewBus()
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	// Subscribe to multiple event types
-	query := abi.QueryEventTypes{EventTypes: []string{"Transfer", "Delegate"}}
+	// Subscribe to multiple event kinds
+	query := QueryEventKinds{Kinds: []string{"Transfer", "Delegate"}}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
 	// Publish matching events
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Transfer"}))
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Delegate"}))
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Other"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Transfer"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Delegate"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Other"}))
 
 	// Should receive Transfer and Delegate, not Other
-	receivedTypes := make([]string, 0, 2)
+	receivedKinds := make([]string, 0, 2)
 	for i := 0; i < 2; i++ {
 		select {
 		case received := <-ch:
-			receivedTypes = append(receivedTypes, received.Type)
+			receivedKinds = append(receivedKinds, received.Kind)
 		case <-time.After(time.Second):
 			t.Fatal("timeout waiting for event")
 		}
 	}
-	assert.Contains(t, receivedTypes, "Transfer")
-	assert.Contains(t, receivedTypes, "Delegate")
+	assert.Contains(t, receivedKinds, "Transfer")
+	assert.Contains(t, receivedKinds, "Delegate")
 }
 
 func TestBus_QueryAttribute(t *testing.T) {
@@ -143,23 +148,29 @@ func TestBus_QueryAttribute(t *testing.T) {
 	defer bus.Stop()
 
 	// Subscribe to events with specific attribute
-	query := abi.QueryAttribute{Key: "sender", Value: "alice"}
+	query := QueryAttribute{Key: "sender", Value: "alice"}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
 	// Publish matching event
-	event1 := abi.NewEvent("Transfer").AddStringAttribute("sender", "alice")
+	event1 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event1))
 
 	// Publish non-matching event
-	event2 := abi.NewEvent("Transfer").AddStringAttribute("sender", "bob")
+	event2 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "bob"}},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event2))
 
 	// Should only receive alice's event
 	select {
 	case received := <-ch:
-		assert.Equal(t, "Transfer", received.Type)
-		assert.Equal(t, "alice", received.Attributes[0].StringValue())
+		assert.Equal(t, "Transfer", received.Kind)
+		assert.Equal(t, "alice", received.Attributes[0].Value)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")
 	}
@@ -179,32 +190,41 @@ func TestBus_QueryAnd(t *testing.T) {
 	defer bus.Stop()
 
 	// Subscribe with AND query
-	query := abi.QueryAnd{
-		Queries: []abi.Query{
-			abi.QueryEventType{EventType: "Transfer"},
-			abi.QueryAttribute{Key: "sender", Value: "alice"},
+	query := QueryAnd{
+		Queries: []Query{
+			QueryEventKind{Kind: "Transfer"},
+			QueryAttribute{Key: "sender", Value: "alice"},
 		},
 	}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
 	// Publish event matching both conditions
-	event1 := abi.NewEvent("Transfer").AddStringAttribute("sender", "alice")
+	event1 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event1))
 
-	// Publish event matching only type
-	event2 := abi.NewEvent("Transfer").AddStringAttribute("sender", "bob")
+	// Publish event matching only kind
+	event2 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "bob"}},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event2))
 
 	// Publish event matching only attribute
-	event3 := abi.NewEvent("Delegate").AddStringAttribute("sender", "alice")
+	event3 := bapitypes.Event{
+		Kind:       "Delegate",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event3))
 
 	// Should only receive first event
 	select {
 	case received := <-ch:
-		assert.Equal(t, "Transfer", received.Type)
-		assert.Equal(t, "alice", received.Attributes[0].StringValue())
+		assert.Equal(t, "Transfer", received.Kind)
+		assert.Equal(t, "alice", received.Attributes[0].Value)
 	case <-time.After(time.Second):
 		t.Fatal("timeout waiting for event")
 	}
@@ -224,19 +244,19 @@ func TestBus_QueryOr(t *testing.T) {
 	defer bus.Stop()
 
 	// Subscribe with OR query
-	query := abi.QueryOr{
-		Queries: []abi.Query{
-			abi.QueryEventType{EventType: "Transfer"},
-			abi.QueryEventType{EventType: "Delegate"},
+	query := QueryOr{
+		Queries: []Query{
+			QueryEventKind{Kind: "Transfer"},
+			QueryEventKind{Kind: "Delegate"},
 		},
 	}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
 	// Publish matching events
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Transfer"}))
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Delegate"}))
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Other"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Transfer"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Delegate"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Other"}))
 
 	// Should receive Transfer and Delegate
 	count := 0
@@ -256,7 +276,7 @@ func TestBus_Unsubscribe(t *testing.T) {
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	query := abi.QueryAll{}
+	query := QueryAll{}
 	ch, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 	assert.Equal(t, 1, bus.NumSubscribers())
@@ -280,11 +300,11 @@ func TestBus_UnsubscribeAll(t *testing.T) {
 	defer bus.Stop()
 
 	// Subscribe multiple times
-	_, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	_, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
-	_, err = bus.Subscribe(context.Background(), "sub1", abi.QueryEventType{EventType: "Test"})
+	_, err = bus.Subscribe(context.Background(), "sub1", QueryEventKind{Kind: "Test"})
 	require.NoError(t, err)
-	_, err = bus.Subscribe(context.Background(), "sub2", abi.QueryAll{})
+	_, err = bus.Subscribe(context.Background(), "sub2", QueryAll{})
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, bus.NumSubscribers())
@@ -299,7 +319,7 @@ func TestBus_DuplicateSubscription(t *testing.T) {
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	query := abi.QueryAll{}
+	query := QueryAll{}
 	_, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 
@@ -309,7 +329,7 @@ func TestBus_DuplicateSubscription(t *testing.T) {
 }
 
 func TestBus_MaxSubscribers(t *testing.T) {
-	config := abi.EventBusConfig{
+	config := EventBusConfig{
 		BufferSize:     10,
 		MaxSubscribers: 2,
 	}
@@ -317,31 +337,31 @@ func TestBus_MaxSubscribers(t *testing.T) {
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	_, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	_, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
 
-	_, err = bus.Subscribe(context.Background(), "sub2", abi.QueryAll{})
+	_, err = bus.Subscribe(context.Background(), "sub2", QueryAll{})
 	require.NoError(t, err)
 
 	// Third subscription should fail
-	_, err = bus.Subscribe(context.Background(), "sub3", abi.QueryAll{})
+	_, err = bus.Subscribe(context.Background(), "sub3", QueryAll{})
 	assert.Equal(t, ErrTooManySubscribers, err)
 }
 
 func TestBus_PublishWithTimeout(t *testing.T) {
-	bus := NewBusWithConfig(abi.EventBusConfig{BufferSize: 1})
+	bus := NewBusWithConfig(EventBusConfig{BufferSize: 1})
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	ch, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	ch, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
 
 	// Fill the buffer
-	require.NoError(t, bus.Publish(context.Background(), abi.Event{Type: "Event1"}))
+	require.NoError(t, bus.Publish(context.Background(), bapitypes.Event{Kind: "Event1"}))
 
 	// This should timeout because buffer is full
 	start := time.Now()
-	err = bus.PublishWithTimeout(context.Background(), abi.Event{Type: "Event2"}, 50*time.Millisecond)
+	err = bus.PublishWithTimeout(context.Background(), bapitypes.Event{Kind: "Event2"}, 50*time.Millisecond)
 	elapsed := time.Since(start)
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, elapsed, 50*time.Millisecond)
@@ -355,7 +375,7 @@ func TestBus_ConcurrentPublish(t *testing.T) {
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	ch, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	ch, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
 
 	const numPublishers = 10
@@ -367,7 +387,12 @@ func TestBus_ConcurrentPublish(t *testing.T) {
 		go func(publisherID int) {
 			defer wg.Done()
 			for j := 0; j < numEvents; j++ {
-				event := abi.NewEvent("Test").AddStringAttribute("publisher", string(rune('A'+publisherID)))
+				event := bapitypes.Event{
+					Kind: "Test",
+					Attributes: []bapitypes.EventAttribute{
+						{Key: "publisher", Value: string(rune('A' + publisherID))},
+					},
+				}
 				_ = bus.Publish(context.Background(), event)
 			}
 		}(i)
@@ -399,7 +424,7 @@ func TestBus_StopClosesChannels(t *testing.T) {
 	bus := NewBus()
 	require.NoError(t, bus.Start())
 
-	ch, err := bus.Subscribe(context.Background(), "sub1", abi.QueryAll{})
+	ch, err := bus.Subscribe(context.Background(), "sub1", QueryAll{})
 	require.NoError(t, err)
 
 	// Stop the bus
@@ -416,7 +441,7 @@ func TestBus_ContextCancellation(t *testing.T) {
 	defer bus.Stop()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	ch, err := bus.Subscribe(ctx, "sub1", abi.QueryAll{})
+	ch, err := bus.Subscribe(ctx, "sub1", QueryAll{})
 	require.NoError(t, err)
 	assert.Equal(t, 1, bus.NumSubscribers())
 
@@ -437,13 +462,13 @@ func TestBus_NumSubscribersForQuery(t *testing.T) {
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
-	query := abi.QueryEventType{EventType: "Test"}
+	query := QueryEventKind{Kind: "Test"}
 
 	_, err := bus.Subscribe(context.Background(), "sub1", query)
 	require.NoError(t, err)
 	_, err = bus.Subscribe(context.Background(), "sub2", query)
 	require.NoError(t, err)
-	_, err = bus.Subscribe(context.Background(), "sub3", abi.QueryAll{})
+	_, err = bus.Subscribe(context.Background(), "sub3", QueryAll{})
 	require.NoError(t, err)
 
 	assert.Equal(t, 3, bus.NumSubscribers())
@@ -452,110 +477,128 @@ func TestBus_NumSubscribersForQuery(t *testing.T) {
 
 // Test query types directly
 func TestQueryAll_Matches(t *testing.T) {
-	q := abi.QueryAll{}
-	assert.True(t, q.Matches(abi.Event{Type: "anything"}))
+	q := QueryAll{}
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "anything"}))
 	assert.Equal(t, "all", q.String())
 }
 
-func TestQueryEventType_Matches(t *testing.T) {
-	q := abi.QueryEventType{EventType: "Transfer"}
-	assert.True(t, q.Matches(abi.Event{Type: "Transfer"}))
-	assert.False(t, q.Matches(abi.Event{Type: "Delegate"}))
-	assert.Equal(t, "type=Transfer", q.String())
+func TestQueryEventKind_Matches(t *testing.T) {
+	q := QueryEventKind{Kind: "Transfer"}
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Transfer"}))
+	assert.False(t, q.Matches(bapitypes.Event{Kind: "Delegate"}))
+	assert.Equal(t, "kind=Transfer", q.String())
 }
 
-func TestQueryEventTypes_Matches(t *testing.T) {
-	q := abi.QueryEventTypes{EventTypes: []string{"Transfer", "Delegate"}}
-	assert.True(t, q.Matches(abi.Event{Type: "Transfer"}))
-	assert.True(t, q.Matches(abi.Event{Type: "Delegate"}))
-	assert.False(t, q.Matches(abi.Event{Type: "Other"}))
-	assert.Equal(t, "types=[Transfer,Delegate]", q.String())
+func TestQueryEventKinds_Matches(t *testing.T) {
+	q := QueryEventKinds{Kinds: []string{"Transfer", "Delegate"}}
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Transfer"}))
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Delegate"}))
+	assert.False(t, q.Matches(bapitypes.Event{Kind: "Other"}))
+	assert.Equal(t, "kinds=[Transfer,Delegate]", q.String())
 
 	// Empty
-	q2 := abi.QueryEventTypes{}
-	assert.False(t, q2.Matches(abi.Event{Type: "anything"}))
-	assert.Equal(t, "types=[]", q2.String())
+	q2 := QueryEventKinds{}
+	assert.False(t, q2.Matches(bapitypes.Event{Kind: "anything"}))
+	assert.Equal(t, "kinds=[]", q2.String())
 }
 
 func TestQueryFunc_Matches(t *testing.T) {
-	q := abi.QueryFunc{
-		Fn:          func(e abi.Event) bool { return len(e.Type) > 5 },
-		Description: "type length > 5",
+	q := QueryFunc{
+		Fn:          func(e bapitypes.Event) bool { return len(e.Kind) > 5 },
+		Description: "kind length > 5",
 	}
-	assert.True(t, q.Matches(abi.Event{Type: "Transfer"}))
-	assert.False(t, q.Matches(abi.Event{Type: "Test"}))
-	assert.Equal(t, "type length > 5", q.String())
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Transfer"}))
+	assert.False(t, q.Matches(bapitypes.Event{Kind: "Test"}))
+	assert.Equal(t, "kind length > 5", q.String())
 
 	// Nil function
-	q2 := abi.QueryFunc{}
-	assert.False(t, q2.Matches(abi.Event{Type: "anything"}))
+	q2 := QueryFunc{}
+	assert.False(t, q2.Matches(bapitypes.Event{Kind: "anything"}))
 	assert.Equal(t, "func", q2.String())
 }
 
 func TestQueryAnd_Matches(t *testing.T) {
-	q := abi.QueryAnd{
-		Queries: []abi.Query{
-			abi.QueryEventType{EventType: "Transfer"},
-			abi.QueryAttributeExists{Key: "sender"},
+	q := QueryAnd{
+		Queries: []Query{
+			QueryEventKind{Kind: "Transfer"},
+			QueryAttributeExists{Key: "sender"},
 		},
 	}
 
 	// Both conditions met
-	e1 := abi.NewEvent("Transfer").AddStringAttribute("sender", "alice")
+	e1 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	assert.True(t, q.Matches(e1))
 
-	// Only type matches
-	e2 := abi.NewEvent("Transfer")
+	// Only kind matches
+	e2 := bapitypes.Event{Kind: "Transfer"}
 	assert.False(t, q.Matches(e2))
 
 	// Only attribute matches
-	e3 := abi.NewEvent("Delegate").AddStringAttribute("sender", "alice")
+	e3 := bapitypes.Event{
+		Kind:       "Delegate",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	assert.False(t, q.Matches(e3))
 
 	// Empty AND matches everything
-	q2 := abi.QueryAnd{}
-	assert.True(t, q2.Matches(abi.Event{Type: "anything"}))
+	q2 := QueryAnd{}
+	assert.True(t, q2.Matches(bapitypes.Event{Kind: "anything"}))
 }
 
 func TestQueryOr_Matches(t *testing.T) {
-	q := abi.QueryOr{
-		Queries: []abi.Query{
-			abi.QueryEventType{EventType: "Transfer"},
-			abi.QueryEventType{EventType: "Delegate"},
+	q := QueryOr{
+		Queries: []Query{
+			QueryEventKind{Kind: "Transfer"},
+			QueryEventKind{Kind: "Delegate"},
 		},
 	}
 
-	assert.True(t, q.Matches(abi.Event{Type: "Transfer"}))
-	assert.True(t, q.Matches(abi.Event{Type: "Delegate"}))
-	assert.False(t, q.Matches(abi.Event{Type: "Other"}))
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Transfer"}))
+	assert.True(t, q.Matches(bapitypes.Event{Kind: "Delegate"}))
+	assert.False(t, q.Matches(bapitypes.Event{Kind: "Other"}))
 
 	// Empty OR matches nothing
-	q2 := abi.QueryOr{}
-	assert.False(t, q2.Matches(abi.Event{Type: "anything"}))
+	q2 := QueryOr{}
+	assert.False(t, q2.Matches(bapitypes.Event{Kind: "anything"}))
 }
 
 func TestQueryAttribute_Matches(t *testing.T) {
-	q := abi.QueryAttribute{Key: "sender", Value: "alice"}
+	q := QueryAttribute{Key: "sender", Value: "alice"}
 
-	e1 := abi.NewEvent("Transfer").AddStringAttribute("sender", "alice")
+	e1 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	assert.True(t, q.Matches(e1))
 
-	e2 := abi.NewEvent("Transfer").AddStringAttribute("sender", "bob")
+	e2 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "bob"}},
+	}
 	assert.False(t, q.Matches(e2))
 
-	e3 := abi.NewEvent("Transfer")
+	e3 := bapitypes.Event{Kind: "Transfer"}
 	assert.False(t, q.Matches(e3))
 
 	assert.Equal(t, "sender=alice", q.String())
 }
 
 func TestQueryAttributeExists_Matches(t *testing.T) {
-	q := abi.QueryAttributeExists{Key: "sender"}
+	q := QueryAttributeExists{Key: "sender"}
 
-	e1 := abi.NewEvent("Transfer").AddStringAttribute("sender", "alice")
+	e1 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "sender", Value: "alice"}},
+	}
 	assert.True(t, q.Matches(e1))
 
-	e2 := abi.NewEvent("Transfer").AddStringAttribute("recipient", "bob")
+	e2 := bapitypes.Event{
+		Kind:       "Transfer",
+		Attributes: []bapitypes.EventAttribute{{Key: "recipient", Value: "bob"}},
+	}
 	assert.False(t, q.Matches(e2))
 
 	assert.Equal(t, "exists(sender)", q.String())

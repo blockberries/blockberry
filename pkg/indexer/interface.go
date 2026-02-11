@@ -1,4 +1,9 @@
-package abi
+// Package indexer provides transaction and block indexing interfaces.
+package indexer
+
+import (
+	bapitypes "github.com/blockberries/bapi/types"
+)
 
 // TxIndexer provides transaction indexing and search capabilities.
 // Implementations store transaction execution results and allow retrieval
@@ -17,7 +22,7 @@ type TxIndexer interface {
 	// The query syntax is implementation-specific but typically supports:
 	//   - "tx.height=100" - exact match
 	//   - "tx.height>100" - comparison
-	//   - "transfer.sender='addr'" - event attribute match
+	//   - "transfer.sender='value'" - event attribute match
 	// Returns matching results up to the limit.
 	Search(query string, page, perPage int) ([]*TxIndexResult, int, error)
 
@@ -44,8 +49,8 @@ type TxIndexResult struct {
 	// Index is the transaction's index within the block.
 	Index uint32
 
-	// Result is the execution result including events.
-	Result *TxResult
+	// Result is the execution outcome including events.
+	Result *bapitypes.TxOutcome
 }
 
 // TxIndexBatch allows batching multiple index operations.
@@ -69,7 +74,7 @@ type TxIndexBatch interface {
 // BlockIndexer provides block indexing capabilities.
 type BlockIndexer interface {
 	// IndexBlock indexes a block's events.
-	IndexBlock(height uint64, events []Event) error
+	IndexBlock(height uint64, events []bapitypes.Event) error
 
 	// SearchBlocks finds blocks matching the query.
 	SearchBlocks(query string, page, perPage int) ([]uint64, int, error)
@@ -148,14 +153,6 @@ func (b *nullBatch) Size() int                       { return 0 }
 // Ensure NullTxIndexer implements TxIndexer.
 var _ TxIndexer = (*NullTxIndexer)(nil)
 
-// Common indexer errors.
-var (
-	ErrTxNotFound     = &IndexError{Code: 1, Message: "transaction not found"}
-	ErrInvalidQuery   = &IndexError{Code: 2, Message: "invalid query"}
-	ErrIndexFull      = &IndexError{Code: 3, Message: "index storage full"}
-	ErrIndexCorrupted = &IndexError{Code: 4, Message: "index corrupted"}
-)
-
 // IndexError represents an indexer error.
 type IndexError struct {
 	Code    int
@@ -166,3 +163,11 @@ type IndexError struct {
 func (e *IndexError) Error() string {
 	return e.Message
 }
+
+// Common indexer errors.
+var (
+	ErrTxNotFound     = &IndexError{Code: 1, Message: "transaction not found"}
+	ErrInvalidQuery   = &IndexError{Code: 2, Message: "invalid query"}
+	ErrIndexFull      = &IndexError{Code: 3, Message: "index storage full"}
+	ErrIndexCorrupted = &IndexError{Code: 4, Message: "index corrupted"}
+)

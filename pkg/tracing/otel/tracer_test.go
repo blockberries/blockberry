@@ -9,7 +9,7 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/tracing"
 )
 
 func createTestTracer(t *testing.T) (*Tracer, *tracetest.InMemoryExporter) {
@@ -36,7 +36,6 @@ func TestTracer_StartSpan(t *testing.T) {
 
 	span.End()
 
-	// Check span was recorded
 	spans := exporter.GetSpans()
 	require.Len(t, spans, 1)
 	require.Equal(t, "test-span", spans[0].Name)
@@ -45,12 +44,10 @@ func TestTracer_StartSpan(t *testing.T) {
 func TestTracer_SpanFromContext(t *testing.T) {
 	tracer, _ := createTestTracer(t)
 
-	// No span in context
 	ctx := context.Background()
 	span := tracer.SpanFromContext(ctx)
 	require.Nil(t, span)
 
-	// Start a span and check it's in context
 	ctx, startedSpan := tracer.StartSpan(ctx, "test-span")
 	defer startedSpan.End()
 
@@ -75,8 +72,6 @@ func TestSpan_SetAttribute(t *testing.T) {
 
 	spans := exporter.GetSpans()
 	require.Len(t, spans, 1)
-
-	// Verify attributes were set
 	attrs := spans[0].Attributes
 	require.NotEmpty(t, attrs)
 }
@@ -88,9 +83,9 @@ func TestSpan_SetAttributes(t *testing.T) {
 	_, span := tracer.StartSpan(ctx, "test-span")
 
 	span.SetAttributes(
-		abi.SpanString("key1", "value1"),
-		abi.SpanInt("key2", 42),
-		abi.SpanBool("key3", true),
+		tracing.SpanString("key1", "value1"),
+		tracing.SpanInt("key2", 42),
+		tracing.SpanBool("key3", true),
 	)
 
 	span.End()
@@ -106,7 +101,7 @@ func TestSpan_AddEvent(t *testing.T) {
 	ctx := context.Background()
 	_, span := tracer.StartSpan(ctx, "test-span")
 
-	span.AddEvent("test-event", abi.SpanString("event-key", "event-value"))
+	span.AddEvent("test-event", tracing.SpanString("event-key", "event-value"))
 
 	span.End()
 
@@ -129,7 +124,6 @@ func TestSpan_RecordError(t *testing.T) {
 
 	spans := exporter.GetSpans()
 	require.Len(t, spans, 1)
-	// Error should be recorded as an event
 	require.NotEmpty(t, spans[0].Events)
 }
 
@@ -137,13 +131,13 @@ func TestSpan_SetStatus(t *testing.T) {
 	tracer, exporter := createTestTracer(t)
 
 	tests := []struct {
-		name   string
-		code   abi.StatusCode
-		desc   string
+		name string
+		code tracing.StatusCode
+		desc string
 	}{
-		{"OK", abi.StatusOK, "success"},
-		{"Error", abi.StatusError, "something went wrong"},
-		{"Unset", abi.StatusUnset, ""},
+		{"OK", tracing.StatusOK, "success"},
+		{"Error", tracing.StatusError, "something went wrong"},
+		{"Unset", tracing.StatusUnset, ""},
 	}
 
 	for _, tt := range tests {
@@ -185,30 +179,26 @@ func TestSpan_SpanContext(t *testing.T) {
 
 	sc := span.SpanContext()
 
-	// Span context should be valid
 	require.True(t, sc.IsValid())
 	require.NotEqual(t, [16]byte{}, sc.TraceID)
 	require.NotEqual(t, [8]byte{}, sc.SpanID)
 }
 
 func TestCarrierAdapter(t *testing.T) {
-	carrier := abi.MapCarrier{
+	carrier := tracing.MapCarrier{
 		"key1": "value1",
 		"key2": "value2",
 	}
 
 	adapter := carrierAdapter{carrier: carrier}
 
-	// Get
 	require.Equal(t, "value1", adapter.Get("key1"))
 	require.Equal(t, "value2", adapter.Get("key2"))
 	require.Equal(t, "", adapter.Get("missing"))
 
-	// Set
 	adapter.Set("key3", "value3")
 	require.Equal(t, "value3", adapter.Get("key3"))
 
-	// Keys
 	keys := adapter.Keys()
 	require.Len(t, keys, 3)
 }
@@ -216,22 +206,16 @@ func TestCarrierAdapter(t *testing.T) {
 func TestTracer_ExtractInject(t *testing.T) {
 	tracer, _ := createTestTracer(t)
 
-	// Start a span
 	ctx := context.Background()
 	ctx, span := tracer.StartSpan(ctx, "test-span")
 	defer span.End()
 
-	// Inject into carrier
-	carrier := abi.MapCarrier{}
+	carrier := tracing.MapCarrier{}
 	tracer.Inject(ctx, carrier)
 
-	// Carrier should have trace context
 	require.NotEmpty(t, carrier)
 
-	// Extract from carrier into new context
 	newCtx := tracer.Extract(context.Background(), carrier)
-
-	// New context should have the trace context
 	require.NotNil(t, newCtx)
 }
 
@@ -268,7 +252,6 @@ func TestNewTracer(t *testing.T) {
 }
 
 func TestInterfaceCompliance(t *testing.T) {
-	// Verify interface compliance at compile time
-	var _ abi.Tracer = (*Tracer)(nil)
-	var _ abi.Span = (*Span)(nil)
+	var _ tracing.Tracer = (*Tracer)(nil)
+	var _ tracing.Span = (*Span)(nil)
 }

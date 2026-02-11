@@ -3,7 +3,8 @@ package rpc
 import (
 	"context"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/types"
 )
 
@@ -26,7 +27,7 @@ type Server interface {
 	BroadcastTx(ctx context.Context, tx []byte, mode BroadcastMode) (*BroadcastResult, error)
 
 	// Query performs an application query.
-	Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*abi.QueryResult, error)
+	Query(ctx context.Context, path string, data []byte, height int64, prove bool) (*bapitypes.StateQueryResult, error)
 
 	// Block returns a block by height.
 	// Use height 0 for the latest block.
@@ -49,10 +50,10 @@ type Server interface {
 
 	// Subscribe subscribes to events matching the query.
 	// Returns a channel that receives events.
-	Subscribe(ctx context.Context, subscriber string, query abi.Query) (<-chan abi.Event, error)
+	Subscribe(ctx context.Context, subscriber string, query events.Query) (<-chan bapitypes.Event, error)
 
 	// Unsubscribe unsubscribes from events.
-	Unsubscribe(ctx context.Context, subscriber string, query abi.Query) error
+	Unsubscribe(ctx context.Context, subscriber string, query events.Query) error
 
 	// UnsubscribeAll unsubscribes from all events.
 	UnsubscribeAll(ctx context.Context, subscriber string) error

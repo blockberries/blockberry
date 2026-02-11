@@ -4,14 +4,12 @@ package security
 import (
 	"sync"
 	"time"
-
-	"github.com/blockberries/blockberry/pkg/abi"
 )
 
-// TokenBucketLimiter implements abi.RateLimiter using the token bucket algorithm.
+// TokenBucketLimiter implements RateLimiter using the token bucket algorithm.
 // Each key has its own bucket that refills at the configured rate.
 type TokenBucketLimiter struct {
-	cfg     abi.RateLimiterConfig
+	cfg     RateLimiterConfig
 	buckets map[string]*bucket
 	mu      sync.RWMutex
 	done    chan struct{}
@@ -23,7 +21,7 @@ type bucket struct {
 }
 
 // NewTokenBucketLimiter creates a new token bucket rate limiter.
-func NewTokenBucketLimiter(cfg abi.RateLimiterConfig) *TokenBucketLimiter {
+func NewTokenBucketLimiter(cfg RateLimiterConfig) *TokenBucketLimiter {
 	l := &TokenBucketLimiter{
 		cfg:     cfg,
 		buckets: make(map[string]*bucket),
@@ -127,19 +125,19 @@ func (l *TokenBucketLimiter) Size() int {
 	return len(l.buckets)
 }
 
-// Ensure TokenBucketLimiter implements abi.RateLimiter.
-var _ abi.RateLimiter = (*TokenBucketLimiter)(nil)
+// Ensure TokenBucketLimiter implements RateLimiter.
+var _ RateLimiter = (*TokenBucketLimiter)(nil)
 
-// ConnectionTracker implements abi.ConnectionLimiter.
+// ConnectionTracker implements ConnectionLimiter.
 type ConnectionTracker struct {
-	limits   abi.ResourceLimits
+	limits   ResourceLimits
 	inbound  map[string]bool
 	outbound map[string]bool
 	mu       sync.RWMutex
 }
 
 // NewConnectionTracker creates a new connection tracker.
-func NewConnectionTracker(limits abi.ResourceLimits) *ConnectionTracker {
+func NewConnectionTracker(limits ResourceLimits) *ConnectionTracker {
 	return &ConnectionTracker{
 		limits:   limits,
 		inbound:  make(map[string]bool),
@@ -219,13 +217,13 @@ func (t *ConnectionTracker) TotalCount() int {
 	return len(t.inbound) + len(t.outbound)
 }
 
-// Ensure ConnectionTracker implements abi.ConnectionLimiter.
-var _ abi.ConnectionLimiter = (*ConnectionTracker)(nil)
+// Ensure ConnectionTracker implements ConnectionLimiter.
+var _ ConnectionLimiter = (*ConnectionTracker)(nil)
 
 // SlidingWindowLimiter implements rate limiting using a sliding window.
 // This provides smoother rate limiting than fixed windows.
 type SlidingWindowLimiter struct {
-	cfg     abi.RateLimiterConfig
+	cfg     RateLimiterConfig
 	windows map[string]*slidingWindow
 	mu      sync.RWMutex
 	done    chan struct{}
@@ -238,7 +236,7 @@ type slidingWindow struct {
 }
 
 // NewSlidingWindowLimiter creates a new sliding window rate limiter.
-func NewSlidingWindowLimiter(cfg abi.RateLimiterConfig) *SlidingWindowLimiter {
+func NewSlidingWindowLimiter(cfg RateLimiterConfig) *SlidingWindowLimiter {
 	l := &SlidingWindowLimiter{
 		cfg:     cfg,
 		windows: make(map[string]*slidingWindow),
@@ -346,5 +344,5 @@ func (l *SlidingWindowLimiter) Size() int {
 	return len(l.windows)
 }
 
-// Ensure SlidingWindowLimiter implements abi.RateLimiter.
-var _ abi.RateLimiter = (*SlidingWindowLimiter)(nil)
+// Ensure SlidingWindowLimiter implements RateLimiter.
+var _ RateLimiter = (*SlidingWindowLimiter)(nil)

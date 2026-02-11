@@ -13,7 +13,7 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/syndtr/goleveldb/leveldb/util"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/indexer"
 )
 
 // Key prefixes for different index types.
@@ -28,7 +28,7 @@ var (
 	prefixTxByEvent = []byte("ev/")
 )
 
-// TxIndexer implements abi.TxIndexer using LevelDB.
+// TxIndexer implements indexer.TxIndexer using LevelDB.
 type TxIndexer struct {
 	db     *leveldb.DB
 	path   string
@@ -54,7 +54,7 @@ func NewTxIndexer(path string, indexAllEvents bool) (*TxIndexer, error) {
 }
 
 // Index stores a transaction result for later retrieval.
-func (idx *TxIndexer) Index(result *abi.TxIndexResult) error {
+func (idx *TxIndexer) Index(result *indexer.TxIndexResult) error {
 	if result == nil || len(result.Hash) == 0 {
 		return nil
 	}
@@ -63,7 +63,7 @@ func (idx *TxIndexer) Index(result *abi.TxIndexResult) error {
 	defer idx.mu.Unlock()
 
 	if idx.closed {
-		return abi.ErrIndexCorrupted
+		return indexer.ErrIndexCorrupted
 	}
 
 	batch := new(leveldb.Batch)
@@ -84,7 +84,7 @@ func (idx *TxIndexer) Index(result *abi.TxIndexResult) error {
 		for _, event := range result.Result.Events {
 			for _, attr := range event.Attributes {
 				if idx.indexAllEvents || attr.Index {
-					eventKey := txEventKey(event.Type, attr.Key, attr.Value, result.Hash)
+					eventKey := txEventKey(event.Kind, attr.Key, attr.Value, result.Hash)
 					batch.Put(eventKey, result.Hash)
 				}
 			}
@@ -95,27 +95,27 @@ func (idx *TxIndexer) Index(result *abi.TxIndexResult) error {
 }
 
 // Get retrieves a transaction result by hash.
-func (idx *TxIndexer) Get(hash []byte) (*abi.TxIndexResult, error) {
+func (idx *TxIndexer) Get(hash []byte) (*indexer.TxIndexResult, error) {
 	if len(hash) == 0 {
-		return nil, abi.ErrTxNotFound
+		return nil, indexer.ErrTxNotFound
 	}
 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
 	if idx.closed {
-		return nil, abi.ErrIndexCorrupted
+		return nil, indexer.ErrIndexCorrupted
 	}
 
 	data, err := idx.db.Get(txHashKey(hash), nil)
 	if err != nil {
 		if err == leveldb.ErrNotFound {
-			return nil, abi.ErrTxNotFound
+			return nil, indexer.ErrTxNotFound
 		}
 		return nil, fmt.Errorf("getting tx: %w", err)
 	}
 
-	var result abi.TxIndexResult
+	var result indexer.TxIndexResult
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, fmt.Errorf("unmarshaling result: %w", err)
 	}
@@ -131,16 +131,16 @@ func (idx *TxIndexer) Get(hash []byte) (*abi.TxIndexResult, error) {
 //   - "tx.height>=100" - height greater than or equal
 //   - "tx.height<=100" - height less than or equal
 //   - "transfer.sender='value'" - event attribute match
-func (idx *TxIndexer) Search(query string, page, perPage int) ([]*abi.TxIndexResult, int, error) {
+func (idx *TxIndexer) Search(query string, page, perPage int) ([]*indexer.TxIndexResult, int, error) {
 	if query == "" {
-		return nil, 0, abi.ErrInvalidQuery
+		return nil, 0, indexer.ErrInvalidQuery
 	}
 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
 	if idx.closed {
-		return nil, 0, abi.ErrIndexCorrupted
+		return nil, 0, indexer.ErrIndexCorrupted
 	}
 
 	// Parse query
@@ -176,7 +176,7 @@ func (idx *TxIndexer) Search(query string, page, perPage int) ([]*abi.TxIndexRes
 	}
 
 	// Fetch results
-	results := make([]*abi.TxIndexResult, 0, end-start)
+	results := make([]*indexer.TxIndexResult, 0, end-start)
 	for _, hash := range hashes[start:end] {
 		result, err := idx.getUnlocked(hash)
 		if err != nil {
@@ -205,7 +205,7 @@ func (idx *TxIndexer) executeQuery(query string) ([][]byte, error) {
 	}
 
 	if len(parts) != 2 {
-		return nil, abi.ErrInvalidQuery
+		return nil, indexer.ErrInvalidQuery
 	}
 
 	key := strings.TrimSpace(parts[0])
@@ -225,14 +225,14 @@ func (idx *TxIndexer) executeQuery(query string) ([][]byte, error) {
 		return idx.searchByEvent(eventParts[0], eventParts[1], op, value)
 	}
 
-	return nil, abi.ErrInvalidQuery
+	return nil, indexer.ErrInvalidQuery
 }
 
 // searchByHeight searches for transactions by block height.
 func (idx *TxIndexer) searchByHeight(op, value string) ([][]byte, error) {
 	height, err := strconv.ParseUint(value, 10, 64)
 	if err != nil {
-		return nil, abi.ErrInvalidQuery
+		return nil, indexer.ErrInvalidQuery
 	}
 
 	var hashes [][]byte
@@ -288,7 +288,7 @@ func (idx *TxIndexer) searchByHeight(op, value string) ([][]byte, error) {
 		}
 
 	default:
-		return nil, abi.ErrInvalidQuery
+		return nil, indexer.ErrInvalidQuery
 	}
 
 	return hashes, nil
@@ -297,7 +297,7 @@ func (idx *TxIndexer) searchByHeight(op, value string) ([][]byte, error) {
 // searchByEvent searches for transactions by event attribute.
 func (idx *TxIndexer) searchByEvent(eventType, attrKey, op, value string) ([][]byte, error) {
 	if op != "=" {
-		return nil, abi.ErrInvalidQuery
+		return nil, indexer.ErrInvalidQuery
 	}
 
 	// Build prefix for the event search
@@ -315,13 +315,13 @@ func (idx *TxIndexer) searchByEvent(eventType, attrKey, op, value string) ([][]b
 }
 
 // getUnlocked retrieves a result without locking (caller must hold lock).
-func (idx *TxIndexer) getUnlocked(hash []byte) (*abi.TxIndexResult, error) {
+func (idx *TxIndexer) getUnlocked(hash []byte) (*indexer.TxIndexResult, error) {
 	data, err := idx.db.Get(txHashKey(hash), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var result abi.TxIndexResult
+	var result indexer.TxIndexResult
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, err
 	}
@@ -339,7 +339,7 @@ func (idx *TxIndexer) Delete(hash []byte) error {
 	defer idx.mu.Unlock()
 
 	if idx.closed {
-		return abi.ErrIndexCorrupted
+		return indexer.ErrIndexCorrupted
 	}
 
 	// Get the result first to clean up secondary indexes
@@ -365,7 +365,7 @@ func (idx *TxIndexer) Delete(hash []byte) error {
 		for _, event := range result.Result.Events {
 			for _, attr := range event.Attributes {
 				if idx.indexAllEvents || attr.Index {
-					eventKey := txEventKey(event.Type, attr.Key, attr.Value, hash)
+					eventKey := txEventKey(event.Kind, attr.Key, attr.Value, hash)
 					batch.Delete(eventKey)
 				}
 			}
@@ -393,11 +393,11 @@ func (idx *TxIndexer) Has(hash []byte) bool {
 }
 
 // Batch starts a batch indexing operation.
-func (idx *TxIndexer) Batch() abi.TxIndexBatch {
+func (idx *TxIndexer) Batch() indexer.TxIndexBatch {
 	return &txBatch{
 		idx:     idx,
 		batch:   new(leveldb.Batch),
-		results: make([]*abi.TxIndexResult, 0),
+		results: make([]*indexer.TxIndexResult, 0),
 		deletes: make([][]byte, 0),
 	}
 }
@@ -415,17 +415,17 @@ func (idx *TxIndexer) Close() error {
 	return idx.db.Close()
 }
 
-// txBatch implements abi.TxIndexBatch.
+// txBatch implements indexer.TxIndexBatch.
 type txBatch struct {
 	idx     *TxIndexer
 	batch   *leveldb.Batch
-	results []*abi.TxIndexResult
+	results []*indexer.TxIndexResult
 	deletes [][]byte
 	mu      sync.Mutex
 }
 
 // Add adds a transaction to the batch.
-func (b *txBatch) Add(result *abi.TxIndexResult) error {
+func (b *txBatch) Add(result *indexer.TxIndexResult) error {
 	if result == nil || len(result.Hash) == 0 {
 		return nil
 	}
@@ -452,7 +452,7 @@ func (b *txBatch) Add(result *abi.TxIndexResult) error {
 		for _, event := range result.Result.Events {
 			for _, attr := range event.Attributes {
 				if b.idx.indexAllEvents || attr.Index {
-					eventKey := txEventKey(event.Type, attr.Key, attr.Value, result.Hash)
+					eventKey := txEventKey(event.Kind, attr.Key, attr.Value, result.Hash)
 					b.batch.Put(eventKey, result.Hash)
 				}
 			}
@@ -486,7 +486,7 @@ func (b *txBatch) Commit() error {
 	defer b.idx.mu.Unlock()
 
 	if b.idx.closed {
-		return abi.ErrIndexCorrupted
+		return indexer.ErrIndexCorrupted
 	}
 
 	// Process deletes - need to clean up secondary indexes
@@ -505,7 +505,7 @@ func (b *txBatch) Commit() error {
 			for _, event := range result.Result.Events {
 				for _, attr := range event.Attributes {
 					if b.idx.indexAllEvents || attr.Index {
-						eventKey := txEventKey(event.Type, attr.Key, attr.Value, hash)
+						eventKey := txEventKey(event.Kind, attr.Key, attr.Value, hash)
 						b.batch.Delete(eventKey)
 					}
 				}
@@ -547,15 +547,15 @@ func txHeightKey(height uint64, hash []byte) []byte {
 	return key
 }
 
-func txEventKey(eventType, attrKey string, attrValue []byte, hash []byte) []byte {
-	// Format: ev/<event_type>/<attr_key>/<attr_value>/<hash>
+func txEventKey(eventKind, attrKey, attrValue string, hash []byte) []byte {
+	// Format: ev/<event_kind>/<attr_key>/<attr_value>/<hash>
 	var buf bytes.Buffer
 	buf.Write(prefixTxByEvent)
-	buf.WriteString(eventType)
+	buf.WriteString(eventKind)
 	buf.WriteByte('/')
 	buf.WriteString(attrKey)
 	buf.WriteByte('/')
-	buf.Write(attrValue)
+	buf.WriteString(attrValue)
 	buf.WriteByte('/')
 	buf.Write(hash)
 	return buf.Bytes()
@@ -576,5 +576,5 @@ func copyBytes(b []byte) []byte {
 	return c
 }
 
-// Ensure TxIndexer implements abi.TxIndexer.
-var _ abi.TxIndexer = (*TxIndexer)(nil)
+// Ensure TxIndexer implements indexer.TxIndexer.
+var _ indexer.TxIndexer = (*TxIndexer)(nil)

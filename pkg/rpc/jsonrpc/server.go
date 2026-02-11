@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/rpc"
 )
 
@@ -451,29 +451,29 @@ func (s *Server) handleUnsubscribeAll(ctx context.Context, params json.RawMessag
 	return map[string]string{"status": "unsubscribed"}, nil
 }
 
-// parseQuery parses a query string into an abi.Query.
+// parseQuery parses a query string into an events.Query.
 // Supports simple queries like "type=Transfer" or "all".
-func parseQuery(queryStr string) abi.Query {
+func parseQuery(queryStr string) events.Query {
 	queryStr = strings.TrimSpace(queryStr)
 
 	if queryStr == "" || queryStr == "all" || queryStr == "*" {
-		return abi.QueryAll{}
+		return events.QueryAll{}
 	}
 
 	// Simple type query: "type=EventType"
 	if strings.HasPrefix(queryStr, "type=") {
-		eventType := strings.TrimPrefix(queryStr, "type=")
-		return abi.QueryEventType{EventType: eventType}
+		eventKind := strings.TrimPrefix(queryStr, "type=")
+		return events.QueryEventKind{Kind: eventKind}
 	}
 
 	// Simple attribute query: "key=value"
 	if strings.Contains(queryStr, "=") {
 		parts := strings.SplitN(queryStr, "=", 2)
 		if len(parts) == 2 {
-			return abi.QueryAttribute{Key: parts[0], Value: parts[1]}
+			return events.QueryAttribute{Key: parts[0], Value: parts[1]}
 		}
 	}
 
 	// Default to all
-	return abi.QueryAll{}
+	return events.QueryAll{}
 }

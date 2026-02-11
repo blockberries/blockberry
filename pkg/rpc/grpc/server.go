@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/status"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/rpc"
 	schema "github.com/blockberries/blockberry/schema"
 )
@@ -671,11 +671,11 @@ func (s *Server) Query(ctx context.Context, req *schema.QueryRequest) (*schema.Q
 	resultHeight := int64(result.Height)
 	resp := &schema.QueryResponse{
 		Code:   &code,
-		Value:  result.Data,
+		Value:  result.Value,
 		Height: resultHeight,
 	}
-	if result.Log != "" {
-		resp.Log = result.Log
+	if result.Info != "" {
+		resp.Log = result.Info
 	}
 	// Note: Proof serialization not implemented - would need custom serialization
 
@@ -838,7 +838,7 @@ func (s *Server) Subscribe(req *schema.SubscribeRequest, stream *subscribeStream
 				return nil
 			}
 			// Convert event to response
-			eventType := event.Type
+			eventKind := event.Kind
 			height := int64(0)
 			// Try to extract height from attributes
 			for _, attr := range event.Attributes {
@@ -850,7 +850,7 @@ func (s *Server) Subscribe(req *schema.SubscribeRequest, stream *subscribeStream
 
 			resp := &schema.SubscribeResponse{
 				Event: schema.EventMessage{
-					Type:   &eventType,
+					Type:   &eventKind,
 					Data:   nil, // Events don't have raw data in our model
 					Height: &height,
 				},
@@ -964,40 +964,38 @@ func txResultToRPC(result *rpc.TxResult) schema.GrpcTxResult {
 
 	if result.Result != nil {
 		rpcResult.Code = ptr(int32(result.Result.Code))
-		if result.Result.Log != "" {
-			rpcResult.Log = result.Result.Log
+		if result.Result.Info != "" {
+			rpcResult.Log = result.Result.Info
 		}
 		rpcResult.Data = result.Result.Data
-		rpcResult.GasWanted = ptr(result.Result.GasWanted)
-		rpcResult.GasUsed = ptr(result.Result.GasUsed)
 	}
 
 	return rpcResult
 }
 
-// parseQuery parses a query string into an abi.Query.
+// parseQuery parses a query string into an events.Query.
 // Supports simple queries like "type=Transfer" or "all".
-func parseQuery(queryStr string) abi.Query {
+func parseQuery(queryStr string) events.Query {
 	queryStr = strings.TrimSpace(queryStr)
 
 	if queryStr == "" || queryStr == "all" || queryStr == "*" {
-		return abi.QueryAll{}
+		return events.QueryAll{}
 	}
 
 	// Simple type query: "type=EventType"
 	if strings.HasPrefix(queryStr, "type=") {
-		eventType := strings.TrimPrefix(queryStr, "type=")
-		return abi.QueryEventType{EventType: eventType}
+		eventKind := strings.TrimPrefix(queryStr, "type=")
+		return events.QueryEventKind{Kind: eventKind}
 	}
 
 	// Simple attribute query: "key=value"
 	if strings.Contains(queryStr, "=") {
 		parts := strings.SplitN(queryStr, "=", 2)
 		if len(parts) == 2 {
-			return abi.QueryAttribute{Key: parts[0], Value: parts[1]}
+			return events.QueryAttribute{Key: parts[0], Value: parts[1]}
 		}
 	}
 
 	// Default to all
-	return abi.QueryAll{}
+	return events.QueryAll{}
 }

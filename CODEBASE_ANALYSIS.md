@@ -112,24 +112,22 @@ The project follows standard Go project layout with clear separation between:
 
 ## Package-by-Package Analysis
 
-### 1. pkg/abi - Application Binary Interface
+### 1. Application Lifecycle Interface (bapi)
 
-**Location:** `/Volumes/Tendermint/stealth/blockberry/pkg/abi/`
+**Package:** `github.com/blockberries/bapi` and `github.com/blockberries/bapi/types`
 
-**Purpose:** Defines the contract between the blockchain framework and application logic.
+**Purpose:** Defines the contract between the blockchain framework and application logic. The application interface (`bapi.Lifecycle`) and associated types (`bapitypes`) live in the external `bapi` module.
 
 #### Key Components
 
-##### Application Interface
+##### Lifecycle Interface
 
 ```go
-type Application interface {
+type Lifecycle interface {
     Info() ApplicationInfo
-    InitChain(genesis *Genesis) error
+    Handshake(genesis *Genesis) error
     CheckTx(ctx context.Context, tx *Transaction) *TxCheckResult
-    BeginBlock(ctx context.Context, header *BlockHeader) error
-    ExecuteTx(ctx context.Context, tx *Transaction) *TxExecResult
-    EndBlock(ctx context.Context) *EndBlockResult
+    ExecuteBlock(ctx context.Context, block *Block) *BlockResult
     Commit(ctx context.Context) *CommitResult
     Query(ctx context.Context, req *QueryRequest) *QueryResponse
 }
@@ -139,10 +137,8 @@ type Application interface {
 **Design Patterns:**
 
 - **Block Execution Lifecycle**: Fixed order ensures deterministic execution
-  1. `BeginBlock` - Initialize block processing
-  2. `ExecuteTx` - Execute each transaction in order
-  3. `EndBlock` - Finalize block (return validator updates)
-  4. `Commit` - Persist state changes, return app hash
+  1. `ExecuteBlock` - Execute all transactions in the block
+  2. `Commit` - Persist state changes, return app hash
 
 - **Fail-Closed Base Implementation**: `BaseApplication` rejects all operations by default
 

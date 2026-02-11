@@ -4,12 +4,10 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/blockberries/blockberry/pkg/abi"
 )
 
 func TestTokenBucketLimiter_Allow(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,
@@ -33,7 +31,7 @@ func TestTokenBucketLimiter_Allow(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_AllowN(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,
@@ -59,7 +57,7 @@ func TestTokenBucketLimiter_AllowN(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_Refill(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            100, // 100 per second = 10 per 100ms
 		Interval:        time.Second,
 		Burst:           10,
@@ -84,7 +82,7 @@ func TestTokenBucketLimiter_Refill(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_Reset(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,
@@ -111,7 +109,7 @@ func TestTokenBucketLimiter_Reset(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_MultipleKeys(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           5,
@@ -141,7 +139,7 @@ func TestTokenBucketLimiter_MultipleKeys(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_Concurrent(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            1000,
 		Interval:        time.Second,
 		Burst:           100,
@@ -184,7 +182,7 @@ func TestTokenBucketLimiter_Concurrent(t *testing.T) {
 }
 
 func TestTokenBucketLimiter_Size(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,
@@ -213,7 +211,7 @@ func TestTokenBucketLimiter_Size(t *testing.T) {
 }
 
 func TestConnectionTracker_Basic(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         10,
 		MaxInboundPeers:  7,
 		MaxOutboundPeers: 3,
@@ -235,7 +233,7 @@ func TestConnectionTracker_Basic(t *testing.T) {
 }
 
 func TestConnectionTracker_InboundLimit(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         10,
 		MaxInboundPeers:  3,
 		MaxOutboundPeers: 7,
@@ -264,7 +262,7 @@ func TestConnectionTracker_InboundLimit(t *testing.T) {
 }
 
 func TestConnectionTracker_OutboundLimit(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         10,
 		MaxInboundPeers:  7,
 		MaxOutboundPeers: 3,
@@ -293,7 +291,7 @@ func TestConnectionTracker_OutboundLimit(t *testing.T) {
 }
 
 func TestConnectionTracker_TotalLimit(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         5,
 		MaxInboundPeers:  4,
 		MaxOutboundPeers: 4,
@@ -323,7 +321,7 @@ func TestConnectionTracker_TotalLimit(t *testing.T) {
 }
 
 func TestConnectionTracker_Disconnect(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         5,
 		MaxInboundPeers:  3,
 		MaxOutboundPeers: 2,
@@ -354,7 +352,7 @@ func TestConnectionTracker_Disconnect(t *testing.T) {
 }
 
 func TestConnectionTracker_Concurrent(t *testing.T) {
-	limits := abi.ResourceLimits{
+	limits := ResourceLimits{
 		MaxPeers:         100,
 		MaxInboundPeers:  50,
 		MaxOutboundPeers: 50,
@@ -396,7 +394,7 @@ func TestConnectionTracker_Concurrent(t *testing.T) {
 }
 
 func TestSlidingWindowLimiter_Allow(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,
@@ -420,7 +418,7 @@ func TestSlidingWindowLimiter_Allow(t *testing.T) {
 }
 
 func TestSlidingWindowLimiter_Window(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        100 * time.Millisecond, // Short interval for testing
 		Burst:           10,
@@ -445,7 +443,7 @@ func TestSlidingWindowLimiter_Window(t *testing.T) {
 }
 
 func TestSlidingWindowLimiter_Reset(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            5,
 		Interval:        time.Second,
 		Burst:           5,
@@ -472,7 +470,7 @@ func TestSlidingWindowLimiter_Reset(t *testing.T) {
 }
 
 func TestSlidingWindowLimiter_Size(t *testing.T) {
-	cfg := abi.RateLimiterConfig{
+	cfg := RateLimiterConfig{
 		Rate:            10,
 		Interval:        time.Second,
 		Burst:           10,

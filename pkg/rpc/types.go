@@ -4,7 +4,7 @@ package rpc
 import (
 	"time"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
 )
 
 // NodeStatus contains status information about a node.
@@ -127,8 +127,8 @@ func (m BroadcastMode) String() string {
 
 // BroadcastResult contains the result of broadcasting a transaction.
 type BroadcastResult struct {
-	// Code is the result code from CheckTx.
-	Code abi.ResultCode
+	// Code is the result code from CheckTx (0 = success).
+	Code uint32
 
 	// Hash is the transaction hash.
 	Hash []byte
@@ -164,10 +164,37 @@ type PeerInfo struct {
 // BlockResult contains a block and its metadata.
 type BlockResult struct {
 	// Block is the block data.
-	Block *abi.Block
+	Block *Block
 
 	// BlockID contains the block hash.
 	BlockID BlockID
+}
+
+// Block represents a block in the RPC layer.
+type Block struct {
+	// Header contains block metadata.
+	Header BlockHeader
+
+	// Txs contains the raw transactions in this block.
+	Txs [][]byte
+}
+
+// BlockHeader contains block metadata for the RPC layer.
+type BlockHeader struct {
+	// Height is the block height.
+	Height int64
+
+	// Time is the block timestamp.
+	Time time.Time
+
+	// LastBlockHash is the hash of the previous block.
+	LastBlockHash []byte
+
+	// AppHash is the application state root.
+	AppHash []byte
+
+	// ValidatorsHash is the merkle root of the validator set.
+	ValidatorsHash []byte
 }
 
 // BlockID identifies a block.
@@ -200,7 +227,7 @@ type TxResult struct {
 	Index uint32
 
 	// Result is the execution result.
-	Result *abi.TxResult
+	Result *bapitypes.TxOutcome
 }
 
 // ConsensusState contains the current consensus state.

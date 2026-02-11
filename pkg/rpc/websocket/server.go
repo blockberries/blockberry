@@ -19,7 +19,8 @@ import (
 	"github.com/gobwas/ws"
 	"github.com/gobwas/ws/wsutil"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
+	"github.com/blockberries/blockberry/pkg/events"
 	"github.com/blockberries/blockberry/pkg/logging"
 )
 
@@ -81,7 +82,7 @@ func DefaultConfig() Config {
 
 // Server handles WebSocket connections for event subscriptions.
 type Server struct {
-	eventBus abi.EventBus
+	eventBus events.EventBus
 	cfg      Config
 	upgrader ws.HTTPUpgrader
 	logger   *logging.Logger
@@ -96,7 +97,7 @@ type Server struct {
 }
 
 // NewServer creates a new WebSocket server.
-func NewServer(eventBus abi.EventBus, cfg Config) *Server {
+func NewServer(eventBus events.EventBus, cfg Config) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	s := &Server{
@@ -259,8 +260,8 @@ type Client struct {
 
 // clientSubscription tracks a single subscription for a client.
 type clientSubscription struct {
-	query    abi.Query
-	eventCh  <-chan abi.Event
+	query    events.Query
+	eventCh  <-chan bapitypes.Event
 	cancelFn context.CancelFunc
 }
 
@@ -525,7 +526,7 @@ func (c *Client) forwardEvents(queryStr string, sub *clientSubscription) {
 }
 
 // sendEvent sends an event to the client.
-func (c *Client) sendEvent(query string, event abi.Event) {
+func (c *Client) sendEvent(query string, event bapitypes.Event) {
 	resp := Response{
 		JSONRPC: "2.0",
 		Result: EventData{
@@ -545,7 +546,7 @@ func (c *Client) sendEvent(query string, event abi.Event) {
 		// Channel full, drop event and log warning
 		c.logger.Warn("event dropped: send channel full",
 			slog.String("query", query),
-			slog.String("event_type", event.Type))
+			slog.String("event_kind", event.Kind))
 	}
 }
 
@@ -647,35 +648,35 @@ type ErrorData struct {
 
 // EventData contains event data sent to clients.
 type EventData struct {
-	Query string    `json:"query"`
-	Event abi.Event `json:"event"`
+	Query string          `json:"query"`
+	Event bapitypes.Event `json:"event"`
 }
 
-// parseQuery parses a query string into an abi.Query.
+// parseQuery parses a query string into an events.Query.
 // Supported formats:
 //   - "all" or "*" -> QueryAll
-//   - "type=EventType" -> QueryEventType
+//   - "type=EventKind" -> QueryEventKind
 //   - "key=value" -> QueryAttribute
-func parseQuery(s string) abi.Query {
+func parseQuery(s string) events.Query {
 	if s == "" || s == "all" || s == "*" {
-		return abi.QueryAll{}
+		return events.QueryAll{}
 	}
 
 	// Check for type= prefix
 	if len(s) > 5 && s[:5] == "type=" {
-		return abi.QueryEventType{EventType: s[5:]}
+		return events.QueryEventKind{Kind: s[5:]}
 	}
 
 	// Check for key=value format
 	for i, c := range s {
 		if c == '=' && i > 0 && i < len(s)-1 {
-			return abi.QueryAttribute{
+			return events.QueryAttribute{
 				Key:   s[:i],
 				Value: s[i+1:],
 			}
 		}
 	}
 
-	// Default to event type
-	return abi.QueryEventType{EventType: s}
+	// Default to event kind
+	return events.QueryEventKind{Kind: s}
 }

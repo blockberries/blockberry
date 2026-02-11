@@ -16,7 +16,8 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/bapi"
+	bapitypes "github.com/blockberries/bapi/types"
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/config"
 	"github.com/blockberries/blockberry/internal/handlers"
@@ -552,16 +553,14 @@ func (tn *TestNode) handleMessage(msg streams.IncomingMessage) {
 	}
 }
 
-// MockApplication is a test application that implements abi.Application and
+// MockApplication is a test application that implements bapi.Lifecycle and
 // consensus.ConsensusHandler for testing purposes.
 type MockApplication struct {
 	mu                sync.Mutex
-	CheckedTxs        [][]byte
-	ExecutedTxs       [][]byte
-	BlocksBegun       []int64
-	BlocksEnded       int
+	CheckedTxs        []bapitypes.Tx
+	ExecutedBlocks    []uint64
 	Commits           int
-	AppHash           []byte
+	AppHash           bapitypes.AppHash
 	ConsensusMessages []struct {
 		PeerID peer.ID
 		Data   []byte
@@ -570,62 +569,53 @@ type MockApplication struct {
 
 // NewMockApplication creates a new mock application.
 func NewMockApplication() *MockApplication {
-	return &MockApplication{
-		AppHash: make([]byte, 32),
-	}
+	return &MockApplication{}
 }
 
-// Ensure MockApplication implements abi.Application.
-var _ abi.Application = (*MockApplication)(nil)
+// Ensure MockApplication implements bapi.Lifecycle.
+var _ bapi.Lifecycle = (*MockApplication)(nil)
 
-// InitChain initializes the chain.
-func (m *MockApplication) InitChain(ctx context.Context, validators []abi.Validator, appState []byte) error {
-	return nil
+// Handshake handles startup handshake.
+func (m *MockApplication) Handshake(_ context.Context, _ bapitypes.HandshakeRequest) (bapitypes.HandshakeResponse, error) {
+	return bapitypes.HandshakeResponse{
+		AppHash: &m.AppHash,
+	}, nil
 }
 
 // CheckTx records a transaction check and accepts all.
-func (m *MockApplication) CheckTx(ctx context.Context, tx []byte) error {
+func (m *MockApplication) CheckTx(_ context.Context, tx bapitypes.Tx, _ bapitypes.MempoolContext) (bapitypes.GateVerdict, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.CheckedTxs = append(m.CheckedTxs, tx)
-	return nil
+	return bapitypes.GateVerdict{Code: 0}, nil
 }
 
-// BeginBlock records a block beginning.
-func (m *MockApplication) BeginBlock(ctx context.Context, header *abi.BlockHeader) error {
+// ExecuteBlock records block execution and returns success for all txs.
+func (m *MockApplication) ExecuteBlock(_ context.Context, block bapitypes.FinalizedBlock) (bapitypes.BlockOutcome, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.BlocksBegun = append(m.BlocksBegun, header.Height)
-	return nil
-}
-
-// ExecuteTx records a transaction execution.
-func (m *MockApplication) ExecuteTx(ctx context.Context, tx []byte) (*abi.TxResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.ExecutedTxs = append(m.ExecutedTxs, tx)
-	return &abi.TxResult{Code: 0}, nil
-}
-
-// EndBlock records a block end.
-func (m *MockApplication) EndBlock(ctx context.Context) (*abi.EndBlockResult, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.BlocksEnded++
-	return &abi.EndBlockResult{}, nil
+	m.ExecutedBlocks = append(m.ExecutedBlocks, block.Height)
+	outcomes := make([]bapitypes.TxOutcome, len(block.Txs))
+	for i := range block.Txs {
+		outcomes[i] = bapitypes.TxOutcome{Index: uint32(i), Code: 0}
+	}
+	return bapitypes.BlockOutcome{
+		TxOutcomes: outcomes,
+		AppHash:    m.AppHash,
+	}, nil
 }
 
 // Commit records a commit.
-func (m *MockApplication) Commit(ctx context.Context) (*abi.CommitResult, error) {
+func (m *MockApplication) Commit(_ context.Context) (bapitypes.CommitResult, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Commits++
-	return &abi.CommitResult{AppHash: m.AppHash}, nil
+	return bapitypes.CommitResult{}, nil
 }
 
 // Query returns an OK response.
-func (m *MockApplication) Query(ctx context.Context, path string, data []byte, height int64) (*abi.QueryResult, error) {
-	return &abi.QueryResult{Code: 0}, nil
+func (m *MockApplication) Query(_ context.Context, _ bapitypes.StateQuery) (bapitypes.StateQueryResult, error) {
+	return bapitypes.StateQueryResult{Code: 0}, nil
 }
 
 // TxCount returns the number of checked transactions.
@@ -635,11 +625,11 @@ func (m *MockApplication) TxCount() int {
 	return len(m.CheckedTxs)
 }
 
-// ExecutedTxCount returns the number of executed transactions.
-func (m *MockApplication) ExecutedTxCount() int {
+// ExecutedBlockCount returns the number of executed blocks.
+func (m *MockApplication) ExecutedBlockCount() int {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return len(m.ExecutedTxs)
+	return len(m.ExecutedBlocks)
 }
 
 // HandleConsensusMessage implements consensus.ConsensusHandler.

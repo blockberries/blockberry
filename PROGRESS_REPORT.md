@@ -106,3 +106,105 @@ Updated blockberry to leverage avlberry v1.1.0, which fixes ICS23 spec compatibi
 1. **Hash vs WorkingHash**: avlberry v1.1.0 splits `Hash()` semantics — `Hash()` on `MutableTree` returns the last committed root hash, while `WorkingHash()` returns the current working tree hash. `RootHash()` uses `WorkingHash()` (uncommitted state), while `GetProof()` uses `Hash()` (committed state) since proofs are generated against committed versions.
 
 2. **ICS23 spec restoration**: With v1.1.0 including version in inner op prefixes (>= 4 bytes), standard `ics23.VerifyMembership`/`ics23.VerifyNonMembership` with `IavlSpec` now works correctly, eliminating the need for the direct root hash calculation workaround.
+
+---
+
+## Replace pkg/abi with github.com/blockberries/bapi v0.2.0
+
+### Status: Complete
+
+### Summary
+
+Replaced the entire `pkg/abi/` package (25 files, ~180 types) with `github.com/blockberries/bapi` v0.2.0. The bapi module provides a ground-up redesign of the consensus-application boundary with whole-block execution, capability discovery, and cleaner types. Framework-internal types (EventBus, Metrics, Tracer, Indexer, Security, Component) were relocated from `pkg/abi/` to their natural packages.
+
+### Key Architecture Changes
+
+- `abi.Application` (7 methods: InitChain, CheckTx, BeginBlock, ExecuteTx, EndBlock, Commit, Query) → `bapi.Lifecycle` (5 methods: Handshake, CheckTx, ExecuteBlock, Commit, Query)
+- Per-tx execution model (BeginBlock + ExecuteTx per-tx + EndBlock) → single `ExecuteBlock` returning `BlockOutcome`
+- `abi.Event.Type` → `bapitypes.Event.Kind`; `abi.Attribute.Value []byte` → `bapitypes.EventAttribute.Value string`
+- `abi.ResultCode` (typed uint32) → raw `uint32`
+- `abi.CommitResult.AppHash` → moved to `bapitypes.BlockOutcome.AppHash`; `CommitResult` only has `RetainHeight`
+
+### Phase 1: Add bapi dependency (Step 1)
+
+**Files modified:**
+- `go.mod` — Added `require github.com/blockberries/bapi v0.2.0` with `replace` directive pointing to `../bapi`
+
+### Phase 2: Relocate framework-internal types (Steps 2-7)
+
+**Step 2 — EventBus types → `pkg/events/`**
+- Created `pkg/events/types.go` — Moved `EventBus`, `Query`, `QueryAll`, `QueryEventKind`, `QueryEventKinds`, `QueryFunc`, `QueryAnd`, `QueryOr`, `QueryAttribute`, `QueryAttributeExists`, `Subscription`, `EventBusConfig`, `DefaultEventBusConfig()`, event constants, attribute key constants
+- Modified `pkg/events/bus.go` — Updated to use local types and `bapitypes.Event`
+
+**Step 3 — Metrics types → `pkg/metrics/`**
+- Created `pkg/metrics/interface.go` — Moved `Metrics` interface, `NullMetrics`, `MetricsConfig`, `HistogramBuckets`, `DefaultMetricsConfig()`, all metric/label/reason constants
+- Modified `pkg/metrics/adapter.go` (renamed from `abi_adapter.go`) — Updated to implement local `Metrics` interface, replaced `AppBeginBlock`/`AppExecuteTx`/`AppEndBlock` with `AppExecuteBlock`
+
+**Step 4 — Tracer types → `pkg/tracing/`**
+- Created `pkg/tracing/interface.go` — Moved `Tracer`, `Span`, `SpanContext`, `SpanAttribute`, `SpanOption`, `SpanKind`, `StatusCode`, `Link`, `Carrier`, `MapCarrier`, `NullTracer`, `nullSpan`, `TracerConfig`, `DefaultTracerConfig()`, all span constants
+- Modified `pkg/tracing/otel/tracer.go` and `provider.go` — Updated to use `tracing.*` types
+
+**Step 5 — Indexer types → `pkg/indexer/`**
+- Created `pkg/indexer/interface.go` — Moved `TxIndexer`, `TxIndexBatch`, `BlockIndexer`, `IndexerConfig`, `DefaultIndexerConfig()`, `NullTxIndexer`, error sentinels
+- Modified `pkg/indexer/kv/indexer.go` — Updated to use `indexer.*` and `bapitypes.*` types
+
+**Step 6 — Security/limits types → `internal/security/`**
+- Created `internal/security/types.go` — Moved `ResourceLimits`, `RateLimiter`, `RateLimiterConfig`, `ConnectionLimiter`, `EclipseMitigation`, `BandwidthLimiter`, all config types and error sentinels
+- Modified `internal/security/ratelimit.go`, `eclipse.go` — Updated to use local types
+
+**Step 7 — Component types → `pkg/types/`**
+- Verified `pkg/types/component.go` already contained `Component`, `Named`, `HealthChecker`, `HealthStatus`, `Health`, `Dependent`, `LifecycleAware`, `Resettable` types
+
+### Phase 3: Update consumers (Steps 8-13)
+
+**Step 8 — `pkg/consensus/interface.go`**
+- Changed `Application abi.Application` → `Application bapi.Lifecycle`
+
+**Step 9 — `pkg/types/null_app.go`**
+- Complete rewrite to implement `bapi.Lifecycle`: Handshake, CheckTx (with Tx+MempoolContext), ExecuteBlock, Commit, Query
+- Simplified fields: removed `LastBlockHeight`, `LastBlockHash`; `AppHash` changed to `bapitypes.AppHash`
+
+**Step 10 — `pkg/rpc/server.go`**
+- `Query` return: `*abi.QueryResult` → `*bapitypes.StateQueryResult`
+- `Subscribe`/`Unsubscribe` params: `abi.Query` → `events.Query`, `abi.Event` → `bapitypes.Event`
+
+**Step 11 — `pkg/rpc/types.go`**
+- `BroadcastResult.Code`: `abi.ResultCode` → `uint32`
+- Created local `Block` and `BlockHeader` structs (abi.Block was a framework concept, bapi doesn't define Block for RPC)
+- `TxResult.Result`: `*abi.TxResult` → `*bapitypes.TxOutcome`
+
+**Step 12 — RPC sub-servers**
+- `pkg/rpc/jsonrpc/server.go` — `parseQuery` returns `events.Query`, uses `events.QueryEventKind`/`events.QueryAttribute`/`events.QueryAll`
+- `pkg/rpc/grpc/server.go` — Same query changes; `txResultToRPC` updated for `TxOutcome` fields; `Query` maps `result.Value`/`result.Info`
+- `pkg/rpc/websocket/server.go` — `events.EventBus`, `bapitypes.Event`, `events.Query` throughout
+
+**Step 13 — `test/helpers.go`**
+- `MockApplication` rewritten for `bapi.Lifecycle`: Handshake, CheckTx, ExecuteBlock, Commit, Query
+- Changed fields: `CheckedTxs []bapitypes.Tx`, `ExecutedBlocks []uint64`, `AppHash bapitypes.AppHash`
+
+### Phase 4: Update tests (Step 17)
+
+- `pkg/types/application_test.go` — Rewritten for `bapi.Lifecycle` (Handshake, CheckTx with MempoolContext, ExecuteBlock, Commit, Query with StateQuery)
+- `pkg/rpc/jsonrpc/server_test.go` — mockRPCServer updated: `*bapitypes.StateQueryResult`, `chan bapitypes.Event`, `events.Query`, `rpc.Block`, literal `0` replacing `abi.CodeOK`
+- `pkg/rpc/grpc/server_test.go` — Same mock updates; TestParseQuery asserts `events.QueryAll`, `events.QueryEventKind`, `events.QueryAttribute`
+- `pkg/rpc/websocket/server_test.go` — `events.DefaultEventBusConfig()`, `bapitypes.Event{Kind, Attributes}`, `events.Query` types
+
+### Phase 5: Delete pkg/abi and update docs (Steps 14, 16)
+
+- Deleted `pkg/abi/` entirely (25 files)
+- Updated CLAUDE.md — Removed `pkg/abi/` from package structure
+- Updated README.md, CODEBASE_ANALYSIS.md, ARCHITECTURE_ANALYSIS.md, ARCHITECTURE.md, API_REFERENCE.md, docs/getting-started/*.md — All `pkg/abi` references replaced with correct new locations
+
+### Test Coverage
+
+- All tests pass across all packages
+- `go build ./...` succeeds with zero errors
+- No remaining `pkg/abi` references in any Go source files
+
+### Design Decisions
+
+1. **Local RPC Block type**: Created `rpc.Block` and `rpc.BlockHeader` structs in `pkg/rpc/types.go` since bapi doesn't define a Block type for RPC transport — the block concept is framework-internal.
+
+2. **MempoolContext as uint8**: `bapitypes.MempoolContext` is a `uint8` enum (not a struct), so tests use `bapitypes.MempoolFirstSeen` constant.
+
+3. **QueryEventKind.String()**: Returns `"kind=X"` rather than `"type=X"` (matching the field name change from `Event.Type` to `Event.Kind`). Test expectations updated accordingly.

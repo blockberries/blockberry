@@ -14,7 +14,7 @@ import (
 	"github.com/gobwas/ws/wsutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
 	"github.com/blockberries/blockberry/pkg/events"
 )
 
@@ -69,7 +69,7 @@ func TestDefaultConfig(t *testing.T) {
 }
 
 func TestNewServer(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -82,7 +82,7 @@ func TestNewServer(t *testing.T) {
 }
 
 func TestServer_StartStop(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -106,7 +106,7 @@ func TestServer_StartStop(t *testing.T) {
 }
 
 func TestServer_Handler(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -119,7 +119,7 @@ func TestServer_Handler(t *testing.T) {
 }
 
 func TestServer_ClientConnection(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -139,7 +139,7 @@ func TestServer_ClientConnection(t *testing.T) {
 }
 
 func TestServer_MaxClients(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -169,7 +169,7 @@ func TestServer_MaxClients(t *testing.T) {
 }
 
 func TestServer_Subscribe(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -200,7 +200,7 @@ func TestServer_Subscribe(t *testing.T) {
 }
 
 func TestServer_ReceiveEvents(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -227,7 +227,12 @@ func TestServer_ReceiveEvents(t *testing.T) {
 	require.Nil(t, resp.Error)
 
 	// Publish event
-	event := abi.NewEvent("TestEvent").AddStringAttribute("key", "value")
+	event := bapitypes.Event{
+		Kind: "TestEvent",
+		Attributes: []bapitypes.EventAttribute{
+			{Key: "key", Value: "value"},
+		},
+	}
 	require.NoError(t, bus.Publish(context.Background(), event))
 
 	// Read event
@@ -237,7 +242,7 @@ func TestServer_ReceiveEvents(t *testing.T) {
 }
 
 func TestServer_Unsubscribe(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -263,7 +268,7 @@ func TestServer_Unsubscribe(t *testing.T) {
 }
 
 func TestServer_UnsubscribeAll(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -291,7 +296,7 @@ func TestServer_UnsubscribeAll(t *testing.T) {
 }
 
 func TestServer_MaxSubscriptionsPerClient(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -322,7 +327,7 @@ func TestServer_MaxSubscriptionsPerClient(t *testing.T) {
 }
 
 func TestServer_InvalidMessage(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -345,7 +350,7 @@ func TestServer_InvalidMessage(t *testing.T) {
 }
 
 func TestServer_UnknownMethod(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -367,7 +372,7 @@ func TestServer_UnknownMethod(t *testing.T) {
 }
 
 func TestServer_ClientDisconnect(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -393,7 +398,7 @@ func TestServer_ClientDisconnect(t *testing.T) {
 }
 
 func TestServer_StopDisconnectsClients(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -415,7 +420,7 @@ func TestServer_StopDisconnectsClients(t *testing.T) {
 }
 
 func TestServer_ConcurrentSubscriptions(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -447,14 +452,14 @@ func TestParseQuery(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
-		expected abi.Query
+		expected events.Query
 	}{
-		{"empty", "", abi.QueryAll{}},
-		{"all", "all", abi.QueryAll{}},
-		{"star", "*", abi.QueryAll{}},
-		{"type", "type=NewBlock", abi.QueryEventType{EventType: "NewBlock"}},
-		{"attribute", "sender=alice", abi.QueryAttribute{Key: "sender", Value: "alice"}},
-		{"event type only", "NewBlock", abi.QueryEventType{EventType: "NewBlock"}},
+		{"empty", "", events.QueryAll{}},
+		{"all", "all", events.QueryAll{}},
+		{"star", "*", events.QueryAll{}},
+		{"type", "type=NewBlock", events.QueryEventKind{Kind: "NewBlock"}},
+		{"attribute", "sender=alice", events.QueryAttribute{Key: "sender", Value: "alice"}},
+		{"event type only", "NewBlock", events.QueryEventKind{Kind: "NewBlock"}},
 	}
 
 	for _, tt := range tests {
@@ -466,7 +471,7 @@ func TestParseQuery(t *testing.T) {
 }
 
 func TestServer_AllowedOrigins(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -497,7 +502,7 @@ func TestServer_AllowedOrigins(t *testing.T) {
 }
 
 func TestServer_AllowAllOrigins(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 
@@ -522,7 +527,7 @@ func TestServer_AllowAllOrigins(t *testing.T) {
 }
 
 func TestServer_NotRunning(t *testing.T) {
-	bus := events.NewBusWithConfig(abi.DefaultEventBusConfig())
+	bus := events.NewBusWithConfig(events.DefaultEventBusConfig())
 	require.NoError(t, bus.Start())
 	defer bus.Stop()
 

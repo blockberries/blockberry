@@ -1,4 +1,4 @@
-// Package events provides an in-memory implementation of the abi.EventBus interface.
+// Package events provides an in-memory implementation of the EventBus interface.
 package events
 
 import (
@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	bapitypes "github.com/blockberries/bapi/types"
 )
 
 // Common errors returned by the EventBus.
@@ -20,10 +20,10 @@ var (
 	ErrTooManySubscribers = errors.New("maximum number of subscribers reached")
 )
 
-// Bus is an in-memory implementation of abi.EventBus.
+// Bus is an in-memory implementation of EventBus.
 // It provides thread-safe pub/sub for system events.
 type Bus struct {
-	config abi.EventBusConfig
+	config EventBusConfig
 
 	// subscriptions maps subscriber+query to subscription
 	subscriptions map[string]*subscription
@@ -38,18 +38,18 @@ type Bus struct {
 // subscription holds a single subscriber's channel and metadata.
 type subscription struct {
 	subscriber string
-	query      abi.Query
-	ch         chan abi.Event
+	query      Query
+	ch         chan bapitypes.Event
 	cancelled  atomic.Bool
 }
 
 // NewBus creates a new in-memory EventBus with default configuration.
 func NewBus() *Bus {
-	return NewBusWithConfig(abi.DefaultEventBusConfig())
+	return NewBusWithConfig(DefaultEventBusConfig())
 }
 
 // NewBusWithConfig creates a new in-memory EventBus with the given configuration.
-func NewBusWithConfig(config abi.EventBusConfig) *Bus {
+func NewBusWithConfig(config EventBusConfig) *Bus {
 	if config.BufferSize <= 0 {
 		config.BufferSize = 100
 	}
@@ -65,7 +65,7 @@ func NewBusWithConfig(config abi.EventBusConfig) *Bus {
 }
 
 // subscriptionKey creates a unique key for a subscriber+query pair.
-func subscriptionKey(subscriber string, query abi.Query) string {
+func subscriptionKey(subscriber string, query Query) string {
 	return subscriber + ":" + query.String()
 }
 
@@ -105,7 +105,7 @@ func (b *Bus) IsRunning() bool {
 }
 
 // Subscribe creates a subscription for events matching the query.
-func (b *Bus) Subscribe(ctx context.Context, subscriber string, query abi.Query) (<-chan abi.Event, error) {
+func (b *Bus) Subscribe(ctx context.Context, subscriber string, query Query) (<-chan bapitypes.Event, error) {
 	if !b.running.Load() {
 		return nil, ErrBusNotRunning
 	}
@@ -143,7 +143,7 @@ func (b *Bus) Subscribe(ctx context.Context, subscriber string, query abi.Query)
 	sub := &subscription{
 		subscriber: subscriber,
 		query:      query,
-		ch:         make(chan abi.Event, b.config.BufferSize),
+		ch:         make(chan bapitypes.Event, b.config.BufferSize),
 	}
 
 	b.subscriptions[key] = sub
@@ -166,7 +166,7 @@ func (b *Bus) Subscribe(ctx context.Context, subscriber string, query abi.Query)
 }
 
 // Unsubscribe removes a specific subscription.
-func (b *Bus) Unsubscribe(ctx context.Context, subscriber string, query abi.Query) error {
+func (b *Bus) Unsubscribe(ctx context.Context, subscriber string, query Query) error {
 	key := subscriptionKey(subscriber, query)
 
 	b.mu.Lock()
@@ -211,7 +211,7 @@ func (b *Bus) UnsubscribeAll(ctx context.Context, subscriber string) error {
 
 // Publish sends an event to all matching subscribers.
 // Non-blocking: if a subscriber's channel is full, the event is dropped for that subscriber.
-func (b *Bus) Publish(ctx context.Context, event abi.Event) error {
+func (b *Bus) Publish(ctx context.Context, event bapitypes.Event) error {
 	if !b.running.Load() {
 		return ErrBusNotRunning
 	}
@@ -237,7 +237,7 @@ func (b *Bus) Publish(ctx context.Context, event abi.Event) error {
 }
 
 // PublishWithTimeout sends an event with a timeout for slow subscribers.
-func (b *Bus) PublishWithTimeout(ctx context.Context, event abi.Event, timeout time.Duration) error {
+func (b *Bus) PublishWithTimeout(ctx context.Context, event bapitypes.Event, timeout time.Duration) error {
 	if !b.running.Load() {
 		return ErrBusNotRunning
 	}
@@ -287,7 +287,7 @@ func (b *Bus) NumSubscribers() int {
 }
 
 // NumSubscribersForQuery returns the number of subscribers for a specific query.
-func (b *Bus) NumSubscribersForQuery(query abi.Query) int {
+func (b *Bus) NumSubscribersForQuery(query Query) int {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
@@ -301,5 +301,5 @@ func (b *Bus) NumSubscribersForQuery(query abi.Query) int {
 	return count
 }
 
-// Ensure Bus implements abi.EventBus.
-var _ abi.EventBus = (*Bus)(nil)
+// Ensure Bus implements EventBus.
+var _ EventBus = (*Bus)(nil)

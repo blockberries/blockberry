@@ -10,7 +10,6 @@ import (
 	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
-	"github.com/blockberries/blockberry/pkg/abi"
 	"github.com/blockberries/blockberry/internal/security"
 )
 
@@ -61,8 +60,8 @@ func DefaultRateLimitConfig() RateLimitConfig {
 // All public methods are safe for concurrent use.
 type RateLimiter struct {
 	config         RateLimitConfig
-	globalLimiter  abi.RateLimiter
-	clientLimiter  abi.RateLimiter
+	globalLimiter  security.RateLimiter
+	clientLimiter  security.RateLimiter
 	exemptMethods  map[string]struct{}
 	exemptClients  map[string]struct{}
 	mu             sync.RWMutex // Protects exemptMethods and exemptClients
@@ -85,7 +84,7 @@ func NewRateLimiter(config RateLimitConfig) *RateLimiter {
 	}
 
 	// Create global limiter
-	rl.globalLimiter = security.NewTokenBucketLimiter(abi.RateLimiterConfig{
+	rl.globalLimiter = security.NewTokenBucketLimiter(security.RateLimiterConfig{
 		Rate:            config.GlobalRate,
 		Interval:        config.Interval,
 		Burst:           config.Burst * 10, // Higher burst for global
@@ -93,7 +92,7 @@ func NewRateLimiter(config RateLimitConfig) *RateLimiter {
 	})
 
 	// Create per-client limiter
-	rl.clientLimiter = security.NewTokenBucketLimiter(abi.RateLimiterConfig{
+	rl.clientLimiter = security.NewTokenBucketLimiter(security.RateLimiterConfig{
 		Rate:            config.PerClientRate,
 		Interval:        config.Interval,
 		Burst:           config.Burst,

@@ -7,15 +7,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/blockberries/blockberry/pkg/abi"
+	"github.com/blockberries/bapi"
+	bapitypes "github.com/blockberries/bapi/types"
 )
 
 func TestNullApplication_Creation(t *testing.T) {
 	app := NewNullApplication()
 	require.NotNil(t, app)
-	require.Equal(t, int64(0), app.LastBlockHeight)
-	require.Nil(t, app.LastBlockHash)
-	require.Len(t, app.AppHash, 32)
+	require.Equal(t, bapitypes.AppHash{}, app.AppHash)
 }
 
 func TestNullApplication_CheckTx(t *testing.T) {
@@ -23,66 +22,75 @@ func TestNullApplication_CheckTx(t *testing.T) {
 	ctx := context.Background()
 
 	// Should accept any transaction
-	err := app.CheckTx(ctx, nil)
+	verdict, err := app.CheckTx(ctx, nil, bapitypes.MempoolFirstSeen)
 	assert.NoError(t, err)
+	assert.Equal(t, uint32(0), verdict.Code)
 
-	err = app.CheckTx(ctx, []byte{})
+	verdict, err = app.CheckTx(ctx, bapitypes.Tx{}, bapitypes.MempoolFirstSeen)
 	assert.NoError(t, err)
+	assert.Equal(t, uint32(0), verdict.Code)
 
-	err = app.CheckTx(ctx, []byte("valid transaction"))
+	verdict, err = app.CheckTx(ctx, bapitypes.Tx("valid transaction"), bapitypes.MempoolFirstSeen)
 	assert.NoError(t, err)
+	assert.Equal(t, uint32(0), verdict.Code)
 }
 
-func TestNullApplication_BlockFlow(t *testing.T) {
+func TestNullApplication_ExecuteBlock(t *testing.T) {
 	app := NewNullApplication()
 	ctx := context.Background()
 
-	// Begin block
-	height := int64(100)
-	prevHash := []byte("prevhash")
-	err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, LastBlockHash: prevHash})
-	require.NoError(t, err)
-	require.Equal(t, height, app.LastBlockHeight)
-	require.Equal(t, prevHash, app.LastBlockHash)
-
-	// Execute transactions
-	for i := 0; i < 10; i++ {
-		result, err := app.ExecuteTx(ctx, []byte{byte(i)})
-		require.NoError(t, err)
-		assert.True(t, result.IsSuccess())
+	block := bapitypes.FinalizedBlock{
+		Height: 100,
+		Txs:    []bapitypes.Tx{[]byte{0}, []byte{1}, []byte{2}},
 	}
 
-	// End block
-	endResult, err := app.EndBlock(ctx)
+	outcome, err := app.ExecuteBlock(ctx, block)
 	require.NoError(t, err)
-	assert.NotNil(t, endResult)
+	require.Len(t, outcome.TxOutcomes, 3)
+	for i, txOutcome := range outcome.TxOutcomes {
+		assert.Equal(t, uint32(i), txOutcome.Index)
+		assert.Equal(t, uint32(0), txOutcome.Code)
+	}
+}
 
-	// Commit
-	commitResult, err := app.Commit(ctx)
+func TestNullApplication_Commit(t *testing.T) {
+	app := NewNullApplication()
+	ctx := context.Background()
+
+	result, err := app.Commit(ctx)
 	require.NoError(t, err)
-	assert.NotNil(t, commitResult)
-	assert.Equal(t, app.AppHash, commitResult.AppHash)
+	assert.Equal(t, bapitypes.CommitResult{}, result)
 }
 
 func TestNullApplication_Query(t *testing.T) {
 	app := NewNullApplication()
 	ctx := context.Background()
 
-	// Query should return OK
-	result, err := app.Query(ctx, "path", []byte("data"), 0)
+	// Query should return code 0
+	result, err := app.Query(ctx, bapitypes.StateQuery{Path: "/store/key", Data: []byte("data")})
 	require.NoError(t, err)
-	assert.True(t, result.IsSuccess())
+	assert.Equal(t, uint32(0), result.Code)
 
 	// Empty query should also work
-	result, err = app.Query(ctx, "", nil, 0)
+	result, err = app.Query(ctx, bapitypes.StateQuery{})
 	require.NoError(t, err)
-	assert.True(t, result.IsSuccess())
+	assert.Equal(t, uint32(0), result.Code)
 }
 
 func TestNullApplication_ImplementsInterface(t *testing.T) {
-	// This test verifies that NullApplication implements abi.Application
-	var app abi.Application = NewNullApplication()
+	// This test verifies that NullApplication implements bapi.Lifecycle
+	var app bapi.Lifecycle = NewNullApplication()
 	require.NotNil(t, app)
+}
+
+func TestNullApplication_Handshake(t *testing.T) {
+	app := NewNullApplication()
+	ctx := context.Background()
+
+	resp, err := app.Handshake(ctx, bapitypes.HandshakeRequest{})
+	require.NoError(t, err)
+	require.NotNil(t, resp.AppHash)
+	assert.Equal(t, &app.AppHash, resp.AppHash)
 }
 
 func TestNullApplication_MultipleBlocks(t *testing.T) {
@@ -90,33 +98,19 @@ func TestNullApplication_MultipleBlocks(t *testing.T) {
 	ctx := context.Background()
 
 	// Process multiple blocks
-	for height := int64(1); height <= 5; height++ {
-		prevHash := []byte{byte(height)}
+	for height := uint64(1); height <= 5; height++ {
+		block := bapitypes.FinalizedBlock{
+			Height: height,
+			Txs:    []bapitypes.Tx{[]byte{byte(height)}},
+		}
 
-		err := app.BeginBlock(ctx, &abi.BlockHeader{Height: height, LastBlockHash: prevHash})
+		outcome, err := app.ExecuteBlock(ctx, block)
 		require.NoError(t, err)
+		require.Len(t, outcome.TxOutcomes, 1)
+		assert.Equal(t, uint32(0), outcome.TxOutcomes[0].Code)
 
-		// Execute a transaction per block
-		result, err := app.ExecuteTx(ctx, []byte{byte(height)})
+		result, err := app.Commit(ctx)
 		require.NoError(t, err)
-		assert.True(t, result.IsSuccess())
-
-		endResult, err := app.EndBlock(ctx)
-		require.NoError(t, err)
-		assert.NotNil(t, endResult)
-
-		commitResult, err := app.Commit(ctx)
-		require.NoError(t, err)
-		assert.NotNil(t, commitResult)
-
-		// State should be updated
-		require.Equal(t, height, app.LastBlockHeight)
-		require.Equal(t, prevHash, app.LastBlockHash)
+		assert.Equal(t, bapitypes.CommitResult{}, result)
 	}
-}
-
-func TestNullApplication_InitChain(t *testing.T) {
-	app := NewNullApplication()
-	err := app.InitChain(context.Background(), nil, nil)
-	require.NoError(t, err)
 }

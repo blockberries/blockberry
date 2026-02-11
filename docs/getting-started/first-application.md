@@ -119,12 +119,13 @@ import (
     "fmt"
     "sync"
 
-    "github.com/blockberries/blockberry/pkg/abi"
+    "github.com/blockberries/bapi"
+    bapitypes "github.com/blockberries/bapi/types"
     "github.com/blockberries/blockberry/pkg/statestore"
 )
 
 type KVStoreApp struct {
-    abi.BaseApplication
+    bapi.BaseApplication
 
     state *statestore.IAVLStore
     mu    sync.RWMutex
@@ -149,8 +150,8 @@ func NewKVStoreApp(statePath string) (*KVStoreApp, error) {
 }
 
 // Info returns application metadata
-func (app *KVStoreApp) Info() abi.ApplicationInfo {
-    return abi.ApplicationInfo{
+func (app *KVStoreApp) Info() bapitypes.ApplicationInfo {
+    return bapitypes.ApplicationInfo{
         Name:       "kvstore-blockchain",
         Version:    "1.0.0",
         AppHash:    app.state.RootHash(),
@@ -158,8 +159,8 @@ func (app *KVStoreApp) Info() abi.ApplicationInfo {
     }
 }
 
-// InitChain initializes genesis state
-func (app *KVStoreApp) InitChain(genesis *abi.Genesis) error {
+// Handshake initializes genesis state
+func (app *KVStoreApp) Handshake(genesis *bapitypes.Genesis) error {
     app.mu.Lock()
     defer app.mu.Unlock()
 
@@ -171,23 +172,23 @@ func (app *KVStoreApp) InitChain(genesis *abi.Genesis) error {
 }
 
 // CheckTx validates transaction for mempool
-func (app *KVStoreApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.TxCheckResult {
+func (app *KVStoreApp) CheckTx(ctx context.Context, tx *bapitypes.Transaction) *bapitypes.TxCheckResult {
     app.mu.RLock()
     defer app.mu.RUnlock()
 
     // Parse transaction
     kvTx, err := DeserializeTransaction(tx.Data)
     if err != nil {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidTx,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidTx,
             Error: fmt.Errorf("invalid transaction format: %w", err),
         }
     }
 
     // Verify signature
     if !kvTx.Verify() {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidSignature,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidSignature,
             Error: errors.New("invalid signature"),
         }
     }
@@ -195,8 +196,8 @@ func (app *KVStoreApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.Tx
     // Check balance
     balance := app.getBalance(kvTx.From)
     if balance < kvTx.Amount {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInsufficientFunds,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInsufficientFunds,
             Error: fmt.Errorf("insufficient balance: have %d, need %d", balance, kvTx.Amount),
         }
     }
@@ -204,21 +205,21 @@ func (app *KVStoreApp) CheckTx(ctx context.Context, tx *abi.Transaction) *abi.Tx
     // Check nonce
     expectedNonce := app.getNonce(kvTx.From)
     if kvTx.Nonce != expectedNonce {
-        return &abi.TxCheckResult{
-            Code:  abi.CodeInvalidNonce,
+        return &bapitypes.TxCheckResult{
+            Code:  bapitypes.CodeInvalidNonce,
             Error: fmt.Errorf("invalid nonce: have %d, expected %d", kvTx.Nonce, expectedNonce),
         }
     }
 
-    return &abi.TxCheckResult{
-        Code:      abi.CodeOK,
+    return &bapitypes.TxCheckResult{
+        Code:      bapitypes.CodeOK,
         GasWanted: 1000,
         Priority:  int64(kvTx.Amount), // Higher value = higher priority
     }
 }
 
-// BeginBlock starts block processing
-func (app *KVStoreApp) BeginBlock(ctx context.Context, header *abi.BlockHeader) error {
+// ExecuteBlock processes all transactions in a block
+func (app *KVStoreApp) ExecuteBlock(ctx context.Context, block *bapitypes.Block) *bapitypes.BlockResult {
     app.mu.Lock()
     defer app.mu.Unlock()
 
@@ -226,65 +227,53 @@ func (app *KVStoreApp) BeginBlock(ctx context.Context, header *abi.BlockHeader) 
     app.pendingBalances = make(map[[32]byte]uint64)
     app.pendingNonces = make(map[[32]byte]uint64)
 
-    return nil
-}
+    var allEvents []bapitypes.Event
 
-// ExecuteTx processes a transaction
-func (app *KVStoreApp) ExecuteTx(ctx context.Context, tx *abi.Transaction) *abi.TxExecResult {
-    app.mu.Lock()
-    defer app.mu.Unlock()
-
-    // Parse transaction
-    kvTx, err := DeserializeTransaction(tx.Data)
-    if err != nil {
-        return &abi.TxExecResult{
-            Code:  abi.CodeInvalidTx,
-            Error: fmt.Errorf("invalid transaction: %w", err),
+    for _, txData := range block.Txs {
+        // Parse transaction
+        kvTx, err := DeserializeTransaction(txData)
+        if err != nil {
+            return &bapitypes.BlockResult{
+                Code:  bapitypes.CodeInvalidTx,
+                Error: fmt.Errorf("invalid transaction: %w", err),
+            }
         }
-    }
 
-    // Get current balances
-    fromBalance := app.getBalanceWithPending(kvTx.From)
-    toBalance := app.getBalanceWithPending(kvTx.To)
+        // Get current balances
+        fromBalance := app.getBalanceWithPending(kvTx.From)
+        toBalance := app.getBalanceWithPending(kvTx.To)
 
-    // Update balances
-    fromBalance -= kvTx.Amount
-    toBalance += kvTx.Amount
+        // Update balances
+        fromBalance -= kvTx.Amount
+        toBalance += kvTx.Amount
 
-    // Store pending changes
-    app.pendingBalances[kvTx.From] = fromBalance
-    app.pendingBalances[kvTx.To] = toBalance
+        // Store pending changes
+        app.pendingBalances[kvTx.From] = fromBalance
+        app.pendingBalances[kvTx.To] = toBalance
 
-    // Update nonce
-    nonce := app.getNonceWithPending(kvTx.From)
-    app.pendingNonces[kvTx.From] = nonce + 1
+        // Update nonce
+        nonce := app.getNonceWithPending(kvTx.From)
+        app.pendingNonces[kvTx.From] = nonce + 1
 
-    // Emit events
-    events := []abi.Event{
-        {
+        // Emit events
+        allEvents = append(allEvents, bapitypes.Event{
             Type: "transfer",
             Attributes: map[string]string{
                 "from":   fmt.Sprintf("%x", kvTx.From[:]),
                 "to":     fmt.Sprintf("%x", kvTx.To[:]),
                 "amount": fmt.Sprintf("%d", kvTx.Amount),
             },
-        },
+        })
     }
 
-    return &abi.TxExecResult{
-        Code:    abi.CodeOK,
-        Events:  events,
-        GasUsed: 1000,
+    return &bapitypes.BlockResult{
+        Code:   bapitypes.CodeOK,
+        Events: allEvents,
     }
-}
-
-// EndBlock finalizes block
-func (app *KVStoreApp) EndBlock(ctx context.Context) *abi.EndBlockResult {
-    return &abi.EndBlockResult{}
 }
 
 // Commit persists state changes
-func (app *KVStoreApp) Commit(ctx context.Context) *abi.CommitResult {
+func (app *KVStoreApp) Commit(ctx context.Context) *bapitypes.CommitResult {
     app.mu.Lock()
     defer app.mu.Unlock()
 
@@ -294,7 +283,7 @@ func (app *KVStoreApp) Commit(ctx context.Context) *abi.CommitResult {
         value := make([]byte, 8)
         binary.BigEndian.PutUint64(value, balance)
         if err := app.state.Set(key, value); err != nil {
-            return &abi.CommitResult{
+            return &bapitypes.CommitResult{
                 Error: fmt.Errorf("failed to set balance: %w", err),
             }
         }
@@ -306,7 +295,7 @@ func (app *KVStoreApp) Commit(ctx context.Context) *abi.CommitResult {
         value := make([]byte, 8)
         binary.BigEndian.PutUint64(value, nonce)
         if err := app.state.Set(key, value); err != nil {
-            return &abi.CommitResult{
+            return &bapitypes.CommitResult{
                 Error: fmt.Errorf("failed to set nonce: %w", err),
             }
         }
@@ -315,7 +304,7 @@ func (app *KVStoreApp) Commit(ctx context.Context) *abi.CommitResult {
     // Commit to state store
     hash, version, err := app.state.Commit()
     if err != nil {
-        return &abi.CommitResult{
+        return &bapitypes.CommitResult{
             Error: fmt.Errorf("failed to commit state: %w", err),
         }
     }
@@ -324,13 +313,13 @@ func (app *KVStoreApp) Commit(ctx context.Context) *abi.CommitResult {
     app.pendingBalances = make(map[[32]byte]uint64)
     app.pendingNonces = make(map[[32]byte]uint64)
 
-    return &abi.CommitResult{
+    return &bapitypes.CommitResult{
         AppHash: hash,
     }
 }
 
 // Query handles state queries
-func (app *KVStoreApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.QueryResponse {
+func (app *KVStoreApp) Query(ctx context.Context, req *bapitypes.QueryRequest) *bapitypes.QueryResponse {
     app.mu.RLock()
     defer app.mu.RUnlock()
 
@@ -338,8 +327,8 @@ func (app *KVStoreApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.Qu
     case "/balance":
         var pubKey [32]byte
         if len(req.Data) != 32 {
-            return &abi.QueryResponse{
-                Code:  abi.CodeInvalidTx,
+            return &bapitypes.QueryResponse{
+                Code:  bapitypes.CodeInvalidTx,
                 Error: errors.New("invalid public key length"),
             }
         }
@@ -349,8 +338,8 @@ func (app *KVStoreApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.Qu
         value := make([]byte, 8)
         binary.BigEndian.PutUint64(value, balance)
 
-        return &abi.QueryResponse{
-            Code:   abi.CodeOK,
+        return &bapitypes.QueryResponse{
+            Code:   bapitypes.CodeOK,
             Data:   value,
             Height: app.state.Version(),
         }
@@ -358,8 +347,8 @@ func (app *KVStoreApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.Qu
     case "/nonce":
         var pubKey [32]byte
         if len(req.Data) != 32 {
-            return &abi.QueryResponse{
-                Code:  abi.CodeInvalidTx,
+            return &bapitypes.QueryResponse{
+                Code:  bapitypes.CodeInvalidTx,
                 Error: errors.New("invalid public key length"),
             }
         }
@@ -369,15 +358,15 @@ func (app *KVStoreApp) Query(ctx context.Context, req *abi.QueryRequest) *abi.Qu
         value := make([]byte, 8)
         binary.BigEndian.PutUint64(value, nonce)
 
-        return &abi.QueryResponse{
-            Code:   abi.CodeOK,
+        return &bapitypes.QueryResponse{
+            Code:   bapitypes.CodeOK,
             Data:   value,
             Height: app.state.Version(),
         }
 
     default:
-        return &abi.QueryResponse{
-            Code:  abi.CodeNotAuthorized,
+        return &bapitypes.QueryResponse{
+            Code:  bapitypes.CodeNotAuthorized,
             Error: fmt.Errorf("unknown query path: %s", req.Path),
         }
     }

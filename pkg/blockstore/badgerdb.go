@@ -341,6 +341,25 @@ func (s *BadgerDBBlockStore) Base() int64 {
 	return s.base
 }
 
+// SetSyncedHeight records that this store is conceptually synced through
+// `height` even though blocks <= height may not be stored locally.
+//
+// Refuses to move backwards: returns an error if `height <= s.height`.
+func (s *BadgerDBBlockStore) SetSyncedHeight(height int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if height <= s.height {
+		return fmt.Errorf("SetSyncedHeight: target %d is not greater than current height %d", height, s.height)
+	}
+	if err := s.db.Update(func(txn *badger.Txn) error {
+		return txn.Set(keyMetaHeight, encodeInt64(height))
+	}); err != nil {
+		return fmt.Errorf("persist synced height %d: %w", height, err)
+	}
+	s.height = height
+	return nil
+}
+
 // Close closes the database.
 func (s *BadgerDBBlockStore) Close() error {
 	s.mu.Lock()

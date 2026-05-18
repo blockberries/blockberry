@@ -219,6 +219,30 @@ func TestHeightAndBase(t *testing.T) {
 	require.Equal(t, int64(50), store.Base())
 }
 
+func TestSetSyncedHeight(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	// Empty store: advancing to 100 succeeds.
+	require.NoError(t, store.SetSyncedHeight(100))
+	require.Equal(t, int64(100), store.Height())
+	// Base unchanged — no blocks stored.
+	require.Equal(t, int64(0), store.Base())
+
+	// Moving backwards is refused.
+	require.Error(t, store.SetSyncedHeight(50))
+	require.Equal(t, int64(100), store.Height())
+
+	// Re-setting the same height is also refused (strict greater-than).
+	require.Error(t, store.SetSyncedHeight(100))
+
+	// Saving a real block at 101 after SetSyncedHeight works and
+	// sets base to 101 (first stored block).
+	require.NoError(t, store.SaveBlock(101, makeTestHash(101), []byte("block")))
+	require.Equal(t, int64(101), store.Height())
+	require.Equal(t, int64(101), store.Base())
+}
+
 func TestBlockCount(t *testing.T) {
 	store := newTestStore(t)
 	defer store.Close()

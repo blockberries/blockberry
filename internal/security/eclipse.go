@@ -52,6 +52,13 @@ func NewEclipseProtector(cfg EclipseMitigationConfig) *EclipseProtector {
 }
 
 // ShouldAcceptPeer determines if a peer connection should be accepted.
+//
+// Always accepts a peer we are already tracking — that path covers
+// libp2p's simul-dial dedup, which can fire a second StateConnected event
+// for the same peerID after the protector has already counted them. Without
+// this short-circuit, the subnet check sees the peer's own entry and
+// rejects the duplicate, breaking handshake progress on localhost-like
+// topologies where every validator shares one /24.
 func (p *EclipseProtector) ShouldAcceptPeer(peerID []byte, addr string, isInbound bool) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -63,10 +70,22 @@ func (p *EclipseProtector) ShouldAcceptPeer(peerID []byte, addr string, isInboun
 		return true
 	}
 
-	// Check outbound requirement
+	// Already tracked: accept (idempotent with OnPeerConnected).
+	if _, ok := p.peers[id]; ok {
+		return true
+	}
+
+	// Check outbound requirement. Skipped during the bootstrap window
+	// (totalPeers < OutboundCheckMinPeers) so a freshly-started node
+	// can accept its first few inbound peers before its own outbound
+	// dials complete. Without this exemption, a 4-validator localhost
+	// testnet sometimes wedges with one validator stuck at 1 inbound
+	// peer rejecting all others (PLAN T2-8 / C7 follow-up). After the
+	// bootstrap window the check resumes and enforces eclipse-attack
+	// resistance as before.
 	if isInbound {
 		totalPeers := p.inboundCount + p.outboundCount
-		if totalPeers > 0 {
+		if totalPeers >= p.cfg.OutboundCheckMinPeers && p.cfg.RequireOutboundPercent > 0 {
 			outboundPercent := float64(p.outboundCount) / float64(totalPeers) * 100
 			if outboundPercent < float64(p.cfg.RequireOutboundPercent) {
 				// We need more outbound connections, reject inbound
@@ -223,11 +242,22 @@ func (p *EclipseProtector) OnPeerMisbehavior(peerID []byte, reason string) {
 }
 
 // OnPeerConnected is called when a peer connects.
+//
+// Idempotent: if the peer is already tracked (e.g. glueberry's simul-dial
+// dedup fired a second StateConnected event for the same peerID), we
+// short-circuit. Before this guard, every duplicate call inflated
+// subnetPeers AND inboundCount/outboundCount, and the next ShouldAcceptPeer
+// for a new peer in the same subnet would falsely reject — which manifested
+// as one validator getting stuck below mesh quorum on the localhost testnet.
 func (p *EclipseProtector) OnPeerConnected(peerID []byte, addr string, isInbound bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	id := string(peerID)
+	if _, exists := p.peers[id]; exists {
+		return
+	}
+
 	subnet := extractSubnet(addr)
 
 	info := &peerInfo{

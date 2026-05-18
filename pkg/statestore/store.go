@@ -52,6 +52,27 @@ type StateStore interface {
 	Close() error
 }
 
+// Iterable is an optional capability on StateStore implementations
+// that can walk the keyspace. Required by application layers (e.g.
+// punnet-sdk's BAPIAccountStore / BAPIBalanceStore) that maintain an
+// in-memory key index and need to rebuild it after a process restart —
+// without iteration the index stays empty until a write touches each
+// key.
+//
+// IAVL-backed stores satisfy this; in-memory test stores generally
+// don't need to (they reset on restart anyway). Callers should
+// type-assert to test for support and fall back gracefully if absent.
+type Iterable interface {
+	// Iterate walks every (key, value) currently in the working tree
+	// whose key starts with `prefix`. Pass nil prefix to iterate the
+	// full keyspace. The callback returns true to stop early.
+	//
+	// The iteration order matches the underlying tree's ordering
+	// (ascending byte order for IAVL). Iterate does not include
+	// uncommitted-but-not-yet-Set entries from concurrent writers.
+	Iterate(prefix []byte, fn func(key, value []byte) bool) error
+}
+
 // Proof represents a merkle proof for a key in the state store.
 // It can prove either the existence or non-existence of a key.
 type Proof struct {

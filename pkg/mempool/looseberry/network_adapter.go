@@ -6,6 +6,7 @@ import (
 	libp2ppeer "github.com/libp2p/go-libp2p/core/peer"
 
 	"github.com/blockberries/blockberry/pkg/mempool"
+	"github.com/blockberries/cramberry/pkg/cramberry"
 	lbnetwork "github.com/blockberries/looseberry/network"
 	lbtypes "github.com/blockberries/looseberry/types"
 )
@@ -210,67 +211,43 @@ func (n *networkAdapter) validatorToPeerID(validator uint16) (libp2ppeer.ID, err
 	return "", nil
 }
 
-// Encoding/decoding helpers
-// These would use cramberry for proper serialization.
-// The placeholders below indicate where cramberry schema definitions
-// and marshal/unmarshal calls would be implemented.
+// Encoding helpers. PLAN T1-1 / T2-9: replaced the nil-returning placeholders
+// with cramberry.Marshal so this adapter can actually transmit looseberry
+// messages. Cramberry's reflection encoder is deterministic (sorted map keys,
+// sequential field numbering) and matches what raspberry's
+// LooseberryNetworkAdapter does on the other side of the wire.
+//
+// Encode errors are logged-and-dropped here because the surrounding
+// interface returns no error from the encode step; the surrounding Broadcast
+// / Send calls swallow nil payloads. A future revision should bubble the
+// error through the network.Network interface.
 
-func encodeBatch(batch *lbtypes.Batch) []byte {
-	// TODO: Implement using cramberry schema for looseberry Batch type
-	// return schema.MarshalBatch(batch)
-	_ = batch
-	return nil
+func marshalOrEmpty(v any) []byte {
+	out, err := cramberry.Marshal(v)
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
-func encodeHeader(header *lbtypes.Header) []byte {
-	// TODO: Implement using cramberry schema for looseberry Header type
-	// return schema.MarshalHeader(header)
-	_ = header
-	return nil
-}
-
-func encodeCertificate(cert *lbtypes.Certificate) []byte {
-	// TODO: Implement using cramberry schema for looseberry Certificate type
-	// return schema.MarshalCertificate(cert)
-	_ = cert
-	return nil
-}
-
-func encodeVote(vote *lbtypes.Vote) []byte {
-	// TODO: Implement using cramberry schema for looseberry Vote type
-	// return schema.MarshalVote(vote)
-	_ = vote
-	return nil
-}
-
+func encodeBatch(batch *lbtypes.Batch) []byte             { return marshalOrEmpty(batch) }
+func encodeHeader(header *lbtypes.Header) []byte          { return marshalOrEmpty(header) }
+func encodeCertificate(cert *lbtypes.Certificate) []byte  { return marshalOrEmpty(cert) }
+func encodeVote(vote *lbtypes.Vote) []byte                { return marshalOrEmpty(vote) }
 func encodeBatchAck(ack *lbnetwork.BatchAckMessage) []byte {
-	// TODO: Implement using cramberry schema for looseberry BatchAckMessage type
-	_ = ack
-	return nil
+	return marshalOrEmpty(ack)
 }
-
 func encodeBatchRequest(req *lbnetwork.BatchRequestMessage) []byte {
-	// TODO: Implement using cramberry schema for looseberry BatchRequestMessage type
-	_ = req
-	return nil
+	return marshalOrEmpty(req)
 }
-
 func encodeBatchResponse(resp *lbnetwork.BatchResponseMessage) []byte {
-	// TODO: Implement using cramberry schema for looseberry BatchResponseMessage type
-	_ = resp
-	return nil
+	return marshalOrEmpty(resp)
 }
-
 func encodeSyncRequest(req *lbnetwork.SyncRequest) []byte {
-	// TODO: Implement using cramberry schema for looseberry SyncRequest type
-	_ = req
-	return nil
+	return marshalOrEmpty(req)
 }
-
 func encodeSyncResponse(resp *lbnetwork.SyncResponse) []byte {
-	// TODO: Implement using cramberry schema for looseberry SyncResponse type
-	_ = resp
-	return nil
+	return marshalOrEmpty(resp)
 }
 
 // Verify interface implementation

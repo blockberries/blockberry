@@ -410,7 +410,30 @@ func (s *FileSnapshotStore) Import(snapshot *Snapshot, chunkProvider ChunkProvid
 	}
 	defer gzReader.Close()
 
-	// Import into IAVL
+	// Import into IAVL. The tree must be empty (no versions stored). If
+	// we have leftover versions — typical when state-sync runs on a node
+	// whose application initialized a genesis state at version 1 before
+	// the bootstrap fired — wipe them first so Import can proceed.
+	//
+	// This is safe because:
+	//
+	//   - We're about to overwrite the tree with a strictly newer state
+	//     (snapshot.Height >> current version).
+	//   - The deleted versions are app state, not block data; the block
+	//     store is separate and untouched.
+	//   - At this point in startup, no consumer has read the genesis-only
+	//     state — the snapshot bootstrap is the first thing that runs
+	//     after handshake.
+	if latest, _ := s.stateStore.tree.GetLatestVersion(); latest > 0 {
+		if int64(snapshot.Height) <= latest {
+			return fmt.Errorf("refusing to import snapshot at height %d over existing state at version %d",
+				snapshot.Height, latest)
+		}
+		if err := s.stateStore.tree.DeleteVersionsFrom(1); err != nil {
+			return fmt.Errorf("wiping pre-import state (latest=%d): %w", latest, err)
+		}
+	}
+
 	importer, err := s.stateStore.tree.Import(snapshot.Height)
 	if err != nil {
 		return fmt.Errorf("creating importer: %w", err)

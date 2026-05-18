@@ -8,6 +8,7 @@ import (
 
 	"github.com/blockberries/cramberry/pkg/cramberry"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"go.uber.org/zap"
 
 	"github.com/blockberries/blockberry/internal/p2p"
 	schema "github.com/blockberries/blockberry/schema"
@@ -87,6 +88,10 @@ type HandshakeHandler struct {
 	states map[peer.ID]*PeerHandshakeState
 	mu     sync.RWMutex
 
+	// Logger for protocol debugging. Defaults to zap.NewNop so existing
+	// callers that don't set one stay silent.
+	logger *zap.Logger
+
 	// Lifecycle
 	running bool
 	stopCh  chan struct{}
@@ -114,8 +119,19 @@ func NewHandshakeHandler(
 		peerManager:     peerManager,
 		getHeight:       getHeight,
 		states:          make(map[peer.ID]*PeerHandshakeState),
+		logger:          zap.NewNop(),
 		stopCh:          make(chan struct{}),
 	}
+}
+
+// SetLogger replaces the handler's logger. Pass a configured zap.Logger to
+// observe per-step protocol events. The default is zap.NewNop so silent
+// behavior is preserved for callers that don't opt in.
+func (h *HandshakeHandler) SetLogger(logger *zap.Logger) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	h.logger = logger.Named("handshake")
 }
 
 // Name returns the component name for identification.
@@ -203,6 +219,10 @@ func (h *HandshakeHandler) cleanupStaleHandshakes() {
 // OnPeerConnected should be called when a new peer connection is established.
 // It initiates the handshake by sending a HelloRequest.
 func (h *HandshakeHandler) OnPeerConnected(peerID peer.ID, isOutbound bool) error {
+	h.logger.Debug("OnPeerConnected; initiating handshake",
+		zap.String("peer", peerID.String()),
+		zap.Bool("outbound", isOutbound),
+	)
 	h.mu.Lock()
 	// Initialize handshake state for this peer only if it doesn't exist
 	// (message handlers may have already created state if messages arrived before this event)
@@ -215,7 +235,14 @@ func (h *HandshakeHandler) OnPeerConnected(peerID peer.ID, isOutbound bool) erro
 	h.mu.Unlock()
 
 	// Send HelloRequest
-	return h.sendHelloRequest(peerID)
+	if err := h.sendHelloRequest(peerID); err != nil {
+		h.logger.Warn("sendHelloRequest failed",
+			zap.String("peer", peerID.String()),
+			zap.Error(err),
+		)
+		return err
+	}
+	return nil
 }
 
 // OnPeerDisconnected cleans up handshake state when a peer disconnects.
@@ -240,17 +267,31 @@ func (h *HandshakeHandler) HandleMessage(peerID peer.ID, data []byte) error {
 
 	// Get the message payload (remaining data after type ID)
 	payload := r.Remaining()
+	h.logger.Debug("HandleMessage",
+		zap.String("peer", peerID.String()),
+		zap.Uint32("type_id", uint32(typeID)),
+		zap.Int("payload_bytes", len(payload)),
+	)
 
+	var err error
 	switch typeID {
 	case TypeIDHelloRequest:
-		return h.handleHelloRequest(peerID, payload)
+		err = h.handleHelloRequest(peerID, payload)
 	case TypeIDHelloResponse:
-		return h.handleHelloResponse(peerID, payload)
+		err = h.handleHelloResponse(peerID, payload)
 	case TypeIDHelloFinalize:
-		return h.handleHelloFinalize(peerID, payload)
+		err = h.handleHelloFinalize(peerID, payload)
 	default:
-		return fmt.Errorf("%w: unknown handshake message type %d", types.ErrInvalidMessage, typeID)
+		err = fmt.Errorf("%w: unknown handshake message type %d", types.ErrInvalidMessage, typeID)
 	}
+	if err != nil {
+		h.logger.Warn("HandleMessage step failed",
+			zap.String("peer", peerID.String()),
+			zap.Uint32("type_id", uint32(typeID)),
+			zap.Error(err),
+		)
+	}
+	return err
 }
 
 // getOrCreateState gets the state for a peer, creating it if needed.
@@ -441,9 +482,21 @@ func (h *HandshakeHandler) handleHelloResponse(peerID peer.ID, data []byte) erro
 	// Prepare encrypted streams using peer's public key
 	if h.network != nil {
 		if err := h.network.PrepareStreams(peerID, resp.PublicKey); err != nil {
+			h.logger.Warn("PrepareStreams failed",
+				zap.String("peer", peerID.String()),
+				zap.Error(err),
+			)
 			return fmt.Errorf("preparing streams: %w", err)
 		}
 	}
+	streamsForLog := []string{}
+	if h.network != nil {
+		streamsForLog = h.network.RegisteredStreams()
+	}
+	h.logger.Info("PrepareStreams ok",
+		zap.String("peer", peerID.String()),
+		zap.Strings("streams", streamsForLog),
+	)
 
 	h.mu.Lock()
 	state.StreamsPrepared = true
@@ -527,12 +580,25 @@ func (h *HandshakeHandler) tryComplete(peerID peer.ID) error {
 	state, ok := h.states[peerID]
 	if !ok {
 		h.mu.Unlock()
+		h.logger.Debug("tryComplete: no state for peer",
+			zap.String("peer", peerID.String()),
+		)
 		return nil
 	}
 
 	// Check completion conditions (order-independent)
 	canComplete := state.StreamsPrepared && state.ReceivedFinalize && state.State != StateComplete
 	if !canComplete {
+		h.logger.Debug("tryComplete: conditions not met yet",
+			zap.String("peer", peerID.String()),
+			zap.Bool("streams_prepared", state.StreamsPrepared),
+			zap.Bool("received_finalize", state.ReceivedFinalize),
+			zap.Bool("sent_request", state.SentRequest),
+			zap.Bool("received_request", state.ReceivedRequest),
+			zap.Bool("sent_response", state.SentResponse),
+			zap.Bool("received_response", state.ReceivedResponse),
+			zap.Bool("sent_finalize", state.SentFinalize),
+		)
 		h.mu.Unlock()
 		return nil
 	}
@@ -544,9 +610,16 @@ func (h *HandshakeHandler) tryComplete(peerID peer.ID) error {
 	// Finalize the handshake - this transitions to StateEstablished in glueberry
 	if h.network != nil {
 		if err := h.network.FinalizeHandshake(peerID); err != nil {
+			h.logger.Warn("FinalizeHandshake failed",
+				zap.String("peer", peerID.String()),
+				zap.Error(err),
+			)
 			return fmt.Errorf("finalizing handshake: %w", err)
 		}
 	}
+	h.logger.Info("handshake complete; transitioned to StateEstablished",
+		zap.String("peer", peerID.String()),
+	)
 
 	// Store peer's public key in peer manager
 	if h.peerManager != nil {

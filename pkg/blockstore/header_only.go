@@ -106,6 +106,18 @@ func (s *HeaderOnlyBlockStore) Base() int64 {
 	return s.base
 }
 
+// SetSyncedHeight bumps the height marker forward without storing a header.
+// Used by state-sync to record the synced-through height.
+func (s *HeaderOnlyBlockStore) SetSyncedHeight(height int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if height <= s.height {
+		return fmt.Errorf("SetSyncedHeight: target %d is not greater than current height %d", height, s.height)
+	}
+	s.height = height
+	return nil
+}
+
 // Close clears the in-memory state.
 func (s *HeaderOnlyBlockStore) Close() error {
 	s.mu.Lock()

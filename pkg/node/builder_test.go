@@ -43,6 +43,10 @@ func TestNodeBuilder_Basic(t *testing.T) {
 	require.NotNil(t, node.housekeepingReactor)
 	require.NotNil(t, node.pexReactor)
 	require.NotNil(t, node.syncReactor)
+	// PLAN T2-8 — re-enabled (2026-05-14) after adding the
+	// OutboundCheckMinPeers bootstrap-window exemption. The default
+	// EclipseProtector is now installed; verify it's wired.
+	require.NotNil(t, node.eclipseProtector)
 }
 
 func TestNodeBuilder_WithMempool(t *testing.T) {

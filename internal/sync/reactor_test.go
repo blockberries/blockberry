@@ -578,11 +578,17 @@ func TestSyncReactor_HandleBlocksResponseWrongStartHeight(t *testing.T) {
 	data, err := reactor.encodeMessage(TypeIDBlocksResponse, resp)
 	require.NoError(t, err)
 
+	// New behaviour (post stall-fix): a response whose first block is
+	// past our expected height is now treated as a benign out-of-order
+	// arrival rather than a protocol violation — multiple peers can be
+	// serving disjoint ranges in parallel, and the prefix may still be
+	// in flight. handleBlocksResponse silently drops this batch and
+	// returns nil; the missing prefix is fetched on the next sync tick.
 	err = reactor.HandleMessage(peer.ID("peer1"), data)
-	require.Error(t, err)
-	require.ErrorIs(t, err, types.ErrNonContiguousBlock)
+	require.NoError(t, err)
 
-	// Block 3 should not be stored
+	// Block 3 should not be stored (we didn't have a contiguous chain
+	// to attach it to).
 	require.False(t, store.HasBlock(3))
 }
 

@@ -44,6 +44,12 @@ func (s *NoOpBlockStore) Base() int64 {
 	return 0
 }
 
+// SetSyncedHeight is a no-op for the no-op store: returns ErrStoreClosed
+// to signal that no state was actually persisted.
+func (s *NoOpBlockStore) SetSyncedHeight(_ int64) error {
+	return types.ErrStoreClosed
+}
+
 // Close does nothing.
 func (s *NoOpBlockStore) Close() error {
 	return nil

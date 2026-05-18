@@ -83,6 +83,71 @@ func TestEclipseProtector_OutboundRequirement(t *testing.T) {
 	}
 }
 
+// TestEclipseProtector_BootstrapWindow pins PLAN T2-8: the outbound-percent
+// check must be skipped while totalPeers < OutboundCheckMinPeers so a
+// freshly-started node accepts its first few inbound peers before its own
+// outbound dials complete. Without the exemption, a 4-validator localhost
+// testnet wedges with one validator stuck at 1 inbound rejecting all others.
+func TestEclipseProtector_BootstrapWindow(t *testing.T) {
+	cfg := EclipseMitigationConfig{
+		MaxPeersPerSubnet:      16,
+		MaxPeersFromSameSource: 10,
+		RequireOutboundPercent: 20,
+		OutboundCheckMinPeers:  3, // exempt the first 3 peers
+		TrustDuration:          time.Hour,
+	}
+	protector := NewEclipseProtector(cfg)
+
+	// First inbound peer: totalPeers=0 before, accepted (was already
+	// accepted in old code because of totalPeers>0 short-circuit).
+	if !protector.ShouldAcceptPeer([]byte("p0"), "10.0.0.1:26656", true) {
+		t.Fatal("first inbound rejected")
+	}
+	protector.OnPeerConnected([]byte("p0"), "10.0.0.1:26656", true)
+
+	// Second inbound: totalPeers=1 < OutboundCheckMinPeers=3; exempted.
+	if !protector.ShouldAcceptPeer([]byte("p1"), "10.0.0.2:26656", true) {
+		t.Fatal("second inbound rejected inside bootstrap window")
+	}
+	protector.OnPeerConnected([]byte("p1"), "10.0.0.2:26656", true)
+
+	// Third inbound: totalPeers=2 < 3; still exempted.
+	if !protector.ShouldAcceptPeer([]byte("p2"), "10.0.0.3:26656", true) {
+		t.Fatal("third inbound rejected inside bootstrap window")
+	}
+	protector.OnPeerConnected([]byte("p2"), "10.0.0.3:26656", true)
+
+	// Fourth inbound: totalPeers=3 == OutboundCheckMinPeers; check now
+	// enforces. With 0 outbound, 3 inbound, outboundPercent=0 < 20.
+	if protector.ShouldAcceptPeer([]byte("p3"), "10.0.0.4:26656", true) {
+		t.Fatal("fourth inbound accepted; bootstrap exemption should have ended")
+	}
+}
+
+// TestEclipseProtector_BootstrapWindow_Zero verifies the legacy
+// strict-from-first-peer behavior is preserved when OutboundCheckMinPeers=0.
+func TestEclipseProtector_BootstrapWindow_Zero(t *testing.T) {
+	cfg := EclipseMitigationConfig{
+		MaxPeersPerSubnet:      16,
+		MaxPeersFromSameSource: 10,
+		RequireOutboundPercent: 20,
+		OutboundCheckMinPeers:  0, // legacy: enforce immediately
+		TrustDuration:          time.Hour,
+	}
+	protector := NewEclipseProtector(cfg)
+
+	// totalPeers=0: always accept (zero-divisor guard).
+	if !protector.ShouldAcceptPeer([]byte("p0"), "10.0.0.1:26656", true) {
+		t.Fatal("first inbound rejected at totalPeers=0")
+	}
+	protector.OnPeerConnected([]byte("p0"), "10.0.0.1:26656", true)
+
+	// totalPeers=1, outbound=0, percent=0 < 20: reject.
+	if protector.ShouldAcceptPeer([]byte("p1"), "10.0.0.2:26656", true) {
+		t.Fatal("OutboundCheckMinPeers=0 should fire the check at totalPeers=1")
+	}
+}
+
 func TestEclipseProtector_TrustedPeers(t *testing.T) {
 	cfg := EclipseMitigationConfig{
 		MaxPeersPerSubnet:      1, // Very restrictive

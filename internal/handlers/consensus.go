@@ -129,7 +129,8 @@ func (r *ConsensusReactor) IsRunning() bool {
 }
 
 // SetHandler sets the consensus handler for incoming messages.
-// Deprecated: Use SetEngine instead for new implementations.
+// This is the production path: raspberry plugs leaderberry in via a
+// `ConsensusHandler` that decodes envelopes itself.
 func (r *ConsensusReactor) SetHandler(handler consensus.ConsensusHandler) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -137,7 +138,6 @@ func (r *ConsensusReactor) SetHandler(handler consensus.ConsensusHandler) {
 }
 
 // GetHandler returns the current consensus handler.
-// Deprecated: Use GetEngine instead for new implementations.
 func (r *ConsensusReactor) GetHandler() consensus.ConsensusHandler {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -146,6 +146,13 @@ func (r *ConsensusReactor) GetHandler() consensus.ConsensusHandler {
 
 // SetEngine sets the consensus engine for this reactor.
 // This also registers any custom streams if the engine implements StreamAwareConsensus.
+//
+// Note: as of PLAN T2-7's resolution, the SetEngine path is unreachable
+// from raspberry (which goes through SetHandler / WithConsensusHandler).
+// SetEngine is kept for consumers that want the typed ConsensusEngine
+// interface with built-in cramberry decoding; if no such consumer
+// materializes, this path can be retired alongside the hand-rolled
+// big-endian decoders in this file.
 func (r *ConsensusReactor) SetEngine(engine consensus.ConsensusEngine) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -251,7 +258,18 @@ func (r *ConsensusReactor) handleEngineMessage(engine consensus.ConsensusEngine,
 }
 
 // handleBFTMessage parses and routes BFT consensus messages.
-// The peerID is currently unused but will be used for message tracking in future.
+//
+// The hand-rolled big-endian decoders in decodeProposal / decodeVote /
+// decodeCommit / decodeBlock are reachable only via this path, which
+// itself is unreachable from raspberry (the production consumer goes
+// through SetHandler / WithConsensusHandler, not SetEngine + the
+// BFTConsensus interface). PLAN T2-7 mooted these decoders for that
+// reason. If a new BFTConsensus consumer materializes, swap these
+// decoders for cramberry's generated codecs before relying on the
+// path in production.
+//
+// The peerID is currently unused but will be used for message tracking
+// in future.
 func (r *ConsensusReactor) handleBFTMessage(bft consensus.BFTConsensus, _ peer.ID, data []byte) error {
 	if len(data) < 1 {
 		return types.ErrInvalidMessage
@@ -295,7 +313,7 @@ func (r *ConsensusReactor) handleBFTMessage(bft consensus.BFTConsensus, _ peer.I
 }
 
 // decodeProposal decodes a proposal message from bytes.
-// TODO: Implement proper cramberry deserialization.
+// PLAN T2-7 mooted — see handleBFTMessage. Swap for cramberry codegen if a BFTConsensus consumer is reintroduced.
 func (r *ConsensusReactor) decodeProposal(data []byte) (*consensus.Proposal, error) {
 	if len(data) < 16 {
 		return nil, fmt.Errorf("proposal data too short")
@@ -321,7 +339,7 @@ func (r *ConsensusReactor) decodeProposal(data []byte) (*consensus.Proposal, err
 }
 
 // decodeVote decodes a vote message from bytes.
-// TODO: Implement proper cramberry deserialization.
+// PLAN T2-7 mooted — see handleBFTMessage. Swap for cramberry codegen if a BFTConsensus consumer is reintroduced.
 func (r *ConsensusReactor) decodeVote(data []byte) (*consensus.Vote, error) {
 	if len(data) < 15 {
 		return nil, fmt.Errorf("vote data too short")
@@ -357,7 +375,7 @@ func (r *ConsensusReactor) decodeVote(data []byte) (*consensus.Vote, error) {
 }
 
 // decodeCommit decodes a commit message from bytes.
-// TODO: Implement proper cramberry deserialization.
+// PLAN T2-7 mooted — see handleBFTMessage. Swap for cramberry codegen if a BFTConsensus consumer is reintroduced.
 func (r *ConsensusReactor) decodeCommit(data []byte) (*consensus.Commit, error) {
 	if len(data) < 12 {
 		return nil, fmt.Errorf("commit data too short")
@@ -382,14 +400,18 @@ func (r *ConsensusReactor) decodeCommit(data []byte) (*consensus.Commit, error) 
 		}
 		// Make defensive copy to prevent corruption if input data is reused
 		commit.BlockHash = append([]byte(nil), data[13:13+hashLen]...)
-		// TODO: Parse signatures from data[13+hashLen:]
+		// Signature parsing intentionally omitted — same reasoning as
+		// the surrounding decoders: this path is unreachable in
+		// raspberry, and a future BFTConsensus consumer should swap
+		// the entire codec for cramberry codegen rather than extend
+		// the hand-rolled parser.
 	}
 
 	return commit, nil
 }
 
 // decodeBlock decodes a block from bytes.
-// TODO: Implement proper cramberry deserialization.
+// PLAN T2-7 mooted — see handleBFTMessage. Swap for cramberry codegen if a BFTConsensus consumer is reintroduced.
 func (r *ConsensusReactor) decodeBlock(data []byte) (*consensus.Block, error) {
 	if len(data) < 20 {
 		return nil, fmt.Errorf("block data too short")

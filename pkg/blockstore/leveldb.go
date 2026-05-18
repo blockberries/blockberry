@@ -206,6 +206,25 @@ func (s *LevelDBBlockStore) Base() int64 {
 	return s.base
 }
 
+// SetSyncedHeight records that this store is conceptually synced through
+// `height` even though blocks <= height may not be stored locally. The
+// height metadata is updated to `height`; base is not touched (it will
+// naturally advance when the next real block is saved).
+//
+// Refuses to move backwards: returns an error if `height <= s.height`.
+func (s *LevelDBBlockStore) SetSyncedHeight(height int64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if height <= s.height {
+		return fmt.Errorf("SetSyncedHeight: target %d is not greater than current height %d", height, s.height)
+	}
+	if err := s.db.Put(keyMetaHeight, encodeInt64(height), &opt.WriteOptions{Sync: true}); err != nil {
+		return fmt.Errorf("persist synced height %d: %w", height, err)
+	}
+	s.height = height
+	return nil
+}
+
 // Close closes the database.
 func (s *LevelDBBlockStore) Close() error {
 	s.mu.Lock()

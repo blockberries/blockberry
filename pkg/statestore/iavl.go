@@ -348,5 +348,73 @@ func (s *IAVLStore) AllVersions() []int64 {
 	return versions
 }
 
+// Iterate walks the working tree, invoking fn for every (key, value)
+// whose key has the given prefix. Pass nil for prefix to walk the
+// entire keyspace. fn returns true to stop iteration. Errors from the
+// underlying iterator are returned unchanged; an early-stop is not an
+// error.
+//
+// Used by application layers (e.g. punnet-sdk's BAPI*Store) that need
+// to rebuild an in-memory key index after a process restart. Without
+// this they'd return empty lists until a write touches each key.
+func (s *IAVLStore) Iterate(prefix []byte, fn func(key, value []byte) bool) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	start, end := prefixRange(prefix)
+	itr, err := s.tree.Iterator(start, end, true)
+	if err != nil {
+		return err
+	}
+	defer itr.Close()
+
+	for ; itr.Valid(); itr.Next() {
+		// Iterator may not pre-filter on prefix (depends on backend) —
+		// guard so a misconfigured range doesn't leak past-prefix keys.
+		if len(prefix) > 0 && !bytesHasPrefix(itr.Key(), prefix) {
+			break
+		}
+		if fn(itr.Key(), itr.Value()) {
+			break
+		}
+	}
+	return itr.Error()
+}
+
+// prefixRange returns the [start, end) byte range that covers every key
+// starting with `prefix`. end is prefix with the last non-0xFF byte
+// incremented; nil end means iterate to the end of the keyspace
+// (produced when prefix is empty or all-0xFF).
+func prefixRange(prefix []byte) (start, end []byte) {
+	if len(prefix) == 0 {
+		return nil, nil
+	}
+	start = append([]byte(nil), prefix...)
+	end = append([]byte(nil), prefix...)
+	for i := len(end) - 1; i >= 0; i-- {
+		if end[i] < 0xFF {
+			end[i]++
+			return start, end[:i+1]
+		}
+	}
+	// All bytes 0xFF — iterate to end of keyspace.
+	return start, nil
+}
+
+func bytesHasPrefix(b, prefix []byte) bool {
+	if len(b) < len(prefix) {
+		return false
+	}
+	for i := range prefix {
+		if b[i] != prefix[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // Ensure IAVLStore implements PrunableStateStore.
 var _ PrunableStateStore = (*IAVLStore)(nil)
+
+// Ensure IAVLStore implements the Iterable capability.
+var _ Iterable = (*IAVLStore)(nil)

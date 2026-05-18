@@ -5,6 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`node.StateSyncRunner`** — public wrapper around the internal
+  `StateSyncReactor` so external consumers (raspberry's state-sync
+  bootstrap, in particular) can drive snapshot fetching without
+  importing `internal/sync`. Exposes `Start` / `Stop` / `IsRunning` /
+  `Progress` / `SetOnComplete` / `SetOnFailed` / `HandleMessage` /
+  `OnPeerConnected` / `OnPeerDisconnected`.
+- **`node.StateSyncOptions`** — configuration for a runner: required
+  `TrustHeight` + `TrustHash`; optional `DiscoveryInterval` (default
+  5s), `ChunkRequestTimeout` (default 10s), `MaxChunkRetries`
+  (default 3).
+- **`Node.NewStateSyncRunner(snapshotStore, opts)`** — constructor
+  that builds a runner wired into this node's network and peer
+  manager. Caller registers `runner.HandleMessage` as the stream
+  handler for `node.StateSyncStreamName` (`"statesync"`) and starts.
+- **`node.StateSyncStreamName`** — exported constant for
+  stream-handler registration.
+
+### Changed
+
+- **`internal/sync.SyncReactor.handleBlocksResponse`** — a response
+  whose first block is past our expected height is now treated as a
+  benign out-of-order arrival (returns nil) rather than an
+  `ErrNonContiguousBlock` violation. Prevents a healthy peer running
+  parallel range responses from being penalized into a ban during
+  catch-up.
+
 ## [0.3.0] - 2026-02-09
 
 ### Added

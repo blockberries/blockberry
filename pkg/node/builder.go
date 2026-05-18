@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/blockberries/glueberry"
+	"go.uber.org/zap"
 
 	"github.com/blockberries/blockberry/pkg/blockstore"
 	"github.com/blockberries/blockberry/pkg/config"
@@ -14,6 +15,7 @@ import (
 	"github.com/blockberries/blockberry/pkg/mempool"
 	"github.com/blockberries/blockberry/internal/p2p"
 	"github.com/blockberries/blockberry/internal/pex"
+	"github.com/blockberries/blockberry/internal/security"
 	bsync "github.com/blockberries/blockberry/internal/sync"
 	"github.com/blockberries/blockberry/pkg/types"
 )
@@ -31,6 +33,7 @@ type NodeBuilder struct {
 	consensusHandler consensus.ConsensusHandler
 	blockValidator   types.BlockValidator
 	callbacks        *types.NodeCallbacks
+	logger           *zap.Logger
 
 	// Error tracking during build
 	err error
@@ -97,6 +100,17 @@ func (b *NodeBuilder) WithCallbacks(cb *types.NodeCallbacks) *NodeBuilder {
 	return b
 }
 
+// WithLogger sets a zap logger that internal components (currently the
+// handshake handler) will use for protocol debugging. Defaults to no-op if
+// not set.
+func (b *NodeBuilder) WithLogger(logger *zap.Logger) *NodeBuilder {
+	if b.err != nil {
+		return b
+	}
+	b.logger = logger
+	return b
+}
+
 // Build creates the Node with all configured components.
 // Returns an error if the configuration is invalid or component creation fails.
 func (b *NodeBuilder) Build() (*Node, error) {
@@ -151,6 +165,16 @@ func (b *NodeBuilder) Build() (*Node, error) {
 	// Create network wrapper
 	network := p2p.NewNetwork(glueNode)
 
+	// Register built-in streams with the stream registry. Without this, the
+	// registry is empty and getStreamNames falls back to AllStreams() — fine
+	// until any caller of Node.RegisterStreamHandler adds a custom stream,
+	// at which point the registry stops being empty and the AllStreams()
+	// fallback path is skipped, silently dropping the built-in streams from
+	// the streamNames passed to glueberry.PrepareStreams.
+	if err := network.RegisterBuiltinStreams(); err != nil {
+		return nil, fmt.Errorf("registering built-in streams: %w", err)
+	}
+
 	// Create or use provided block store
 	bs := b.blockStore
 	if bs == nil {
@@ -182,6 +206,9 @@ func (b *NodeBuilder) Build() (*Node, error) {
 		peerManager,
 		func() int64 { return bs.Height() },
 	)
+	if b.logger != nil {
+		handshakeHandler.SetLogger(b.logger)
+	}
 
 	transactionsReactor := handlers.NewTransactionsReactor(
 		mp,
@@ -237,6 +264,24 @@ func (b *NodeBuilder) Build() (*Node, error) {
 		syncReactor.SetValidator(b.blockValidator)
 	}
 
+	// Eclipse-attack protector. Instantiated unconditionally (PLAN T2-8) — the
+	// existing default config caps inbound-only saturation and per-subnet
+	// peer counts. handleConnectionEvent's StateConnected branch consults
+	// it before any reactor state is allocated for a new peer; a reject
+	// here drops the connection cleanly.
+	//
+	// Bootstrap-window exemption (PLAN T2-8 follow-up, 2026-05-14):
+	// the default EclipseMitigationConfig now sets
+	// OutboundCheckMinPeers=3, which skips the RequireOutboundPercent
+	// check until the node has had time to complete its own outbound
+	// dials. This fixes the 4-validator localhost wedge where alice
+	// rejected inbound peers because she had 0 outbound at the moment
+	// the second inbound peer arrived. Re-enabled by default; operators
+	// can disable by setting `EclipseMitigation.MaxPeersPerSubnet = 0`
+	// in config (future config plumbing — for now the only knob is the
+	// in-code default).
+	eclipseProtector := security.NewEclipseProtector(security.DefaultEclipseMitigationConfig())
+
 	// Create node with all components initialized
 	n := &Node{
 		cfg:                 cfg,
@@ -253,6 +298,7 @@ func (b *NodeBuilder) Build() (*Node, error) {
 		housekeepingReactor: housekeepingReactor,
 		pexReactor:          pexReactor,
 		syncReactor:         syncReactor,
+		eclipseProtector:    eclipseProtector,
 		callbacks:           b.callbacks,
 		stopCh:              make(chan struct{}),
 	}

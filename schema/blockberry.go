@@ -4,6 +4,11 @@
 package blockberry
 
 import (
+	"encoding/json"
+	"fmt"
+	"strings"
+
+
 	"github.com/blockberries/cramberry/pkg/cramberry"
 )
 
@@ -20,13 +25,13 @@ Timestamp *int64 `cramberry:"6,required" json:"timestamp"`
 LatestHeight *int64 `cramberry:"7,required" json:"latest_height"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *HelloRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -34,51 +39,51 @@ func (m *HelloRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *HelloRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *HelloRequest) EncodeTo(w *cramberry.Writer) {
 	if m.NodeId != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.NodeId)
 	}
 	if m.Version != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.Version)
 	}
 	if m.InboundUrl != "" {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteString(m.InboundUrl)
 	}
 	if m.InboundPort != 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt32(m.InboundPort)
 	}
 	if m.ChainId != nil {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
 		w.WriteString(*m.ChainId)
 	}
 	if m.Timestamp != nil {
-		w.WriteCompactTag(6, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x68)
 		w.WriteInt64(*m.Timestamp)
 	}
 	if m.LatestHeight != nil {
-		w.WriteCompactTag(7, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x78)
 		w.WriteInt64(*m.LatestHeight)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *HelloRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *HelloRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *HelloRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -108,9 +113,8 @@ func (m *HelloRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.LatestHeight = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -144,18 +148,195 @@ func (m *HelloRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *HelloRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"node_id":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.NodeId))
+
+	buf.WriteString(`,"version":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Version)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"inbound_url":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.InboundUrl))
+
+	buf.WriteString(`,"inbound_port":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(m.InboundPort)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"chain_id":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.ChainId))
+
+	buf.WriteString(`,"timestamp":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Timestamp)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"latest_height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.LatestHeight)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *HelloRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"node_id": true,
+		"version": true,
+		"inbound_url": true,
+		"inbound_port": true,
+		"chain_id": true,
+		"timestamp": true,
+		"latest_height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["node_id"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.NodeId = &tempVal
+	}
+
+	if rawValue, ok := raw["version"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Version = &tempVal
+	}
+
+	if rawValue, ok := raw["inbound_url"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.InboundUrl", err)
+		}
+		m.InboundUrl = strVal
+	}
+
+	if rawValue, ok := raw["inbound_port"]; ok {
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "m.InboundPort", err)
+			} else {
+				m.InboundPort = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			m.InboundPort = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "m.InboundPort")
+		}
+	}
+
+	if rawValue, ok := raw["chain_id"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.ChainId = &tempVal
+	}
+
+	if rawValue, ok := raw["timestamp"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Timestamp = &tempVal
+	}
+
+	if rawValue, ok := raw["latest_height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.LatestHeight = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type HelloResponse struct {
 Accepted *bool `cramberry:"1,required" json:"accepted"`
 PublicKey []byte `cramberry:"2" json:"public_key"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *HelloResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -163,31 +344,31 @@ func (m *HelloResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *HelloResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *HelloResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Accepted != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x10)
 		w.WriteBool(*m.Accepted)
 	}
 	if len(m.PublicKey) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.PublicKey)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *HelloResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *HelloResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *HelloResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -199,9 +380,8 @@ func (m *HelloResponse) decodeFrom(r *cramberry.Reader) {
 		case 2:
 			m.PublicKey = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -219,17 +399,96 @@ func (m *HelloResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *HelloResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"accepted":`)
+	if *m.Accepted {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString(`,"public_key":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.PublicKey))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *HelloResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"accepted": true,
+		"public_key": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["accepted"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.Accepted = &tempVal
+	}
+
+	if rawValue, ok := raw["public_key"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.PublicKey", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.PublicKey", err)
+		} else {
+			m.PublicKey = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type HelloFinalize struct {
 Success *bool `cramberry:"1,required" json:"success"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *HelloFinalize) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -237,27 +496,27 @@ func (m *HelloFinalize) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *HelloFinalize) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *HelloFinalize) EncodeTo(w *cramberry.Writer) {
 	if m.Success != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x10)
 		w.WriteBool(*m.Success)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *HelloFinalize) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *HelloFinalize) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *HelloFinalize) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -267,9 +526,8 @@ func (m *HelloFinalize) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadBool()
 		m.Success = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -287,17 +545,78 @@ func (m *HelloFinalize) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *HelloFinalize) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"success":`)
+	if *m.Success {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *HelloFinalize) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"success": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["success"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.Success = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type AddressRequest struct {
 LastSeen *int64 `cramberry:"1,required" json:"last_seen"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *AddressRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -305,27 +624,27 @@ func (m *AddressRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *AddressRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *AddressRequest) EncodeTo(w *cramberry.Writer) {
 	if m.LastSeen != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.LastSeen)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *AddressRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *AddressRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *AddressRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -335,9 +654,8 @@ func (m *AddressRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.LastSeen = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -355,6 +673,73 @@ func (m *AddressRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *AddressRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"last_seen":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.LastSeen)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *AddressRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"last_seen": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["last_seen"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.LastSeen = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type AddressInfo struct {
 Multiaddr *string `cramberry:"1,required" json:"multiaddr"`
 LastSeen *int64 `cramberry:"2,required" json:"last_seen"`
@@ -362,13 +747,13 @@ Latency *int32 `cramberry:"3,required" json:"latency"`
 NodeId *string `cramberry:"4,required" json:"node_id"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *AddressInfo) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -376,39 +761,39 @@ func (m *AddressInfo) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *AddressInfo) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *AddressInfo) EncodeTo(w *cramberry.Writer) {
 	if m.Multiaddr != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Multiaddr)
 	}
 	if m.LastSeen != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt64(*m.LastSeen)
 	}
 	if m.Latency != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.Latency)
 	}
 	if m.NodeId != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteString(*m.NodeId)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *AddressInfo) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *AddressInfo) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *AddressInfo) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -430,9 +815,8 @@ func (m *AddressInfo) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.NodeId = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -462,17 +846,136 @@ func (m *AddressInfo) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *AddressInfo) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"multiaddr":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Multiaddr))
+
+	buf.WriteString(`,"last_seen":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.LastSeen)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"latency":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Latency)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"node_id":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.NodeId))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *AddressInfo) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"multiaddr": true,
+		"last_seen": true,
+		"latency": true,
+		"node_id": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["multiaddr"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Multiaddr = &tempVal
+	}
+
+	if rawValue, ok := raw["last_seen"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.LastSeen = &tempVal
+	}
+
+	if rawValue, ok := raw["latency"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Latency = &tempVal
+	}
+
+	if rawValue, ok := raw["node_id"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.NodeId = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type AddressResponse struct {
 Peers []AddressInfo `cramberry:"1" json:"peers"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *AddressResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -480,44 +983,57 @@ func (m *AddressResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *AddressResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *AddressResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Peers) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Peers)))
 		for _, v := range m.Peers {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *AddressResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *AddressResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *AddressResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Peers = make([]AddressInfo, n)
 		for i := 0; i < n; i++ {
-			m.Peers[i].decodeFrom(r)
+			m.Peers[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -526,17 +1042,83 @@ func (m *AddressResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *AddressResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"peers":`)
+	buf.WriteString("[")
+	for i, v := range m.Peers {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *AddressResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"peers": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["peers"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Peers", err)
+		}
+		m.Peers = make([]AddressInfo, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg AddressInfo
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Peers[i]", err)
+				}
+				m.Peers[i] = msg
+		}
+	}
+
+
+	return nil
+}
+
+
 type TransactionsRequest struct {
 BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionsRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -544,27 +1126,27 @@ func (m *TransactionsRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionsRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionsRequest) EncodeTo(w *cramberry.Writer) {
 	if m.BatchSize != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt32(*m.BatchSize)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionsRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionsRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionsRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -574,9 +1156,8 @@ func (m *TransactionsRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt32()
 		m.BatchSize = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -594,17 +1175,84 @@ func (m *TransactionsRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionsRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"batch_size":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.BatchSize)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionsRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"batch_size": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["batch_size"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.BatchSize = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type TransactionHash struct {
 Hash []byte `cramberry:"1,required" json:"hash"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionHash) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -612,27 +1260,27 @@ func (m *TransactionHash) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionHash) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionHash) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionHash) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionHash) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionHash) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -640,9 +1288,8 @@ func (m *TransactionHash) decodeFrom(r *cramberry.Reader) {
 		case 1:
 			m.Hash = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -652,10 +1299,67 @@ func (m *TransactionHash) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *TransactionHash) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("TransactionHash", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionHash) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionHash) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -664,13 +1368,13 @@ type TransactionsResponse struct {
 Transactions []TransactionHash `cramberry:"1" json:"transactions"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionsResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -678,49 +1382,128 @@ func (m *TransactionsResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionsResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionsResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Transactions) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Transactions)))
 		for _, v := range m.Transactions {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionsResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionsResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionsResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Transactions = make([]TransactionHash, n)
 		for i := 0; i < n; i++ {
-			m.Transactions[i].decodeFrom(r)
+			m.Transactions[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionsResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"transactions":`)
+	buf.WriteString("[")
+	for i, v := range m.Transactions {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionsResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"transactions": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["transactions"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Transactions", err)
+		}
+		m.Transactions = make([]TransactionHash, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg TransactionHash
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Transactions[i]", err)
+				}
+				m.Transactions[i] = msg
+		}
+	}
+
+
+	return nil
 }
 
 
@@ -728,13 +1511,13 @@ type TransactionDataRequest struct {
 Transactions []TransactionHash `cramberry:"1" json:"transactions"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionDataRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -742,49 +1525,128 @@ func (m *TransactionDataRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionDataRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionDataRequest) EncodeTo(w *cramberry.Writer) {
 	if len(m.Transactions) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Transactions)))
 		for _, v := range m.Transactions {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionDataRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionDataRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionDataRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Transactions = make([]TransactionHash, n)
 		for i := 0; i < n; i++ {
-			m.Transactions[i].decodeFrom(r)
+			m.Transactions[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionDataRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"transactions":`)
+	buf.WriteString("[")
+	for i, v := range m.Transactions {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionDataRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"transactions": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["transactions"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Transactions", err)
+		}
+		m.Transactions = make([]TransactionHash, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg TransactionHash
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Transactions[i]", err)
+				}
+				m.Transactions[i] = msg
+		}
+	}
+
+
+	return nil
 }
 
 
@@ -793,13 +1655,13 @@ Hash []byte `cramberry:"1,required" json:"hash"`
 Data []byte `cramberry:"2,required" json:"data"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionData) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -807,31 +1669,31 @@ func (m *TransactionData) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionData) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionData) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Data)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionData) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionData) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionData) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -841,9 +1703,8 @@ func (m *TransactionData) decodeFrom(r *cramberry.Reader) {
 		case 2:
 			m.Data = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -853,14 +1714,85 @@ func (m *TransactionData) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *TransactionData) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("TransactionData", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionData) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
-	// Field data is required
-	if m.Data == nil {
-		return cramberry.NewValidationError("TransactionData", "data", "required field is missing")
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionData) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
 	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+		"data": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -869,13 +1801,13 @@ type TransactionDataResponse struct {
 Transactions []TransactionData `cramberry:"1" json:"transactions"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TransactionDataResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -883,44 +1815,57 @@ func (m *TransactionDataResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TransactionDataResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TransactionDataResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Transactions) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Transactions)))
 		for _, v := range m.Transactions {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TransactionDataResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TransactionDataResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TransactionDataResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Transactions = make([]TransactionData, n)
 		for i := 0; i < n; i++ {
-			m.Transactions[i].decodeFrom(r)
+			m.Transactions[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -929,18 +1874,84 @@ func (m *TransactionDataResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TransactionDataResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"transactions":`)
+	buf.WriteString("[")
+	for i, v := range m.Transactions {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TransactionDataResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"transactions": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["transactions"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Transactions", err)
+		}
+		m.Transactions = make([]TransactionData, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg TransactionData
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Transactions[i]", err)
+				}
+				m.Transactions[i] = msg
+		}
+	}
+
+
+	return nil
+}
+
+
 type BlocksRequest struct {
 BatchSize *int32 `cramberry:"1,required" json:"batch_size"`
 Since *int64 `cramberry:"2,required" json:"since"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlocksRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -948,31 +1959,31 @@ func (m *BlocksRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlocksRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BlocksRequest) EncodeTo(w *cramberry.Writer) {
 	if m.BatchSize != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt32(*m.BatchSize)
 	}
 	if m.Since != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt64(*m.Since)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlocksRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlocksRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlocksRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -986,9 +1997,8 @@ func (m *BlocksRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Since = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1010,19 +2020,110 @@ func (m *BlocksRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlocksRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"batch_size":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.BatchSize)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"since":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Since)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlocksRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"batch_size": true,
+		"since": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["batch_size"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.BatchSize = &tempVal
+	}
+
+	if rawValue, ok := raw["since"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Since = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type BlockData struct {
 Height *int64 `cramberry:"1,required" json:"height"`
 Hash []byte `cramberry:"2,required" json:"hash"`
 Data []byte `cramberry:"3,required" json:"data"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlockData) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1030,35 +2131,35 @@ func (m *BlockData) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlockData) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BlockData) EncodeTo(w *cramberry.Writer) {
 	if m.Height != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Height)
 	}
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Hash)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteBytes(m.Data)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlockData) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlockData) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlockData) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1072,9 +2173,8 @@ func (m *BlockData) decodeFrom(r *cramberry.Reader) {
 		case 3:
 			m.Data = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1088,14 +2188,109 @@ func (m *BlockData) Validate() error {
 	if m.Height == nil {
 		return cramberry.NewValidationError("BlockData", "height", "required field is missing")
 	}
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("BlockData", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlockData) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
-	// Field data is required
-	if m.Data == nil {
-		return cramberry.NewValidationError("BlockData", "data", "required field is missing")
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlockData) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
 	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+		"hash": true,
+		"data": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -1104,13 +2299,13 @@ type BlocksResponse struct {
 Blocks []BlockData `cramberry:"1" json:"blocks"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlocksResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1118,44 +2313,57 @@ func (m *BlocksResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlocksResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BlocksResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Blocks) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Blocks)))
 		for _, v := range m.Blocks {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlocksResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlocksResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlocksResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Blocks = make([]BlockData, n)
 		for i := 0; i < n; i++ {
-			m.Blocks[i].decodeFrom(r)
+			m.Blocks[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1164,17 +2372,83 @@ func (m *BlocksResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlocksResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"blocks":`)
+	buf.WriteString("[")
+	for i, v := range m.Blocks {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlocksResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"blocks": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["blocks"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Blocks", err)
+		}
+		m.Blocks = make([]BlockData, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg BlockData
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Blocks[i]", err)
+				}
+				m.Blocks[i] = msg
+		}
+	}
+
+
+	return nil
+}
+
+
 type LatencyRequest struct {
 Timestamp *int64 `cramberry:"1,required" json:"timestamp"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *LatencyRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1182,27 +2456,27 @@ func (m *LatencyRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *LatencyRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *LatencyRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Timestamp != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Timestamp)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *LatencyRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *LatencyRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *LatencyRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1212,9 +2486,8 @@ func (m *LatencyRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Timestamp = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1232,17 +2505,84 @@ func (m *LatencyRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *LatencyRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"timestamp":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Timestamp)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *LatencyRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"timestamp": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["timestamp"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Timestamp = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type LatencyResponse struct {
 Latency *int64 `cramberry:"1,required" json:"latency"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *LatencyResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1250,27 +2590,27 @@ func (m *LatencyResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *LatencyResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *LatencyResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Latency != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Latency)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *LatencyResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *LatencyResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *LatencyResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1280,9 +2620,8 @@ func (m *LatencyResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Latency = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1300,17 +2639,84 @@ func (m *LatencyResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *LatencyResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"latency":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Latency)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *LatencyResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"latency": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["latency"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Latency = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type FirewallRequest struct {
 Endpoint *string `cramberry:"1,required" json:"endpoint"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *FirewallRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1318,27 +2724,27 @@ func (m *FirewallRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *FirewallRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *FirewallRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Endpoint != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Endpoint)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *FirewallRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *FirewallRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *FirewallRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1348,9 +2754,8 @@ func (m *FirewallRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Endpoint = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1368,17 +2773,74 @@ func (m *FirewallRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *FirewallRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"endpoint":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Endpoint))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *FirewallRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"endpoint": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["endpoint"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Endpoint = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type FirewallResponse struct {
 Endpoint *string `cramberry:"1,required" json:"endpoint"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *FirewallResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1386,27 +2848,27 @@ func (m *FirewallResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *FirewallResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *FirewallResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Endpoint != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Endpoint)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *FirewallResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *FirewallResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *FirewallResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1416,9 +2878,8 @@ func (m *FirewallResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Endpoint = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1436,17 +2897,74 @@ func (m *FirewallResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *FirewallResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"endpoint":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Endpoint))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *FirewallResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"endpoint": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["endpoint"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Endpoint = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type SnapshotsRequest struct {
 MinHeight *int64 `cramberry:"1,required" json:"min_height"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SnapshotsRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1454,27 +2972,27 @@ func (m *SnapshotsRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SnapshotsRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SnapshotsRequest) EncodeTo(w *cramberry.Writer) {
 	if m.MinHeight != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.MinHeight)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SnapshotsRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SnapshotsRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SnapshotsRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1484,9 +3002,8 @@ func (m *SnapshotsRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.MinHeight = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1504,6 +3021,73 @@ func (m *SnapshotsRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SnapshotsRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"min_height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.MinHeight)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SnapshotsRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"min_height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["min_height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.MinHeight = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type SnapshotMetadata struct {
 Height *int64 `cramberry:"1,required" json:"height"`
 Hash []byte `cramberry:"2,required" json:"hash"`
@@ -1512,13 +3096,13 @@ AppHash []byte `cramberry:"4,required" json:"app_hash"`
 CreatedAt int64 `cramberry:"5" json:"created_at"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SnapshotMetadata) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1526,43 +3110,43 @@ func (m *SnapshotMetadata) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SnapshotMetadata) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SnapshotMetadata) EncodeTo(w *cramberry.Writer) {
 	if m.Height != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Height)
 	}
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Hash)
 	}
 	if m.Chunks != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.Chunks)
 	}
 	if len(m.AppHash) > 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteBytes(m.AppHash)
 	}
 	if m.CreatedAt != 0 {
-		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x58)
 		w.WriteInt64(m.CreatedAt)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SnapshotMetadata) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SnapshotMetadata) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SnapshotMetadata) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1582,9 +3166,8 @@ func (m *SnapshotMetadata) decodeFrom(r *cramberry.Reader) {
 		case 5:
 			m.CreatedAt = r.ReadInt64()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1598,18 +3181,159 @@ func (m *SnapshotMetadata) Validate() error {
 	if m.Height == nil {
 		return cramberry.NewValidationError("SnapshotMetadata", "height", "required field is missing")
 	}
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("SnapshotMetadata", "hash", "required field is missing")
-	}
 	// Field chunks is required
 	if m.Chunks == nil {
 		return cramberry.NewValidationError("SnapshotMetadata", "chunks", "required field is missing")
 	}
-	// Field app_hash is required
-	if m.AppHash == nil {
-		return cramberry.NewValidationError("SnapshotMetadata", "app_hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SnapshotMetadata) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"chunks":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Chunks)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"app_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.AppHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"created_at":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(m.CreatedAt)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SnapshotMetadata) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+		"hash": true,
+		"chunks": true,
+		"app_hash": true,
+		"created_at": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["chunks"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Chunks = &tempVal
+	}
+
+	if rawValue, ok := raw["app_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.AppHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.AppHash", err)
+		} else {
+			m.AppHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["created_at"]; ok {
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "m.CreatedAt", err)
+			} else {
+				m.CreatedAt = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			m.CreatedAt = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "m.CreatedAt")
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -1618,13 +3342,13 @@ type SnapshotsResponse struct {
 Snapshots []SnapshotMetadata `cramberry:"1" json:"snapshots"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SnapshotsResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1632,44 +3356,57 @@ func (m *SnapshotsResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SnapshotsResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SnapshotsResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Snapshots) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Snapshots)))
 		for _, v := range m.Snapshots {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SnapshotsResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SnapshotsResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SnapshotsResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Snapshots = make([]SnapshotMetadata, n)
 		for i := 0; i < n; i++ {
-			m.Snapshots[i].decodeFrom(r)
+			m.Snapshots[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1678,18 +3415,84 @@ func (m *SnapshotsResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SnapshotsResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"snapshots":`)
+	buf.WriteString("[")
+	for i, v := range m.Snapshots {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SnapshotsResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"snapshots": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["snapshots"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Snapshots", err)
+		}
+		m.Snapshots = make([]SnapshotMetadata, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg SnapshotMetadata
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Snapshots[i]", err)
+				}
+				m.Snapshots[i] = msg
+		}
+	}
+
+
+	return nil
+}
+
+
 type SnapshotChunkRequest struct {
 SnapshotHash []byte `cramberry:"1,required" json:"snapshot_hash"`
 ChunkIndex *int32 `cramberry:"2,required" json:"chunk_index"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SnapshotChunkRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1697,31 +3500,31 @@ func (m *SnapshotChunkRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SnapshotChunkRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SnapshotChunkRequest) EncodeTo(w *cramberry.Writer) {
 	if len(m.SnapshotHash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.SnapshotHash)
 	}
 	if m.ChunkIndex != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.ChunkIndex)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SnapshotChunkRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SnapshotChunkRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SnapshotChunkRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1733,9 +3536,8 @@ func (m *SnapshotChunkRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt32()
 		m.ChunkIndex = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1745,14 +3547,95 @@ func (m *SnapshotChunkRequest) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *SnapshotChunkRequest) Validate() error {
-	// Field snapshot_hash is required
-	if m.SnapshotHash == nil {
-		return cramberry.NewValidationError("SnapshotChunkRequest", "snapshot_hash", "required field is missing")
-	}
 	// Field chunk_index is required
 	if m.ChunkIndex == nil {
 		return cramberry.NewValidationError("SnapshotChunkRequest", "chunk_index", "required field is missing")
 	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SnapshotChunkRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"snapshot_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.SnapshotHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"chunk_index":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.ChunkIndex)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SnapshotChunkRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"snapshot_hash": true,
+		"chunk_index": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["snapshot_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.SnapshotHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.SnapshotHash", err)
+		} else {
+			m.SnapshotHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["chunk_index"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.ChunkIndex = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -1764,13 +3647,13 @@ Data []byte `cramberry:"3,required" json:"data"`
 ChunkHash []byte `cramberry:"4,required" json:"chunk_hash"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SnapshotChunkResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1778,39 +3661,39 @@ func (m *SnapshotChunkResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SnapshotChunkResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SnapshotChunkResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.SnapshotHash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.SnapshotHash)
 	}
 	if m.ChunkIndex != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.ChunkIndex)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteBytes(m.Data)
 	}
 	if len(m.ChunkHash) > 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteBytes(m.ChunkHash)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SnapshotChunkResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SnapshotChunkResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SnapshotChunkResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1826,9 +3709,8 @@ func (m *SnapshotChunkResponse) decodeFrom(r *cramberry.Reader) {
 		case 4:
 			m.ChunkHash = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1838,22 +3720,474 @@ func (m *SnapshotChunkResponse) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *SnapshotChunkResponse) Validate() error {
-	// Field snapshot_hash is required
-	if m.SnapshotHash == nil {
-		return cramberry.NewValidationError("SnapshotChunkResponse", "snapshot_hash", "required field is missing")
-	}
 	// Field chunk_index is required
 	if m.ChunkIndex == nil {
 		return cramberry.NewValidationError("SnapshotChunkResponse", "chunk_index", "required field is missing")
 	}
-	// Field data is required
-	if m.Data == nil {
-		return cramberry.NewValidationError("SnapshotChunkResponse", "data", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SnapshotChunkResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
-	// Field chunk_hash is required
-	if m.ChunkHash == nil {
-		return cramberry.NewValidationError("SnapshotChunkResponse", "chunk_hash", "required field is missing")
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"snapshot_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.SnapshotHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"chunk_index":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.ChunkIndex)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"chunk_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.ChunkHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SnapshotChunkResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
 	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"snapshot_hash": true,
+		"chunk_index": true,
+		"data": true,
+		"chunk_hash": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["snapshot_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.SnapshotHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.SnapshotHash", err)
+		} else {
+			m.SnapshotHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["chunk_index"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.ChunkIndex = &tempVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	if rawValue, ok := raw["chunk_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.ChunkHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.ChunkHash", err)
+		} else {
+			m.ChunkHash = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
+type LightBlockRequest struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+}
+
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
+func (m *LightBlockRequest) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.EncodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// EncodeTo encodes the message directly to the writer.
+func (m *LightBlockRequest) EncodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteRawByte(0x18)
+		w.WriteInt64(*m.Height)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
+func (m *LightBlockRequest) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.DecodeFrom(r)
+	return r.Err()
+}
+
+// DecodeFrom decodes the message from the reader.
+func (m *LightBlockRequest) DecodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, wireType := r.ReadTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		default:
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *LightBlockRequest) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("LightBlockRequest", "height", "required field is missing")
+	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *LightBlockRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *LightBlockRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
+type LightBlockResponse struct {
+Height *int64 `cramberry:"1,required" json:"height"`
+HeaderBytes []byte `cramberry:"2,required" json:"header_bytes"`
+CommitBytes []byte `cramberry:"3,required" json:"commit_bytes"`
+ValidatorSetBytes []byte `cramberry:"4,required" json:"validator_set_bytes"`
+}
+
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
+func (m *LightBlockResponse) MarshalCramberry() ([]byte, error) {
+	w := cramberry.GetWriter()
+	defer cramberry.PutWriter(w)
+
+	m.EncodeTo(w)
+
+	if w.Err() != nil {
+		return nil, w.Err()
+	}
+	return w.BytesCopy(), nil
+}
+
+// EncodeTo encodes the message directly to the writer.
+func (m *LightBlockResponse) EncodeTo(w *cramberry.Writer) {
+	if m.Height != nil {
+		w.WriteRawByte(0x18)
+		w.WriteInt64(*m.Height)
+	}
+	if len(m.HeaderBytes) > 0 {
+		w.WriteRawByte(0x24)
+		w.WriteBytes(m.HeaderBytes)
+	}
+	if len(m.CommitBytes) > 0 {
+		w.WriteRawByte(0x34)
+		w.WriteBytes(m.CommitBytes)
+	}
+	if len(m.ValidatorSetBytes) > 0 {
+		w.WriteRawByte(0x44)
+		w.WriteBytes(m.ValidatorSetBytes)
+	}
+	w.WriteEndMarker()
+}
+
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
+func (m *LightBlockResponse) UnmarshalCramberry(data []byte) error {
+	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
+	m.DecodeFrom(r)
+	return r.Err()
+}
+
+// DecodeFrom decodes the message from the reader.
+func (m *LightBlockResponse) DecodeFrom(r *cramberry.Reader) {
+	for {
+		fieldNum, wireType := r.ReadTag()
+		if fieldNum == 0 {
+			break
+		}
+		switch fieldNum {
+		case 1:
+			var tmp int64
+		tmp = r.ReadInt64()
+		m.Height = &tmp
+		case 2:
+			m.HeaderBytes = r.ReadBytes()
+		case 3:
+			m.CommitBytes = r.ReadBytes()
+		case 4:
+			m.ValidatorSetBytes = r.ReadBytes()
+		default:
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
+		}
+		if r.Err() != nil {
+			return
+		}
+	}
+}
+
+// Validate validates that all required fields are set.
+func (m *LightBlockResponse) Validate() error {
+	// Field height is required
+	if m.Height == nil {
+		return cramberry.NewValidationError("LightBlockResponse", "height", "required field is missing")
+	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *LightBlockResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"header_bytes":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.HeaderBytes))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"commit_bytes":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.CommitBytes))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"validator_set_bytes":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.ValidatorSetBytes))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *LightBlockResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+		"header_bytes": true,
+		"commit_bytes": true,
+		"validator_set_bytes": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["header_bytes"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.HeaderBytes", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.HeaderBytes", err)
+		} else {
+			m.HeaderBytes = decoded
+		}
+	}
+
+	if rawValue, ok := raw["commit_bytes"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.CommitBytes", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.CommitBytes", err)
+		} else {
+			m.CommitBytes = decoded
+		}
+	}
+
+	if rawValue, ok := raw["validator_set_bytes"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.ValidatorSetBytes", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.ValidatorSetBytes", err)
+		} else {
+			m.ValidatorSetBytes = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -1866,13 +4200,13 @@ Version *string `cramberry:"4,required" json:"version"`
 ListenAddr string `cramberry:"5" json:"listen_addr"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcNodeInfo) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1880,43 +4214,43 @@ func (m *GrpcNodeInfo) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcNodeInfo) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcNodeInfo) EncodeTo(w *cramberry.Writer) {
 	if m.Id != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Id)
 	}
 	if m.Moniker != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(*m.Moniker)
 	}
 	if m.Network != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteString(*m.Network)
 	}
 	if m.Version != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteString(*m.Version)
 	}
 	if m.ListenAddr != "" {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
 		w.WriteString(m.ListenAddr)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcNodeInfo) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcNodeInfo) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcNodeInfo) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -1940,9 +4274,8 @@ func (m *GrpcNodeInfo) decodeFrom(r *cramberry.Reader) {
 		case 5:
 			m.ListenAddr = r.ReadString()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -1972,6 +4305,117 @@ func (m *GrpcNodeInfo) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcNodeInfo) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"id":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Id))
+
+	buf.WriteString(`,"moniker":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Moniker))
+
+	buf.WriteString(`,"network":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Network))
+
+	buf.WriteString(`,"version":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Version))
+
+	buf.WriteString(`,"listen_addr":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.ListenAddr))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcNodeInfo) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"id": true,
+		"moniker": true,
+		"network": true,
+		"version": true,
+		"listen_addr": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["id"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Id = &tempVal
+	}
+
+	if rawValue, ok := raw["moniker"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Moniker = &tempVal
+	}
+
+	if rawValue, ok := raw["network"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Network = &tempVal
+	}
+
+	if rawValue, ok := raw["version"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Version = &tempVal
+	}
+
+	if rawValue, ok := raw["listen_addr"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.ListenAddr", err)
+		}
+		m.ListenAddr = strVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type GrpcSyncInfo struct {
 LatestBlockHash []byte `cramberry:"1,required" json:"latest_block_hash"`
 LatestAppHash []byte `cramberry:"2,required" json:"latest_app_hash"`
@@ -1982,13 +4426,13 @@ EarliestBlockTime *int64 `cramberry:"6,required" json:"earliest_block_time"`
 CatchingUp *bool `cramberry:"7,required" json:"catching_up"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcSyncInfo) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -1996,51 +4440,51 @@ func (m *GrpcSyncInfo) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcSyncInfo) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcSyncInfo) EncodeTo(w *cramberry.Writer) {
 	if len(m.LatestBlockHash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.LatestBlockHash)
 	}
 	if len(m.LatestAppHash) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.LatestAppHash)
 	}
 	if m.LatestBlockHeight != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(*m.LatestBlockHeight)
 	}
 	if m.LatestBlockTime != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt64(*m.LatestBlockTime)
 	}
 	if m.EarliestBlockHeight != nil {
-		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x58)
 		w.WriteInt64(*m.EarliestBlockHeight)
 	}
 	if m.EarliestBlockTime != nil {
-		w.WriteCompactTag(6, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x68)
 		w.WriteInt64(*m.EarliestBlockTime)
 	}
 	if m.CatchingUp != nil {
-		w.WriteCompactTag(7, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x70)
 		w.WriteBool(*m.CatchingUp)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcSyncInfo) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcSyncInfo) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcSyncInfo) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2070,9 +4514,8 @@ func (m *GrpcSyncInfo) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadBool()
 		m.CatchingUp = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2082,14 +4525,6 @@ func (m *GrpcSyncInfo) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *GrpcSyncInfo) Validate() error {
-	// Field latest_block_hash is required
-	if m.LatestBlockHash == nil {
-		return cramberry.NewValidationError("GrpcSyncInfo", "latest_block_hash", "required field is missing")
-	}
-	// Field latest_app_hash is required
-	if m.LatestAppHash == nil {
-		return cramberry.NewValidationError("GrpcSyncInfo", "latest_app_hash", "required field is missing")
-	}
 	// Field latest_block_height is required
 	if m.LatestBlockHeight == nil {
 		return cramberry.NewValidationError("GrpcSyncInfo", "latest_block_height", "required field is missing")
@@ -2114,19 +4549,212 @@ func (m *GrpcSyncInfo) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcSyncInfo) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"latest_block_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.LatestBlockHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"latest_app_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.LatestAppHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"latest_block_height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.LatestBlockHeight)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"latest_block_time":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.LatestBlockTime)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"earliest_block_height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.EarliestBlockHeight)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"earliest_block_time":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.EarliestBlockTime)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"catching_up":`)
+	if *m.CatchingUp {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcSyncInfo) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"latest_block_hash": true,
+		"latest_app_hash": true,
+		"latest_block_height": true,
+		"latest_block_time": true,
+		"earliest_block_height": true,
+		"earliest_block_time": true,
+		"catching_up": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["latest_block_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.LatestBlockHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.LatestBlockHash", err)
+		} else {
+			m.LatestBlockHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["latest_app_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.LatestAppHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.LatestAppHash", err)
+		} else {
+			m.LatestAppHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["latest_block_height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.LatestBlockHeight = &tempVal
+	}
+
+	if rawValue, ok := raw["latest_block_time"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.LatestBlockTime = &tempVal
+	}
+
+	if rawValue, ok := raw["earliest_block_height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.EarliestBlockHeight = &tempVal
+	}
+
+	if rawValue, ok := raw["earliest_block_time"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.EarliestBlockTime = &tempVal
+	}
+
+	if rawValue, ok := raw["catching_up"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.CatchingUp = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type GrpcValidatorInfo struct {
 Address []byte `cramberry:"1,required" json:"address"`
 PublicKey []byte `cramberry:"2,required" json:"public_key"`
 VotingPower *int64 `cramberry:"3,required" json:"voting_power"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcValidatorInfo) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2134,35 +4762,35 @@ func (m *GrpcValidatorInfo) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcValidatorInfo) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcValidatorInfo) EncodeTo(w *cramberry.Writer) {
 	if len(m.Address) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Address)
 	}
 	if len(m.PublicKey) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.PublicKey)
 	}
 	if m.VotingPower != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(*m.VotingPower)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcValidatorInfo) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcValidatorInfo) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcValidatorInfo) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2176,9 +4804,8 @@ func (m *GrpcValidatorInfo) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.VotingPower = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2188,18 +4815,113 @@ func (m *GrpcValidatorInfo) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *GrpcValidatorInfo) Validate() error {
-	// Field address is required
-	if m.Address == nil {
-		return cramberry.NewValidationError("GrpcValidatorInfo", "address", "required field is missing")
-	}
-	// Field public_key is required
-	if m.PublicKey == nil {
-		return cramberry.NewValidationError("GrpcValidatorInfo", "public_key", "required field is missing")
-	}
 	// Field voting_power is required
 	if m.VotingPower == nil {
 		return cramberry.NewValidationError("GrpcValidatorInfo", "voting_power", "required field is missing")
 	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcValidatorInfo) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"address":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Address))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"public_key":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.PublicKey))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"voting_power":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.VotingPower)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcValidatorInfo) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"address": true,
+		"public_key": true,
+		"voting_power": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["address"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Address", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Address", err)
+		} else {
+			m.Address = decoded
+		}
+	}
+
+	if rawValue, ok := raw["public_key"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.PublicKey", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.PublicKey", err)
+		} else {
+			m.PublicKey = decoded
+		}
+	}
+
+	if rawValue, ok := raw["voting_power"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.VotingPower = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -2210,13 +4932,13 @@ Msg string `cramberry:"2" json:"msg"`
 Time *int64 `cramberry:"3,required" json:"time"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcHealthCheck) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2224,35 +4946,35 @@ func (m *GrpcHealthCheck) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcHealthCheck) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcHealthCheck) EncodeTo(w *cramberry.Writer) {
 	if m.Status != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Status)
 	}
 	if m.Msg != "" {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(m.Msg)
 	}
 	if m.Time != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(*m.Time)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcHealthCheck) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcHealthCheck) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcHealthCheck) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2268,9 +4990,8 @@ func (m *GrpcHealthCheck) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Time = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2292,6 +5013,99 @@ func (m *GrpcHealthCheck) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcHealthCheck) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"status":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Status))
+
+	buf.WriteString(`,"msg":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.Msg))
+
+	buf.WriteString(`,"time":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Time)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcHealthCheck) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"status": true,
+		"msg": true,
+		"time": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["status"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Status = &tempVal
+	}
+
+	if rawValue, ok := raw["msg"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Msg", err)
+		}
+		m.Msg = strVal
+	}
+
+	if rawValue, ok := raw["time"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Time = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type GrpcPeerInfo struct {
 Id *string `cramberry:"1,required" json:"id"`
 Address *string `cramberry:"2,required" json:"address"`
@@ -2300,13 +5114,13 @@ ConnectionStatus *string `cramberry:"4,required" json:"connection_status"`
 NodeInfo GrpcNodeInfo `cramberry:"5" json:"node_info"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcPeerInfo) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2314,41 +5128,45 @@ func (m *GrpcPeerInfo) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcPeerInfo) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcPeerInfo) EncodeTo(w *cramberry.Writer) {
 	if m.Id != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Id)
 	}
 	if m.Address != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(*m.Address)
 	}
 	if m.IsOutbound != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x30)
 		w.WriteBool(*m.IsOutbound)
 	}
 	if m.ConnectionStatus != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteString(*m.ConnectionStatus)
 	}
-	w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
-	m.NodeInfo.encodeTo(w)
+	w.WriteRawByte(0x54)
+	{
+		__cp := w.BeginMessage()
+		m.NodeInfo.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcPeerInfo) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcPeerInfo) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcPeerInfo) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2370,11 +5188,17 @@ func (m *GrpcPeerInfo) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.ConnectionStatus = &tmp
 		case 5:
-			m.NodeInfo.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.NodeInfo.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2404,19 +5228,138 @@ func (m *GrpcPeerInfo) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcPeerInfo) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"id":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Id))
+
+	buf.WriteString(`,"address":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Address))
+
+	buf.WriteString(`,"is_outbound":`)
+	if *m.IsOutbound {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString(`,"connection_status":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.ConnectionStatus))
+
+	buf.WriteString(`,"node_info":`)
+	if msgJSON, err := m.NodeInfo.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcPeerInfo) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"id": true,
+		"address": true,
+		"is_outbound": true,
+		"connection_status": true,
+		"node_info": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["id"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Id = &tempVal
+	}
+
+	if rawValue, ok := raw["address"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Address = &tempVal
+	}
+
+	if rawValue, ok := raw["is_outbound"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.IsOutbound = &tempVal
+	}
+
+	if rawValue, ok := raw["connection_status"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.ConnectionStatus = &tempVal
+	}
+
+	if rawValue, ok := raw["node_info"]; ok {
+		var msg GrpcNodeInfo
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.NodeInfo", err)
+		}
+		m.NodeInfo = msg
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type GrpcBlockId struct {
 Hash []byte `cramberry:"1,required" json:"hash"`
 PartsTotal *int32 `cramberry:"2,required" json:"parts_total"`
 PartsHash []byte `cramberry:"3,required" json:"parts_hash"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcBlockId) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2424,35 +5367,35 @@ func (m *GrpcBlockId) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcBlockId) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcBlockId) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	if m.PartsTotal != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.PartsTotal)
 	}
 	if len(m.PartsHash) > 0 {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteBytes(m.PartsHash)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcBlockId) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcBlockId) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcBlockId) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2466,9 +5409,8 @@ func (m *GrpcBlockId) decodeFrom(r *cramberry.Reader) {
 		case 3:
 			m.PartsHash = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2478,18 +5420,113 @@ func (m *GrpcBlockId) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *GrpcBlockId) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("GrpcBlockId", "hash", "required field is missing")
-	}
 	// Field parts_total is required
 	if m.PartsTotal == nil {
 		return cramberry.NewValidationError("GrpcBlockId", "parts_total", "required field is missing")
 	}
-	// Field parts_hash is required
-	if m.PartsHash == nil {
-		return cramberry.NewValidationError("GrpcBlockId", "parts_hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcBlockId) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"parts_total":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.PartsTotal)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"parts_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.PartsHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcBlockId) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+		"parts_total": true,
+		"parts_hash": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["parts_total"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.PartsTotal = &tempVal
+	}
+
+	if rawValue, ok := raw["parts_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.PartsHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.PartsHash", err)
+		} else {
+			m.PartsHash = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -2505,13 +5542,13 @@ AppHash []byte `cramberry:"7,required" json:"app_hash"`
 Txs [][]byte `cramberry:"8" json:"txs"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcBlock) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2519,58 +5556,62 @@ func (m *GrpcBlock) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcBlock) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcBlock) EncodeTo(w *cramberry.Writer) {
 	if m.Height != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Height)
 	}
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Hash)
 	}
 	if m.Time != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(*m.Time)
 	}
 	if len(m.LastBlockHash) > 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteBytes(m.LastBlockHash)
 	}
 	if len(m.DataHash) > 0 {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
 		w.WriteBytes(m.DataHash)
 	}
 	if len(m.ValidatorsHash) > 0 {
-		w.WriteCompactTag(6, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x64)
 		w.WriteBytes(m.ValidatorsHash)
 	}
 	if len(m.AppHash) > 0 {
-		w.WriteCompactTag(7, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x74)
 		w.WriteBytes(m.AppHash)
 	}
 	if len(m.Txs) > 0 {
-		w.WriteCompactTag(8, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x84)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Txs)))
 		for _, v := range m.Txs {
 			w.WriteBytes(v)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcBlock) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcBlock) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcBlock) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2594,15 +5635,24 @@ func (m *GrpcBlock) decodeFrom(r *cramberry.Reader) {
 		case 7:
 			m.AppHash = r.ReadBytes()
 		case 8:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Txs = make([][]byte, n)
 		for i := 0; i < n; i++ {
 			m.Txs[i] = r.ReadBytes()
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2616,30 +5666,224 @@ func (m *GrpcBlock) Validate() error {
 	if m.Height == nil {
 		return cramberry.NewValidationError("GrpcBlock", "height", "required field is missing")
 	}
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("GrpcBlock", "hash", "required field is missing")
-	}
 	// Field time is required
 	if m.Time == nil {
 		return cramberry.NewValidationError("GrpcBlock", "time", "required field is missing")
 	}
-	// Field last_block_hash is required
-	if m.LastBlockHash == nil {
-		return cramberry.NewValidationError("GrpcBlock", "last_block_hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcBlock) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
-	// Field data_hash is required
-	if m.DataHash == nil {
-		return cramberry.NewValidationError("GrpcBlock", "data_hash", "required field is missing")
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"time":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Time)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"last_block_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.LastBlockHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"data_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.DataHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"validators_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.ValidatorsHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"app_hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.AppHash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"txs":`)
+	buf.WriteString("[")
+	for i, v := range m.Txs {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		buf.WriteString(`"`)
+		buf.WriteString(cramberry.EncodeBase64(v))
+		buf.WriteString(`"`)
 	}
-	// Field validators_hash is required
-	if m.ValidatorsHash == nil {
-		return cramberry.NewValidationError("GrpcBlock", "validators_hash", "required field is missing")
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcBlock) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
 	}
-	// Field app_hash is required
-	if m.AppHash == nil {
-		return cramberry.NewValidationError("GrpcBlock", "app_hash", "required field is missing")
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+		"hash": true,
+		"time": true,
+		"last_block_hash": true,
+		"data_hash": true,
+		"validators_hash": true,
+		"app_hash": true,
+		"txs": true,
 	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["time"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Time = &tempVal
+	}
+
+	if rawValue, ok := raw["last_block_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.LastBlockHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.LastBlockHash", err)
+		} else {
+			m.LastBlockHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["data_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.DataHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.DataHash", err)
+		} else {
+			m.DataHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["validators_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.ValidatorsHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.ValidatorsHash", err)
+		} else {
+			m.ValidatorsHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["app_hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.AppHash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.AppHash", err)
+		} else {
+			m.AppHash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["txs"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Txs", err)
+		}
+		m.Txs = make([][]byte, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var strVal string
+				if err := json.Unmarshal(rawValue, &strVal); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Txs[i]", err)
+				}
+				if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+						return fmt.Errorf("field %s: invalid base64: %w", "m.Txs[i]", err)
+				} else {
+						m.Txs[i] = decoded
+				}
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -2655,13 +5899,13 @@ GasWanted *int64 `cramberry:"7,required" json:"gas_wanted"`
 GasUsed *int64 `cramberry:"8,required" json:"gas_used"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcTxResult) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2669,55 +5913,55 @@ func (m *GrpcTxResult) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcTxResult) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcTxResult) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	if m.Height != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt64(*m.Height)
 	}
 	if m.Index != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.Index)
 	}
 	if m.Code != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt32(*m.Code)
 	}
 	if m.Log != "" {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
 		w.WriteString(m.Log)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(6, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x64)
 		w.WriteBytes(m.Data)
 	}
 	if m.GasWanted != nil {
-		w.WriteCompactTag(7, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x78)
 		w.WriteInt64(*m.GasWanted)
 	}
 	if m.GasUsed != nil {
-		w.WriteCompactTag(8, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x88)
 		w.WriteInt64(*m.GasUsed)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcTxResult) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcTxResult) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcTxResult) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2749,9 +5993,8 @@ func (m *GrpcTxResult) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.GasUsed = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2761,10 +6004,6 @@ func (m *GrpcTxResult) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *GrpcTxResult) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("GrpcTxResult", "hash", "required field is missing")
-	}
 	// Field height is required
 	if m.Height == nil {
 		return cramberry.NewValidationError("GrpcTxResult", "height", "required field is missing")
@@ -2789,16 +6028,227 @@ func (m *GrpcTxResult) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcTxResult) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"index":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Index)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"code":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Code)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"log":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.Log))
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"gas_wanted":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.GasWanted)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"gas_used":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.GasUsed)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcTxResult) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+		"height": true,
+		"index": true,
+		"code": true,
+		"log": true,
+		"data": true,
+		"gas_wanted": true,
+		"gas_used": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["index"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Index = &tempVal
+	}
+
+	if rawValue, ok := raw["code"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Code = &tempVal
+	}
+
+	if rawValue, ok := raw["log"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Log", err)
+		}
+		m.Log = strVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	if rawValue, ok := raw["gas_wanted"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.GasWanted = &tempVal
+	}
+
+	if rawValue, ok := raw["gas_used"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.GasUsed = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type HealthRequest struct {
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *HealthRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2806,31 +6256,30 @@ func (m *HealthRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *HealthRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *HealthRequest) EncodeTo(w *cramberry.Writer) {
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *HealthRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *HealthRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *HealthRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2839,18 +6288,53 @@ func (m *HealthRequest) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *HealthRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *HealthRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+
+	return nil
+}
+
+
 type HealthResponse struct {
 Status *string `cramberry:"1,required" json:"status"`
 Checks []GrpcHealthCheck `cramberry:"2" json:"checks"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *HealthResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2858,34 +6342,38 @@ func (m *HealthResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *HealthResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *HealthResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Status != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Status)
 	}
 	if len(m.Checks) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Checks)))
 		for _, v := range m.Checks {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *HealthResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *HealthResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *HealthResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -2895,15 +6383,24 @@ func (m *HealthResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Status = &tmp
 		case 2:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Checks = make([]GrpcHealthCheck, n)
 		for i := 0; i < n; i++ {
-			m.Checks[i].decodeFrom(r)
+			m.Checks[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -2921,16 +6418,104 @@ func (m *HealthResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *HealthResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"status":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Status))
+
+	buf.WriteString(`,"checks":`)
+	buf.WriteString("[")
+	for i, v := range m.Checks {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *HealthResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"status": true,
+		"checks": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["status"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Status = &tempVal
+	}
+
+	if rawValue, ok := raw["checks"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Checks", err)
+		}
+		m.Checks = make([]GrpcHealthCheck, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg GrpcHealthCheck
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Checks[i]", err)
+				}
+				m.Checks[i] = msg
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type StatusRequest struct {
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *StatusRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2938,36 +6523,70 @@ func (m *StatusRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *StatusRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *StatusRequest) EncodeTo(w *cramberry.Writer) {
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *StatusRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *StatusRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *StatusRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *StatusRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *StatusRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+
+	return nil
 }
 
 
@@ -2977,13 +6596,13 @@ SyncInfo GrpcSyncInfo `cramberry:"2" json:"sync_info"`
 ValidatorInfo GrpcValidatorInfo `cramberry:"3" json:"validator_info"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *StatusResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -2991,61 +6610,176 @@ func (m *StatusResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *StatusResponse) encodeTo(w *cramberry.Writer) {
-	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
-	m.NodeInfo.encodeTo(w)
-	w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
-	m.SyncInfo.encodeTo(w)
-	w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
-	m.ValidatorInfo.encodeTo(w)
+// EncodeTo encodes the message directly to the writer.
+func (m *StatusResponse) EncodeTo(w *cramberry.Writer) {
+	w.WriteRawByte(0x14)
+	{
+		__cp := w.BeginMessage()
+		m.NodeInfo.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
+	w.WriteRawByte(0x24)
+	{
+		__cp := w.BeginMessage()
+		m.SyncInfo.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
+	w.WriteRawByte(0x34)
+	{
+		__cp := w.BeginMessage()
+		m.ValidatorInfo.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *StatusResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *StatusResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *StatusResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			m.NodeInfo.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.NodeInfo.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		case 2:
-			m.SyncInfo.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.SyncInfo.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		case 3:
-			m.ValidatorInfo.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.ValidatorInfo.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *StatusResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"node_info":`)
+	if msgJSON, err := m.NodeInfo.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString(`,"sync_info":`)
+	if msgJSON, err := m.SyncInfo.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString(`,"validator_info":`)
+	if msgJSON, err := m.ValidatorInfo.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *StatusResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"node_info": true,
+		"sync_info": true,
+		"validator_info": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["node_info"]; ok {
+		var msg GrpcNodeInfo
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.NodeInfo", err)
+		}
+		m.NodeInfo = msg
+	}
+
+	if rawValue, ok := raw["sync_info"]; ok {
+		var msg GrpcSyncInfo
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.SyncInfo", err)
+		}
+		m.SyncInfo = msg
+	}
+
+	if rawValue, ok := raw["validator_info"]; ok {
+		var msg GrpcValidatorInfo
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.ValidatorInfo", err)
+		}
+		m.ValidatorInfo = msg
+	}
+
+
+	return nil
 }
 
 
 type NetInfoRequest struct {
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *NetInfoRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3053,36 +6787,70 @@ func (m *NetInfoRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *NetInfoRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *NetInfoRequest) EncodeTo(w *cramberry.Writer) {
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *NetInfoRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *NetInfoRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *NetInfoRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *NetInfoRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *NetInfoRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+
+	return nil
 }
 
 
@@ -3093,13 +6861,13 @@ NumPeers *int32 `cramberry:"3,required" json:"num_peers"`
 Peers []GrpcPeerInfo `cramberry:"4" json:"peers"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *NetInfoResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3107,45 +6875,53 @@ func (m *NetInfoResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *NetInfoResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *NetInfoResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Listening != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x10)
 		w.WriteBool(*m.Listening)
 	}
 	if len(m.Listeners) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Listeners)))
 		for _, v := range m.Listeners {
 			w.WriteString(v)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	if m.NumPeers != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.NumPeers)
 	}
 	if len(m.Peers) > 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Peers)))
 		for _, v := range m.Peers {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *NetInfoResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *NetInfoResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *NetInfoResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3155,25 +6931,44 @@ func (m *NetInfoResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadBool()
 		m.Listening = &tmp
 		case 2:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Listeners = make([]string, n)
 		for i := 0; i < n; i++ {
 			m.Listeners[i] = r.ReadString()
 		}
+		r.EndMessage(__endPos)
+	}
 		case 3:
 			var tmp int32
 		tmp = r.ReadInt32()
 		m.NumPeers = &tmp
 		case 4:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Peers = make([]GrpcPeerInfo, n)
 		for i := 0; i < n; i++ {
-			m.Peers[i].decodeFrom(r)
+			m.Peers[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3195,18 +6990,161 @@ func (m *NetInfoResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *NetInfoResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"listening":`)
+	if *m.Listening {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString(`,"listeners":`)
+	buf.WriteString("[")
+	for i, v := range m.Listeners {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		buf.WriteString(cramberry.EscapeJSONString(v))
+	}
+	buf.WriteString("]")
+
+	buf.WriteString(`,"num_peers":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.NumPeers)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"peers":`)
+	buf.WriteString("[")
+	for i, v := range m.Peers {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *NetInfoResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"listening": true,
+		"listeners": true,
+		"num_peers": true,
+		"peers": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["listening"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.Listening = &tempVal
+	}
+
+	if rawValue, ok := raw["listeners"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Listeners", err)
+		}
+		m.Listeners = make([]string, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var strVal string
+				if err := json.Unmarshal(rawValue, &strVal); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Listeners[i]", err)
+				}
+				m.Listeners[i] = strVal
+		}
+	}
+
+	if rawValue, ok := raw["num_peers"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.NumPeers = &tempVal
+	}
+
+	if rawValue, ok := raw["peers"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Peers", err)
+		}
+		m.Peers = make([]GrpcPeerInfo, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg GrpcPeerInfo
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Peers[i]", err)
+				}
+				m.Peers[i] = msg
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type BroadcastTxRequest struct {
 Tx []byte `cramberry:"1,required" json:"tx"`
 Mode *int32 `cramberry:"2,required" json:"mode"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BroadcastTxRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3214,31 +7152,31 @@ func (m *BroadcastTxRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BroadcastTxRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BroadcastTxRequest) EncodeTo(w *cramberry.Writer) {
 	if len(m.Tx) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Tx)
 	}
 	if m.Mode != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.Mode)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BroadcastTxRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BroadcastTxRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BroadcastTxRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3250,9 +7188,8 @@ func (m *BroadcastTxRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt32()
 		m.Mode = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3262,14 +7199,95 @@ func (m *BroadcastTxRequest) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *BroadcastTxRequest) Validate() error {
-	// Field tx is required
-	if m.Tx == nil {
-		return cramberry.NewValidationError("BroadcastTxRequest", "tx", "required field is missing")
-	}
 	// Field mode is required
 	if m.Mode == nil {
 		return cramberry.NewValidationError("BroadcastTxRequest", "mode", "required field is missing")
 	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BroadcastTxRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"tx":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Tx))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"mode":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Mode)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BroadcastTxRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"tx": true,
+		"mode": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["tx"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Tx", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Tx", err)
+		} else {
+			m.Tx = decoded
+		}
+	}
+
+	if rawValue, ok := raw["mode"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Mode = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -3282,13 +7300,13 @@ Data []byte `cramberry:"4" json:"data"`
 Height int64 `cramberry:"5" json:"height"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BroadcastTxResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3296,43 +7314,43 @@ func (m *BroadcastTxResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BroadcastTxResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BroadcastTxResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Code != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt32(*m.Code)
 	}
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Hash)
 	}
 	if m.Log != "" {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteString(m.Log)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x44)
 		w.WriteBytes(m.Data)
 	}
 	if m.Height != 0 {
-		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x58)
 		w.WriteInt64(m.Height)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BroadcastTxResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BroadcastTxResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BroadcastTxResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3350,9 +7368,8 @@ func (m *BroadcastTxResponse) decodeFrom(r *cramberry.Reader) {
 		case 5:
 			m.Height = r.ReadInt64()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3366,10 +7383,143 @@ func (m *BroadcastTxResponse) Validate() error {
 	if m.Code == nil {
 		return cramberry.NewValidationError("BroadcastTxResponse", "code", "required field is missing")
 	}
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("BroadcastTxResponse", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BroadcastTxResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"code":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Code)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"log":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.Log))
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BroadcastTxResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"code": true,
+		"hash": true,
+		"log": true,
+		"data": true,
+		"height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["code"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Code = &tempVal
+	}
+
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	if rawValue, ok := raw["log"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Log", err)
+		}
+		m.Log = strVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	if rawValue, ok := raw["height"]; ok {
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "m.Height", err)
+			} else {
+				m.Height = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			m.Height = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "m.Height")
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -3381,13 +7531,13 @@ Height int64 `cramberry:"3" json:"height"`
 Prove bool `cramberry:"4" json:"prove"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *QueryRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3395,39 +7545,39 @@ func (m *QueryRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *QueryRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *QueryRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Path != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Path)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Data)
 	}
 	if m.Height != 0 {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(m.Height)
 	}
 	if m.Prove {
-		w.WriteCompactTag(4, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x40)
 		w.WriteBool(m.Prove)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *QueryRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *QueryRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *QueryRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3443,9 +7593,8 @@ func (m *QueryRequest) decodeFrom(r *cramberry.Reader) {
 		case 4:
 			m.Prove = r.ReadBool()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3463,6 +7612,119 @@ func (m *QueryRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *QueryRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"path":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Path))
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"prove":`)
+	if m.Prove {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *QueryRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"path": true,
+		"data": true,
+		"height": true,
+		"prove": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["path"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Path = &tempVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	if rawValue, ok := raw["height"]; ok {
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "m.Height", err)
+			} else {
+				m.Height = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			m.Height = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "m.Height")
+		}
+	}
+
+	if rawValue, ok := raw["prove"]; ok {
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Prove", err)
+		}
+		m.Prove = boolVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type QueryResponse struct {
 Code *int32 `cramberry:"1,required" json:"code"`
 Value []byte `cramberry:"2" json:"value"`
@@ -3471,13 +7733,13 @@ Height int64 `cramberry:"4" json:"height"`
 Proof []byte `cramberry:"5" json:"proof"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *QueryResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3485,43 +7747,43 @@ func (m *QueryResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *QueryResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *QueryResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Code != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt32(*m.Code)
 	}
 	if len(m.Value) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Value)
 	}
 	if m.Log != "" {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteString(m.Log)
 	}
 	if m.Height != 0 {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt64(m.Height)
 	}
 	if len(m.Proof) > 0 {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
 		w.WriteBytes(m.Proof)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *QueryResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *QueryResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *QueryResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3539,9 +7801,8 @@ func (m *QueryResponse) decodeFrom(r *cramberry.Reader) {
 		case 5:
 			m.Proof = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3559,17 +7820,154 @@ func (m *QueryResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *QueryResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"code":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Code)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"value":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Value))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"log":`)
+	buf.WriteString(cramberry.EscapeJSONString(m.Log))
+
+	buf.WriteString(`,"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"proof":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Proof))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *QueryResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"code": true,
+		"value": true,
+		"log": true,
+		"height": true,
+		"proof": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["code"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Code = &tempVal
+	}
+
+	if rawValue, ok := raw["value"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Value", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Value", err)
+		} else {
+			m.Value = decoded
+		}
+	}
+
+	if rawValue, ok := raw["log"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Log", err)
+		}
+		m.Log = strVal
+	}
+
+	if rawValue, ok := raw["height"]; ok {
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "m.Height", err)
+			} else {
+				m.Height = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			m.Height = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "m.Height")
+		}
+	}
+
+	if rawValue, ok := raw["proof"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Proof", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Proof", err)
+		} else {
+			m.Proof = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type BlockRequest struct {
 Height *int64 `cramberry:"1,required" json:"height"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlockRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3577,27 +7975,27 @@ func (m *BlockRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlockRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BlockRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Height != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Height)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlockRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlockRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlockRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3607,9 +8005,8 @@ func (m *BlockRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Height = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3627,17 +8024,84 @@ func (m *BlockRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlockRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlockRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type BlockByHashRequest struct {
 Hash []byte `cramberry:"1,required" json:"hash"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlockByHashRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3645,27 +8109,27 @@ func (m *BlockByHashRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlockByHashRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *BlockByHashRequest) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlockByHashRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlockByHashRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlockByHashRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3673,9 +8137,8 @@ func (m *BlockByHashRequest) decodeFrom(r *cramberry.Reader) {
 		case 1:
 			m.Hash = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3685,10 +8148,67 @@ func (m *BlockByHashRequest) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *BlockByHashRequest) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("BlockByHashRequest", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlockByHashRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlockByHashRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -3698,13 +8218,13 @@ Block GrpcBlock `cramberry:"1" json:"block"`
 BlockId GrpcBlockId `cramberry:"2" json:"block_id"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *BlockResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3712,39 +8232,60 @@ func (m *BlockResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *BlockResponse) encodeTo(w *cramberry.Writer) {
-	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
-	m.Block.encodeTo(w)
-	w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
-	m.BlockId.encodeTo(w)
+// EncodeTo encodes the message directly to the writer.
+func (m *BlockResponse) EncodeTo(w *cramberry.Writer) {
+	w.WriteRawByte(0x14)
+	{
+		__cp := w.BeginMessage()
+		m.Block.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
+	w.WriteRawByte(0x24)
+	{
+		__cp := w.BeginMessage()
+		m.BlockId.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *BlockResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *BlockResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *BlockResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			m.Block.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.Block.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		case 2:
-			m.BlockId.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.BlockId.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3753,17 +8294,84 @@ func (m *BlockResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *BlockResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"block":`)
+	if msgJSON, err := m.Block.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString(`,"block_id":`)
+	if msgJSON, err := m.BlockId.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *BlockResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"block": true,
+		"block_id": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["block"]; ok {
+		var msg GrpcBlock
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Block", err)
+		}
+		m.Block = msg
+	}
+
+	if rawValue, ok := raw["block_id"]; ok {
+		var msg GrpcBlockId
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.BlockId", err)
+		}
+		m.BlockId = msg
+	}
+
+
+	return nil
+}
+
+
 type TxRequest struct {
 Hash []byte `cramberry:"1,required" json:"hash"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TxRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3771,27 +8379,27 @@ func (m *TxRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TxRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TxRequest) EncodeTo(w *cramberry.Writer) {
 	if len(m.Hash) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteBytes(m.Hash)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TxRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TxRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TxRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3799,9 +8407,8 @@ func (m *TxRequest) decodeFrom(r *cramberry.Reader) {
 		case 1:
 			m.Hash = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3811,10 +8418,67 @@ func (m *TxRequest) decodeFrom(r *cramberry.Reader) {
 
 // Validate validates that all required fields are set.
 func (m *TxRequest) Validate() error {
-	// Field hash is required
-	if m.Hash == nil {
-		return cramberry.NewValidationError("TxRequest", "hash", "required field is missing")
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TxRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
 	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"hash":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Hash))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TxRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"hash": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["hash"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Hash", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Hash", err)
+		} else {
+			m.Hash = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -3825,13 +8489,13 @@ Page *int32 `cramberry:"2,required" json:"page"`
 PerPage *int32 `cramberry:"3,required" json:"per_page"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TxSearchRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3839,35 +8503,35 @@ func (m *TxSearchRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TxSearchRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TxSearchRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Query != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Query)
 	}
 	if m.Page != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.Page)
 	}
 	if m.PerPage != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.PerPage)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TxSearchRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TxSearchRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TxSearchRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -3885,9 +8549,8 @@ func (m *TxSearchRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt32()
 		m.PerPage = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -3913,17 +8576,122 @@ func (m *TxSearchRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TxSearchRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"query":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Query))
+
+	buf.WriteString(`,"page":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Page)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"per_page":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.PerPage)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TxSearchRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"query": true,
+		"page": true,
+		"per_page": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["query"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Query = &tempVal
+	}
+
+	if rawValue, ok := raw["page"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Page = &tempVal
+	}
+
+	if rawValue, ok := raw["per_page"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.PerPage = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type TxResponse struct {
 Tx GrpcTxResult `cramberry:"1" json:"tx"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TxResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3931,40 +8699,101 @@ func (m *TxResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TxResponse) encodeTo(w *cramberry.Writer) {
-	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
-	m.Tx.encodeTo(w)
+// EncodeTo encodes the message directly to the writer.
+func (m *TxResponse) EncodeTo(w *cramberry.Writer) {
+	w.WriteRawByte(0x14)
+	{
+		__cp := w.BeginMessage()
+		m.Tx.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TxResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TxResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TxResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			m.Tx.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.Tx.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TxResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"tx":`)
+	if msgJSON, err := m.Tx.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TxResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"tx": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["tx"]; ok {
+		var msg GrpcTxResult
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Tx", err)
+		}
+		m.Tx = msg
+	}
+
+
+	return nil
 }
 
 
@@ -3976,13 +8805,13 @@ PerPage *int32 `cramberry:"4,required" json:"per_page"`
 TotalPages *int32 `cramberry:"5,required" json:"total_pages"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *TxSearchResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -3990,56 +8819,70 @@ func (m *TxSearchResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *TxSearchResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *TxSearchResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Txs) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Txs)))
 		for _, v := range m.Txs {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	if m.Total != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.Total)
 	}
 	if m.Page != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt32(*m.Page)
 	}
 	if m.PerPage != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt32(*m.PerPage)
 	}
 	if m.TotalPages != nil {
-		w.WriteCompactTag(5, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x58)
 		w.WriteInt32(*m.TotalPages)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *TxSearchResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *TxSearchResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *TxSearchResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Txs = make([]GrpcTxResult, n)
 		for i := 0; i < n; i++ {
-			m.Txs[i].decodeFrom(r)
+			m.Txs[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		case 2:
 			var tmp int32
 		tmp = r.ReadInt32()
@@ -4057,9 +8900,8 @@ func (m *TxSearchResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt32()
 		m.TotalPages = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4089,16 +8931,186 @@ func (m *TxSearchResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *TxSearchResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"txs":`)
+	buf.WriteString("[")
+	for i, v := range m.Txs {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString(`,"total":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Total)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"page":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Page)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"per_page":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.PerPage)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"total_pages":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.TotalPages)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *TxSearchResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"txs": true,
+		"total": true,
+		"page": true,
+		"per_page": true,
+		"total_pages": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["txs"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Txs", err)
+		}
+		m.Txs = make([]GrpcTxResult, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg GrpcTxResult
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Txs[i]", err)
+				}
+				m.Txs[i] = msg
+		}
+	}
+
+	if rawValue, ok := raw["total"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Total = &tempVal
+	}
+
+	if rawValue, ok := raw["page"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Page = &tempVal
+	}
+
+	if rawValue, ok := raw["per_page"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.PerPage = &tempVal
+	}
+
+	if rawValue, ok := raw["total_pages"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.TotalPages = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type PeersRequest struct {
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *PeersRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4106,36 +9118,70 @@ func (m *PeersRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *PeersRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *PeersRequest) EncodeTo(w *cramberry.Writer) {
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *PeersRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *PeersRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *PeersRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *PeersRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *PeersRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+
+	return nil
 }
 
 
@@ -4143,13 +9189,13 @@ type PeersResponse struct {
 Peers []GrpcPeerInfo `cramberry:"1" json:"peers"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *PeersResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4157,62 +9203,141 @@ func (m *PeersResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *PeersResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *PeersResponse) EncodeTo(w *cramberry.Writer) {
 	if len(m.Peers) > 0 {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Peers)))
 		for _, v := range m.Peers {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *PeersResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *PeersResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *PeersResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Peers = make([]GrpcPeerInfo, n)
 		for i := 0; i < n; i++ {
-			m.Peers[i].decodeFrom(r)
+			m.Peers[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *PeersResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"peers":`)
+	buf.WriteString("[")
+	for i, v := range m.Peers {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *PeersResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"peers": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["peers"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Peers", err)
+		}
+		m.Peers = make([]GrpcPeerInfo, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg GrpcPeerInfo
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Peers[i]", err)
+				}
+				m.Peers[i] = msg
+		}
+	}
+
+
+	return nil
 }
 
 
 type ConsensusStateRequest struct {
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *ConsensusStateRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4220,36 +9345,70 @@ func (m *ConsensusStateRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *ConsensusStateRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *ConsensusStateRequest) EncodeTo(w *cramberry.Writer) {
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *ConsensusStateRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *ConsensusStateRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *ConsensusStateRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
 		}
 	}
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *ConsensusStateRequest) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *ConsensusStateRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+
+	return nil
 }
 
 
@@ -4261,13 +9420,13 @@ StartTime *int64 `cramberry:"4,required" json:"start_time"`
 Validators []GrpcValidatorInfo `cramberry:"5" json:"validators"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *ConsensusStateResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4275,46 +9434,50 @@ func (m *ConsensusStateResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *ConsensusStateResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *ConsensusStateResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Height != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt64(*m.Height)
 	}
 	if m.Round != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x28)
 		w.WriteInt32(*m.Round)
 	}
 	if m.Step != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteString(*m.Step)
 	}
 	if m.StartTime != nil {
-		w.WriteCompactTag(4, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x48)
 		w.WriteInt64(*m.StartTime)
 	}
 	if len(m.Validators) > 0 {
-		w.WriteCompactTag(5, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x54)
+		{
+		__cp := w.BeginMessage()
 		w.WriteUvarint(uint64(len(m.Validators)))
 		for _, v := range m.Validators {
-			v.encodeTo(w)
+			v.EncodeTo(w)
 		}
+		w.EndMessage(__cp)
+	}
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *ConsensusStateResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *ConsensusStateResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *ConsensusStateResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4336,15 +9499,24 @@ func (m *ConsensusStateResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.StartTime = &tmp
 		case 5:
-			n := int(r.ReadUvarint())
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		n := r.ReadArrayHeader()
+		if r.Err() != nil {
+			return
+		}
 		m.Validators = make([]GrpcValidatorInfo, n)
 		for i := 0; i < n; i++ {
-			m.Validators[i].decodeFrom(r)
+			m.Validators[i].DecodeFrom(r)
 		}
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4374,18 +9546,178 @@ func (m *ConsensusStateResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *ConsensusStateResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"round":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Round)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"step":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Step))
+
+	buf.WriteString(`,"start_time":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.StartTime)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"validators":`)
+	buf.WriteString("[")
+	for i, v := range m.Validators {
+		if i > 0 {
+			buf.WriteString(",")
+		}
+		if msgJSON, err := v.ToJSON(); err != nil {
+				return "", err
+		} else {
+				buf.WriteString(msgJSON)
+		}
+	}
+	buf.WriteString("]")
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *ConsensusStateResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"height": true,
+		"round": true,
+		"step": true,
+		"start_time": true,
+		"validators": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	if rawValue, ok := raw["round"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Round = &tempVal
+	}
+
+	if rawValue, ok := raw["step"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Step = &tempVal
+	}
+
+	if rawValue, ok := raw["start_time"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.StartTime = &tempVal
+	}
+
+	if rawValue, ok := raw["validators"]; ok {
+		var arrRaw []json.RawMessage
+		if err := json.Unmarshal(rawValue, &arrRaw); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Validators", err)
+		}
+		m.Validators = make([]GrpcValidatorInfo, len(arrRaw))
+		for i, elemRaw := range arrRaw {
+			rawValue = elemRaw
+				var msg GrpcValidatorInfo
+				if err := msg.FromJSON(string(rawValue)); err != nil {
+						return fmt.Errorf("field %s: %w", "m.Validators[i]", err)
+				}
+				m.Validators[i] = msg
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type SubscribeRequest struct {
 Subscriber *string `cramberry:"1,required" json:"subscriber"`
 Query *string `cramberry:"2,required" json:"query"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SubscribeRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4393,31 +9725,31 @@ func (m *SubscribeRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SubscribeRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *SubscribeRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Subscriber != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Subscriber)
 	}
 	if m.Query != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(*m.Query)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SubscribeRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SubscribeRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SubscribeRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4431,9 +9763,8 @@ func (m *SubscribeRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Query = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4455,19 +9786,90 @@ func (m *SubscribeRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SubscribeRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"subscriber":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Subscriber))
+
+	buf.WriteString(`,"query":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Query))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SubscribeRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"subscriber": true,
+		"query": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["subscriber"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Subscriber = &tempVal
+	}
+
+	if rawValue, ok := raw["query"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Query = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type EventMessage struct {
 Type *string `cramberry:"1,required" json:"type"`
 Data []byte `cramberry:"2,required" json:"data"`
 Height *int64 `cramberry:"3,required" json:"height"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *EventMessage) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4475,35 +9877,35 @@ func (m *EventMessage) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *EventMessage) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *EventMessage) EncodeTo(w *cramberry.Writer) {
 	if m.Type != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Type)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteBytes(m.Data)
 	}
 	if m.Height != nil {
-		w.WriteCompactTag(3, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x38)
 		w.WriteInt64(*m.Height)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *EventMessage) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *EventMessage) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *EventMessage) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4519,9 +9921,8 @@ func (m *EventMessage) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadInt64()
 		m.Height = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4535,10 +9936,6 @@ func (m *EventMessage) Validate() error {
 	if m.Type == nil {
 		return cramberry.NewValidationError("EventMessage", "type", "required field is missing")
 	}
-	// Field data is required
-	if m.Data == nil {
-		return cramberry.NewValidationError("EventMessage", "data", "required field is missing")
-	}
 	// Field height is required
 	if m.Height == nil {
 		return cramberry.NewValidationError("EventMessage", "height", "required field is missing")
@@ -4547,17 +9944,116 @@ func (m *EventMessage) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *EventMessage) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"type":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Type))
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"height":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Height)))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *EventMessage) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"type": true,
+		"data": true,
+		"height": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["type"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Type = &tempVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	if rawValue, ok := raw["height"]; ok {
+		var tempVal int64
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int64(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int64(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Height = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type SubscribeResponse struct {
 Event EventMessage `cramberry:"1" json:"event"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *SubscribeResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4565,35 +10061,45 @@ func (m *SubscribeResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *SubscribeResponse) encodeTo(w *cramberry.Writer) {
-	w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
-	m.Event.encodeTo(w)
+// EncodeTo encodes the message directly to the writer.
+func (m *SubscribeResponse) EncodeTo(w *cramberry.Writer) {
+	w.WriteRawByte(0x14)
+	{
+		__cp := w.BeginMessage()
+		m.Event.EncodeTo(w)
+		w.EndMessage(__cp)
+	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *SubscribeResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *SubscribeResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *SubscribeResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
 		switch fieldNum {
 		case 1:
-			m.Event.decodeFrom(r)
+			{
+		__endPos := r.BeginMessage()
+		if __endPos < 0 {
+			return
+		}
+		m.Event.DecodeFrom(r)
+		r.EndMessage(__endPos)
+	}
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4602,18 +10108,69 @@ func (m *SubscribeResponse) decodeFrom(r *cramberry.Reader) {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *SubscribeResponse) ToJSON() (string, error) {
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"event":`)
+	if msgJSON, err := m.Event.ToJSON(); err != nil {
+		return "", err
+	} else {
+		buf.WriteString(msgJSON)
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *SubscribeResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"event": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["event"]; ok {
+		var msg EventMessage
+		if err := msg.FromJSON(string(rawValue)); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Event", err)
+		}
+		m.Event = msg
+	}
+
+
+	return nil
+}
+
+
 type UnsubscribeRequest struct {
 Subscriber *string `cramberry:"1,required" json:"subscriber"`
 Query *string `cramberry:"2,required" json:"query"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *UnsubscribeRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4621,31 +10178,31 @@ func (m *UnsubscribeRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *UnsubscribeRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *UnsubscribeRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Subscriber != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Subscriber)
 	}
 	if m.Query != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(*m.Query)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *UnsubscribeRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *UnsubscribeRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *UnsubscribeRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4659,9 +10216,8 @@ func (m *UnsubscribeRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Query = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4683,17 +10239,88 @@ func (m *UnsubscribeRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *UnsubscribeRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"subscriber":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Subscriber))
+
+	buf.WriteString(`,"query":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Query))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *UnsubscribeRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"subscriber": true,
+		"query": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["subscriber"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Subscriber = &tempVal
+	}
+
+	if rawValue, ok := raw["query"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Query = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type UnsubscribeResponse struct {
 Success *bool `cramberry:"1,required" json:"success"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *UnsubscribeResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4701,27 +10328,27 @@ func (m *UnsubscribeResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *UnsubscribeResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *UnsubscribeResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Success != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x10)
 		w.WriteBool(*m.Success)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *UnsubscribeResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *UnsubscribeResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *UnsubscribeResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4731,9 +10358,8 @@ func (m *UnsubscribeResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadBool()
 		m.Success = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4751,17 +10377,78 @@ func (m *UnsubscribeResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *UnsubscribeResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"success":`)
+	if *m.Success {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *UnsubscribeResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"success": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["success"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.Success = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type UnsubscribeAllRequest struct {
 Subscriber *string `cramberry:"1,required" json:"subscriber"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *UnsubscribeAllRequest) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4769,27 +10456,27 @@ func (m *UnsubscribeAllRequest) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *UnsubscribeAllRequest) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *UnsubscribeAllRequest) EncodeTo(w *cramberry.Writer) {
 	if m.Subscriber != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x14)
 		w.WriteString(*m.Subscriber)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *UnsubscribeAllRequest) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *UnsubscribeAllRequest) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *UnsubscribeAllRequest) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4799,9 +10486,8 @@ func (m *UnsubscribeAllRequest) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadString()
 		m.Subscriber = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4819,17 +10505,74 @@ func (m *UnsubscribeAllRequest) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *UnsubscribeAllRequest) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"subscriber":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Subscriber))
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *UnsubscribeAllRequest) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"subscriber": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["subscriber"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Subscriber = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type UnsubscribeAllResponse struct {
 Success *bool `cramberry:"1,required" json:"success"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *UnsubscribeAllResponse) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4837,27 +10580,27 @@ func (m *UnsubscribeAllResponse) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *UnsubscribeAllResponse) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *UnsubscribeAllResponse) EncodeTo(w *cramberry.Writer) {
 	if m.Success != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2Varint)
+		w.WriteRawByte(0x10)
 		w.WriteBool(*m.Success)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *UnsubscribeAllResponse) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *UnsubscribeAllResponse) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *UnsubscribeAllResponse) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4867,9 +10610,8 @@ func (m *UnsubscribeAllResponse) decodeFrom(r *cramberry.Reader) {
 		tmp = r.ReadBool()
 		m.Success = &tmp
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4887,19 +10629,80 @@ func (m *UnsubscribeAllResponse) Validate() error {
 }
 
 
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *UnsubscribeAllResponse) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"success":`)
+	if *m.Success {
+		buf.WriteString("true")
+	} else {
+		buf.WriteString("false")
+	}
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *UnsubscribeAllResponse) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"success": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["success"]; ok {
+		var tempVal bool
+		var boolVal bool
+		if err := json.Unmarshal(rawValue, &boolVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = boolVal
+		m.Success = &tempVal
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
+	return nil
+}
+
+
 type GrpcError struct {
 Code *int32 `cramberry:"1,required" json:"code"`
 Msg *string `cramberry:"2,required" json:"msg"`
 Data []byte `cramberry:"3" json:"data"`
 }
 
-// MarshalCramberry encodes the message to binary format using optimized V2 encoding.
-// This method uses direct field access without reflection for maximum performance.
+// MarshalCramberry encodes the message to binary format using direct field
+// access without reflection for maximum performance.
 func (m *GrpcError) MarshalCramberry() ([]byte, error) {
 	w := cramberry.GetWriter()
 	defer cramberry.PutWriter(w)
 
-	m.encodeTo(w)
+	m.EncodeTo(w)
 
 	if w.Err() != nil {
 		return nil, w.Err()
@@ -4907,35 +10710,35 @@ func (m *GrpcError) MarshalCramberry() ([]byte, error) {
 	return w.BytesCopy(), nil
 }
 
-// encodeTo encodes the message directly to the writer using V2 format.
-func (m *GrpcError) encodeTo(w *cramberry.Writer) {
+// EncodeTo encodes the message directly to the writer.
+func (m *GrpcError) EncodeTo(w *cramberry.Writer) {
 	if m.Code != nil {
-		w.WriteCompactTag(1, cramberry.WireTypeV2SVarint)
+		w.WriteRawByte(0x18)
 		w.WriteInt32(*m.Code)
 	}
 	if m.Msg != nil {
-		w.WriteCompactTag(2, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x24)
 		w.WriteString(*m.Msg)
 	}
 	if len(m.Data) > 0 {
-		w.WriteCompactTag(3, cramberry.WireTypeV2Bytes)
+		w.WriteRawByte(0x34)
 		w.WriteBytes(m.Data)
 	}
 	w.WriteEndMarker()
 }
 
-// UnmarshalCramberry decodes the message from binary format using optimized V2 decoding.
-// This method uses direct field access without reflection for maximum performance.
+// UnmarshalCramberry decodes the message from binary format using direct
+// field access without reflection for maximum performance.
 func (m *GrpcError) UnmarshalCramberry(data []byte) error {
 	r := cramberry.NewReaderWithOptions(data, cramberry.DefaultOptions)
-	m.decodeFrom(r)
+	m.DecodeFrom(r)
 	return r.Err()
 }
 
-// decodeFrom decodes the message from the reader using V2 format.
-func (m *GrpcError) decodeFrom(r *cramberry.Reader) {
+// DecodeFrom decodes the message from the reader.
+func (m *GrpcError) DecodeFrom(r *cramberry.Reader) {
 	for {
-		fieldNum, _ := r.ReadCompactTag()
+		fieldNum, wireType := r.ReadTag()
 		if fieldNum == 0 {
 			break
 		}
@@ -4951,9 +10754,8 @@ func (m *GrpcError) decodeFrom(r *cramberry.Reader) {
 		case 3:
 			m.Data = r.ReadBytes()
 		default:
-			// Skip unknown field - read wire type would have been needed
-			// For now, just break as we can't determine how to skip
-			break
+			// Skip unknown field for forward compatibility
+			r.SkipValue(wireType)
 		}
 		if r.Err() != nil {
 			return
@@ -4971,6 +10773,105 @@ func (m *GrpcError) Validate() error {
 	if m.Msg == nil {
 		return cramberry.NewValidationError("GrpcError", "msg", "required field is missing")
 	}
+	return nil
+}
+
+
+// ToJSON encodes the message to deterministic JSON format.
+// All integers are encoded as strings to prevent precision loss in JavaScript.
+// Output is compact (no whitespace) with lexicographically sorted map keys.
+func (m *GrpcError) ToJSON() (string, error) {
+	// Validate required fields before encoding
+	if err := m.Validate(); err != nil {
+		return "", fmt.Errorf("ToJSON validation failed: %w", err)
+	}
+
+	var buf strings.Builder
+	buf.WriteString("{")
+	buf.WriteString(`"code":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.FormatInt64ToString(int64(*m.Code)))
+	buf.WriteString(`"`)
+
+	buf.WriteString(`,"msg":`)
+	buf.WriteString(cramberry.EscapeJSONString(*m.Msg))
+
+	buf.WriteString(`,"data":`)
+	buf.WriteString(`"`)
+	buf.WriteString(cramberry.EncodeBase64(m.Data))
+	buf.WriteString(`"`)
+
+	buf.WriteString("}")
+	return buf.String(), nil
+}
+
+// FromJSON decodes the message from JSON format.
+// Accepts both string-encoded and numeric integers for flexibility.
+// Unknown fields cause an error (strict mode).
+func (m *GrpcError) FromJSON(s string) error {
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return fmt.Errorf("FromJSON: %w", err)
+	}
+
+	// Check for unknown fields (strict mode)
+	allowedFields := map[string]bool{
+		"code": true,
+		"msg": true,
+		"data": true,
+	}
+	for key := range raw {
+		if !allowedFields[key] {
+			return fmt.Errorf("FromJSON: unknown field %q", key)
+		}
+	}
+
+	// Decode fields
+	if rawValue, ok := raw["code"]; ok {
+		var tempVal int32
+		var strVal string
+		var numVal float64
+		if err := json.Unmarshal(rawValue, &strVal); err == nil {
+			if v, err := cramberry.ParseInt64FromString(strVal); err != nil {
+				return fmt.Errorf("field %s: %w", "tempVal", err)
+			} else {
+				tempVal = int32(v)
+			}
+		} else if err := json.Unmarshal(rawValue, &numVal); err == nil {
+			tempVal = int32(numVal)
+		} else {
+			return fmt.Errorf("field %s: expected string or number", "tempVal")
+		}
+		m.Code = &tempVal
+	}
+
+	if rawValue, ok := raw["msg"]; ok {
+		var tempVal string
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "tempVal", err)
+		}
+		tempVal = strVal
+		m.Msg = &tempVal
+	}
+
+	if rawValue, ok := raw["data"]; ok {
+		var strVal string
+		if err := json.Unmarshal(rawValue, &strVal); err != nil {
+			return fmt.Errorf("field %s: %w", "m.Data", err)
+		}
+		if decoded, err := cramberry.DecodeBase64(strVal); err != nil {
+			return fmt.Errorf("field %s: invalid base64: %w", "m.Data", err)
+		} else {
+			m.Data = decoded
+		}
+	}
+
+	// Validate required fields after decoding
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("FromJSON validation failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -5003,6 +10904,145 @@ func HandshakeMessageTypeID(v HandshakeMessage) cramberry.TypeID {
 	}
 }
 
+// EncodeHandshakeMessage writes a polymorphic HandshakeMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeHandshakeMessage(w *cramberry.Writer, v HandshakeMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *HelloRequest:
+		w.WriteTypeID(128)
+		__c.EncodeTo(w)
+	case *HelloResponse:
+		w.WriteTypeID(129)
+		__c.EncodeTo(w)
+	case *HelloFinalize:
+		w.WriteTypeID(130)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeHandshakeMessage reads a polymorphic HandshakeMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeHandshakeMessage(r *cramberry.Reader) HandshakeMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 128:
+		var __v HelloRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 129:
+		var __v HelloResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 130:
+		var __v HelloFinalize
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONHandshakeMessage serializes a polymorphic
+// HandshakeMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONHandshakeMessage(v HandshakeMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *HelloRequest:
+		name = "HelloRequest"
+		inner, err = __c.ToJSON()
+	case *HelloResponse:
+		name = "HelloResponse"
+		inner, err = __c.ToJSON()
+	case *HelloFinalize:
+		name = "HelloFinalize"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONHandshakeMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONHandshakeMessage reverses ToJSONHandshakeMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONHandshakeMessage(s string) (HandshakeMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONHandshakeMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONHandshakeMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONHandshakeMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONHandshakeMessage: %w", err)
+	}
+	switch typeName {
+	case "HelloRequest":
+		var v HelloRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "HelloResponse":
+		var v HelloResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "HelloFinalize":
+		var v HelloFinalize
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONHandshakeMessage: unknown _type %q", typeName)
+	}
+}
+
 // PexMessage is a polymorphic interface.
 type PexMessage interface {
 	isPexMessage()
@@ -5023,6 +11063,129 @@ func PexMessageTypeID(v PexMessage) cramberry.TypeID {
 		return 132
 	default:
 		return 0
+	}
+}
+
+// EncodePexMessage writes a polymorphic PexMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodePexMessage(w *cramberry.Writer, v PexMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *AddressRequest:
+		w.WriteTypeID(131)
+		__c.EncodeTo(w)
+	case *AddressResponse:
+		w.WriteTypeID(132)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodePexMessage reads a polymorphic PexMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodePexMessage(r *cramberry.Reader) PexMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 131:
+		var __v AddressRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 132:
+		var __v AddressResponse
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONPexMessage serializes a polymorphic
+// PexMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONPexMessage(v PexMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *AddressRequest:
+		name = "AddressRequest"
+		inner, err = __c.ToJSON()
+	case *AddressResponse:
+		name = "AddressResponse"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONPexMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONPexMessage reverses ToJSONPexMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONPexMessage(s string) (PexMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONPexMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONPexMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONPexMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONPexMessage: %w", err)
+	}
+	switch typeName {
+	case "AddressRequest":
+		var v AddressRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "AddressResponse":
+		var v AddressResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONPexMessage: unknown _type %q", typeName)
 	}
 }
 
@@ -5057,6 +11220,161 @@ func TransactionsMessageTypeID(v TransactionsMessage) cramberry.TypeID {
 	}
 }
 
+// EncodeTransactionsMessage writes a polymorphic TransactionsMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeTransactionsMessage(w *cramberry.Writer, v TransactionsMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *TransactionsRequest:
+		w.WriteTypeID(133)
+		__c.EncodeTo(w)
+	case *TransactionsResponse:
+		w.WriteTypeID(134)
+		__c.EncodeTo(w)
+	case *TransactionDataRequest:
+		w.WriteTypeID(135)
+		__c.EncodeTo(w)
+	case *TransactionDataResponse:
+		w.WriteTypeID(136)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeTransactionsMessage reads a polymorphic TransactionsMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeTransactionsMessage(r *cramberry.Reader) TransactionsMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 133:
+		var __v TransactionsRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 134:
+		var __v TransactionsResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 135:
+		var __v TransactionDataRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 136:
+		var __v TransactionDataResponse
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONTransactionsMessage serializes a polymorphic
+// TransactionsMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONTransactionsMessage(v TransactionsMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *TransactionsRequest:
+		name = "TransactionsRequest"
+		inner, err = __c.ToJSON()
+	case *TransactionsResponse:
+		name = "TransactionsResponse"
+		inner, err = __c.ToJSON()
+	case *TransactionDataRequest:
+		name = "TransactionDataRequest"
+		inner, err = __c.ToJSON()
+	case *TransactionDataResponse:
+		name = "TransactionDataResponse"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONTransactionsMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONTransactionsMessage reverses ToJSONTransactionsMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONTransactionsMessage(s string) (TransactionsMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONTransactionsMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONTransactionsMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONTransactionsMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONTransactionsMessage: %w", err)
+	}
+	switch typeName {
+	case "TransactionsRequest":
+		var v TransactionsRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TransactionsResponse":
+		var v TransactionsResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TransactionDataRequest":
+		var v TransactionDataRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TransactionDataResponse":
+		var v TransactionDataResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONTransactionsMessage: unknown _type %q", typeName)
+	}
+}
+
 // BlockSyncMessage is a polymorphic interface.
 type BlockSyncMessage interface {
 	isBlockSyncMessage()
@@ -5080,6 +11398,129 @@ func BlockSyncMessageTypeID(v BlockSyncMessage) cramberry.TypeID {
 	}
 }
 
+// EncodeBlockSyncMessage writes a polymorphic BlockSyncMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeBlockSyncMessage(w *cramberry.Writer, v BlockSyncMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *BlocksRequest:
+		w.WriteTypeID(137)
+		__c.EncodeTo(w)
+	case *BlocksResponse:
+		w.WriteTypeID(138)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeBlockSyncMessage reads a polymorphic BlockSyncMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeBlockSyncMessage(r *cramberry.Reader) BlockSyncMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 137:
+		var __v BlocksRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 138:
+		var __v BlocksResponse
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONBlockSyncMessage serializes a polymorphic
+// BlockSyncMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONBlockSyncMessage(v BlockSyncMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *BlocksRequest:
+		name = "BlocksRequest"
+		inner, err = __c.ToJSON()
+	case *BlocksResponse:
+		name = "BlocksResponse"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONBlockSyncMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONBlockSyncMessage reverses ToJSONBlockSyncMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONBlockSyncMessage(s string) (BlockSyncMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONBlockSyncMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONBlockSyncMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONBlockSyncMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONBlockSyncMessage: %w", err)
+	}
+	switch typeName {
+	case "BlocksRequest":
+		var v BlocksRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BlocksResponse":
+		var v BlocksResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONBlockSyncMessage: unknown _type %q", typeName)
+	}
+}
+
 // BlockMessage is a polymorphic interface.
 type BlockMessage interface {
 	isBlockMessage()
@@ -5096,6 +11537,113 @@ func BlockMessageTypeID(v BlockMessage) cramberry.TypeID {
 		return 139
 	default:
 		return 0
+	}
+}
+
+// EncodeBlockMessage writes a polymorphic BlockMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeBlockMessage(w *cramberry.Writer, v BlockMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *BlockData:
+		w.WriteTypeID(139)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeBlockMessage reads a polymorphic BlockMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeBlockMessage(r *cramberry.Reader) BlockMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 139:
+		var __v BlockData
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONBlockMessage serializes a polymorphic
+// BlockMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONBlockMessage(v BlockMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *BlockData:
+		name = "BlockData"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONBlockMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONBlockMessage reverses ToJSONBlockMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONBlockMessage(s string) (BlockMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONBlockMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONBlockMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONBlockMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONBlockMessage: %w", err)
+	}
+	switch typeName {
+	case "BlockData":
+		var v BlockData
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONBlockMessage: unknown _type %q", typeName)
 	}
 }
 
@@ -5130,6 +11678,161 @@ func HousekeepingMessagesTypeID(v HousekeepingMessages) cramberry.TypeID {
 	}
 }
 
+// EncodeHousekeepingMessages writes a polymorphic HousekeepingMessages
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeHousekeepingMessages(w *cramberry.Writer, v HousekeepingMessages) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *LatencyRequest:
+		w.WriteTypeID(140)
+		__c.EncodeTo(w)
+	case *LatencyResponse:
+		w.WriteTypeID(141)
+		__c.EncodeTo(w)
+	case *FirewallRequest:
+		w.WriteTypeID(142)
+		__c.EncodeTo(w)
+	case *FirewallResponse:
+		w.WriteTypeID(143)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeHousekeepingMessages reads a polymorphic HousekeepingMessages
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeHousekeepingMessages(r *cramberry.Reader) HousekeepingMessages {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 140:
+		var __v LatencyRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 141:
+		var __v LatencyResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 142:
+		var __v FirewallRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 143:
+		var __v FirewallResponse
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONHousekeepingMessages serializes a polymorphic
+// HousekeepingMessages value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONHousekeepingMessages(v HousekeepingMessages) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *LatencyRequest:
+		name = "LatencyRequest"
+		inner, err = __c.ToJSON()
+	case *LatencyResponse:
+		name = "LatencyResponse"
+		inner, err = __c.ToJSON()
+	case *FirewallRequest:
+		name = "FirewallRequest"
+		inner, err = __c.ToJSON()
+	case *FirewallResponse:
+		name = "FirewallResponse"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONHousekeepingMessages: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONHousekeepingMessages reverses ToJSONHousekeepingMessages.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONHousekeepingMessages(s string) (HousekeepingMessages, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONHousekeepingMessages: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONHousekeepingMessages: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONHousekeepingMessages: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONHousekeepingMessages: %w", err)
+	}
+	switch typeName {
+	case "LatencyRequest":
+		var v LatencyRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "LatencyResponse":
+		var v LatencyResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "FirewallRequest":
+		var v FirewallRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "FirewallResponse":
+		var v FirewallResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONHousekeepingMessages: unknown _type %q", typeName)
+	}
+}
+
 // StateSyncMessage is a polymorphic interface.
 type StateSyncMessage interface {
 	isStateSyncMessage()
@@ -5144,6 +11847,10 @@ func (*SnapshotChunkRequest) isStateSyncMessage() {}
 
 func (*SnapshotChunkResponse) isStateSyncMessage() {}
 
+func (*LightBlockRequest) isStateSyncMessage() {}
+
+func (*LightBlockResponse) isStateSyncMessage() {}
+
 
 // StateSyncMessageTypeID returns the type ID for interface implementations.
 func StateSyncMessageTypeID(v StateSyncMessage) cramberry.TypeID {
@@ -5156,8 +11863,199 @@ func StateSyncMessageTypeID(v StateSyncMessage) cramberry.TypeID {
 		return 146
 	case *SnapshotChunkResponse:
 		return 147
+	case *LightBlockRequest:
+		return 148
+	case *LightBlockResponse:
+		return 149
 	default:
 		return 0
+	}
+}
+
+// EncodeStateSyncMessage writes a polymorphic StateSyncMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeStateSyncMessage(w *cramberry.Writer, v StateSyncMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *SnapshotsRequest:
+		w.WriteTypeID(144)
+		__c.EncodeTo(w)
+	case *SnapshotsResponse:
+		w.WriteTypeID(145)
+		__c.EncodeTo(w)
+	case *SnapshotChunkRequest:
+		w.WriteTypeID(146)
+		__c.EncodeTo(w)
+	case *SnapshotChunkResponse:
+		w.WriteTypeID(147)
+		__c.EncodeTo(w)
+	case *LightBlockRequest:
+		w.WriteTypeID(148)
+		__c.EncodeTo(w)
+	case *LightBlockResponse:
+		w.WriteTypeID(149)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeStateSyncMessage reads a polymorphic StateSyncMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeStateSyncMessage(r *cramberry.Reader) StateSyncMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 144:
+		var __v SnapshotsRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 145:
+		var __v SnapshotsResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 146:
+		var __v SnapshotChunkRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 147:
+		var __v SnapshotChunkResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 148:
+		var __v LightBlockRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 149:
+		var __v LightBlockResponse
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONStateSyncMessage serializes a polymorphic
+// StateSyncMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONStateSyncMessage(v StateSyncMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *SnapshotsRequest:
+		name = "SnapshotsRequest"
+		inner, err = __c.ToJSON()
+	case *SnapshotsResponse:
+		name = "SnapshotsResponse"
+		inner, err = __c.ToJSON()
+	case *SnapshotChunkRequest:
+		name = "SnapshotChunkRequest"
+		inner, err = __c.ToJSON()
+	case *SnapshotChunkResponse:
+		name = "SnapshotChunkResponse"
+		inner, err = __c.ToJSON()
+	case *LightBlockRequest:
+		name = "LightBlockRequest"
+		inner, err = __c.ToJSON()
+	case *LightBlockResponse:
+		name = "LightBlockResponse"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONStateSyncMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONStateSyncMessage reverses ToJSONStateSyncMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONStateSyncMessage(s string) (StateSyncMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONStateSyncMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONStateSyncMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONStateSyncMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONStateSyncMessage: %w", err)
+	}
+	switch typeName {
+	case "SnapshotsRequest":
+		var v SnapshotsRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "SnapshotsResponse":
+		var v SnapshotsResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "SnapshotChunkRequest":
+		var v SnapshotChunkRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "SnapshotChunkResponse":
+		var v SnapshotChunkResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "LightBlockRequest":
+		var v LightBlockRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "LightBlockResponse":
+		var v LightBlockResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONStateSyncMessage: unknown _type %q", typeName)
 	}
 }
 
@@ -5289,6 +12187,561 @@ func GrpcMessageTypeID(v GrpcMessage) cramberry.TypeID {
 		return 228
 	default:
 		return 0
+	}
+}
+
+// EncodeGrpcMessage writes a polymorphic GrpcMessage
+// to the writer. Wire layout inside the surrounding length-prefix:
+// [type_id varint] [concrete-type body terminated by end-marker].
+// Mirrors the reflection marshaller's encodeInterface in pkg/cramberry/marshal.go.
+func EncodeGrpcMessage(w *cramberry.Writer, v GrpcMessage) {
+	if v == nil {
+		w.WriteTypeID(cramberry.TypeIDNil)
+		return
+	}
+	switch __c := v.(type) {
+	case *HealthRequest:
+		w.WriteTypeID(200)
+		__c.EncodeTo(w)
+	case *HealthResponse:
+		w.WriteTypeID(201)
+		__c.EncodeTo(w)
+	case *StatusRequest:
+		w.WriteTypeID(202)
+		__c.EncodeTo(w)
+	case *StatusResponse:
+		w.WriteTypeID(203)
+		__c.EncodeTo(w)
+	case *NetInfoRequest:
+		w.WriteTypeID(204)
+		__c.EncodeTo(w)
+	case *NetInfoResponse:
+		w.WriteTypeID(205)
+		__c.EncodeTo(w)
+	case *BroadcastTxRequest:
+		w.WriteTypeID(206)
+		__c.EncodeTo(w)
+	case *BroadcastTxResponse:
+		w.WriteTypeID(207)
+		__c.EncodeTo(w)
+	case *QueryRequest:
+		w.WriteTypeID(208)
+		__c.EncodeTo(w)
+	case *QueryResponse:
+		w.WriteTypeID(209)
+		__c.EncodeTo(w)
+	case *BlockRequest:
+		w.WriteTypeID(210)
+		__c.EncodeTo(w)
+	case *BlockByHashRequest:
+		w.WriteTypeID(211)
+		__c.EncodeTo(w)
+	case *BlockResponse:
+		w.WriteTypeID(212)
+		__c.EncodeTo(w)
+	case *TxRequest:
+		w.WriteTypeID(213)
+		__c.EncodeTo(w)
+	case *TxResponse:
+		w.WriteTypeID(214)
+		__c.EncodeTo(w)
+	case *TxSearchRequest:
+		w.WriteTypeID(215)
+		__c.EncodeTo(w)
+	case *TxSearchResponse:
+		w.WriteTypeID(216)
+		__c.EncodeTo(w)
+	case *PeersRequest:
+		w.WriteTypeID(217)
+		__c.EncodeTo(w)
+	case *PeersResponse:
+		w.WriteTypeID(218)
+		__c.EncodeTo(w)
+	case *ConsensusStateRequest:
+		w.WriteTypeID(219)
+		__c.EncodeTo(w)
+	case *ConsensusStateResponse:
+		w.WriteTypeID(220)
+		__c.EncodeTo(w)
+	case *SubscribeRequest:
+		w.WriteTypeID(221)
+		__c.EncodeTo(w)
+	case *SubscribeResponse:
+		w.WriteTypeID(222)
+		__c.EncodeTo(w)
+	case *UnsubscribeRequest:
+		w.WriteTypeID(223)
+		__c.EncodeTo(w)
+	case *UnsubscribeResponse:
+		w.WriteTypeID(224)
+		__c.EncodeTo(w)
+	case *UnsubscribeAllRequest:
+		w.WriteTypeID(225)
+		__c.EncodeTo(w)
+	case *UnsubscribeAllResponse:
+		w.WriteTypeID(226)
+		__c.EncodeTo(w)
+	case *GrpcError:
+		w.WriteTypeID(227)
+		__c.EncodeTo(w)
+	case *EventMessage:
+		w.WriteTypeID(228)
+		__c.EncodeTo(w)
+	default:
+		w.WriteTypeID(cramberry.TypeIDNil)
+	}
+}
+
+// DecodeGrpcMessage reads a polymorphic GrpcMessage
+// from the reader. Returns nil for the nil-type-id sentinel or for an
+// unknown type id (forward-compat: an old decoder must not crash on a
+// new schema's polymorphic value, even if it can't reconstruct it).
+func DecodeGrpcMessage(r *cramberry.Reader) GrpcMessage {
+	id := r.ReadTypeID()
+	if r.Err() != nil {
+		return nil
+	}
+	switch id {
+	case 200:
+		var __v HealthRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 201:
+		var __v HealthResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 202:
+		var __v StatusRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 203:
+		var __v StatusResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 204:
+		var __v NetInfoRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 205:
+		var __v NetInfoResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 206:
+		var __v BroadcastTxRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 207:
+		var __v BroadcastTxResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 208:
+		var __v QueryRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 209:
+		var __v QueryResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 210:
+		var __v BlockRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 211:
+		var __v BlockByHashRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 212:
+		var __v BlockResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 213:
+		var __v TxRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 214:
+		var __v TxResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 215:
+		var __v TxSearchRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 216:
+		var __v TxSearchResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 217:
+		var __v PeersRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 218:
+		var __v PeersResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 219:
+		var __v ConsensusStateRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 220:
+		var __v ConsensusStateResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 221:
+		var __v SubscribeRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 222:
+		var __v SubscribeResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 223:
+		var __v UnsubscribeRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 224:
+		var __v UnsubscribeResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 225:
+		var __v UnsubscribeAllRequest
+		__v.DecodeFrom(r)
+		return &__v
+	case 226:
+		var __v UnsubscribeAllResponse
+		__v.DecodeFrom(r)
+		return &__v
+	case 227:
+		var __v GrpcError
+		__v.DecodeFrom(r)
+		return &__v
+	case 228:
+		var __v EventMessage
+		__v.DecodeFrom(r)
+		return &__v
+	default:
+		return nil
+	}
+}
+
+// ToJSONGrpcMessage serializes a polymorphic
+// GrpcMessage value to a tagged JSON object of the
+// shape {"_type": "Variant", ...inner-fields-flat}. Mirrors the
+// Rust generator's serde-tagged enum and the TS generator's
+// discriminated-union helper. Without this, the field-level encode
+// would call ToJSON() on the bare interface — which has no such
+// method, since ToJSON lives on each concrete impl.
+func ToJSONGrpcMessage(v GrpcMessage) (string, error) {
+	if v == nil {
+		return "null", nil
+	}
+	var name, inner string
+	var err error
+	switch __c := v.(type) {
+	case *HealthRequest:
+		name = "HealthRequest"
+		inner, err = __c.ToJSON()
+	case *HealthResponse:
+		name = "HealthResponse"
+		inner, err = __c.ToJSON()
+	case *StatusRequest:
+		name = "StatusRequest"
+		inner, err = __c.ToJSON()
+	case *StatusResponse:
+		name = "StatusResponse"
+		inner, err = __c.ToJSON()
+	case *NetInfoRequest:
+		name = "NetInfoRequest"
+		inner, err = __c.ToJSON()
+	case *NetInfoResponse:
+		name = "NetInfoResponse"
+		inner, err = __c.ToJSON()
+	case *BroadcastTxRequest:
+		name = "BroadcastTxRequest"
+		inner, err = __c.ToJSON()
+	case *BroadcastTxResponse:
+		name = "BroadcastTxResponse"
+		inner, err = __c.ToJSON()
+	case *QueryRequest:
+		name = "QueryRequest"
+		inner, err = __c.ToJSON()
+	case *QueryResponse:
+		name = "QueryResponse"
+		inner, err = __c.ToJSON()
+	case *BlockRequest:
+		name = "BlockRequest"
+		inner, err = __c.ToJSON()
+	case *BlockByHashRequest:
+		name = "BlockByHashRequest"
+		inner, err = __c.ToJSON()
+	case *BlockResponse:
+		name = "BlockResponse"
+		inner, err = __c.ToJSON()
+	case *TxRequest:
+		name = "TxRequest"
+		inner, err = __c.ToJSON()
+	case *TxResponse:
+		name = "TxResponse"
+		inner, err = __c.ToJSON()
+	case *TxSearchRequest:
+		name = "TxSearchRequest"
+		inner, err = __c.ToJSON()
+	case *TxSearchResponse:
+		name = "TxSearchResponse"
+		inner, err = __c.ToJSON()
+	case *PeersRequest:
+		name = "PeersRequest"
+		inner, err = __c.ToJSON()
+	case *PeersResponse:
+		name = "PeersResponse"
+		inner, err = __c.ToJSON()
+	case *ConsensusStateRequest:
+		name = "ConsensusStateRequest"
+		inner, err = __c.ToJSON()
+	case *ConsensusStateResponse:
+		name = "ConsensusStateResponse"
+		inner, err = __c.ToJSON()
+	case *SubscribeRequest:
+		name = "SubscribeRequest"
+		inner, err = __c.ToJSON()
+	case *SubscribeResponse:
+		name = "SubscribeResponse"
+		inner, err = __c.ToJSON()
+	case *UnsubscribeRequest:
+		name = "UnsubscribeRequest"
+		inner, err = __c.ToJSON()
+	case *UnsubscribeResponse:
+		name = "UnsubscribeResponse"
+		inner, err = __c.ToJSON()
+	case *UnsubscribeAllRequest:
+		name = "UnsubscribeAllRequest"
+		inner, err = __c.ToJSON()
+	case *UnsubscribeAllResponse:
+		name = "UnsubscribeAllResponse"
+		inner, err = __c.ToJSON()
+	case *GrpcError:
+		name = "GrpcError"
+		inner, err = __c.ToJSON()
+	case *EventMessage:
+		name = "EventMessage"
+		inner, err = __c.ToJSON()
+	default:
+		return "", fmt.Errorf("ToJSONGrpcMessage: unknown concrete type %T", v)
+	}
+	if err != nil {
+		return "", err
+	}
+	// inner is the concrete impl's own ToJSON output, e.g. {"name":"Rex"}.
+	// Splice in the discriminator: {"_type":"Dog","name":"Rex"}.
+	if inner == "{}" {
+		return "{\"_type\":\"" + name + "\"}", nil
+	}
+	return "{\"_type\":\"" + name + "\"," + inner[1:], nil
+}
+
+// FromJSONGrpcMessage reverses ToJSONGrpcMessage.
+// Returns an error when "_type" is missing or names an unknown impl.
+//
+// Strips the discriminator field before delegating to the concrete
+// impl's FromJSON — concrete FromJSONs are strict and would reject
+// "_type" as an unknown field otherwise.
+func FromJSONGrpcMessage(s string) (GrpcMessage, error) {
+	if s == "null" {
+		return nil, nil
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("FromJSONGrpcMessage: %w", err)
+	}
+	typeRaw, ok := raw["_type"]
+	if !ok {
+		return nil, fmt.Errorf("FromJSONGrpcMessage: missing \"_type\" field")
+	}
+	var typeName string
+	if err := json.Unmarshal(typeRaw, &typeName); err != nil {
+		return nil, fmt.Errorf("FromJSONGrpcMessage: _type: %w", err)
+	}
+	delete(raw, "_type")
+	innerJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil, fmt.Errorf("FromJSONGrpcMessage: %w", err)
+	}
+	switch typeName {
+	case "HealthRequest":
+		var v HealthRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "HealthResponse":
+		var v HealthResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "StatusRequest":
+		var v StatusRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "StatusResponse":
+		var v StatusResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "NetInfoRequest":
+		var v NetInfoRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "NetInfoResponse":
+		var v NetInfoResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BroadcastTxRequest":
+		var v BroadcastTxRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BroadcastTxResponse":
+		var v BroadcastTxResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "QueryRequest":
+		var v QueryRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "QueryResponse":
+		var v QueryResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BlockRequest":
+		var v BlockRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BlockByHashRequest":
+		var v BlockByHashRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "BlockResponse":
+		var v BlockResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TxRequest":
+		var v TxRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TxResponse":
+		var v TxResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TxSearchRequest":
+		var v TxSearchRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "TxSearchResponse":
+		var v TxSearchResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "PeersRequest":
+		var v PeersRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "PeersResponse":
+		var v PeersResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "ConsensusStateRequest":
+		var v ConsensusStateRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "ConsensusStateResponse":
+		var v ConsensusStateResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "SubscribeRequest":
+		var v SubscribeRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "SubscribeResponse":
+		var v SubscribeResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "UnsubscribeRequest":
+		var v UnsubscribeRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "UnsubscribeResponse":
+		var v UnsubscribeResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "UnsubscribeAllRequest":
+		var v UnsubscribeAllRequest
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "UnsubscribeAllResponse":
+		var v UnsubscribeAllResponse
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "GrpcError":
+		var v GrpcError
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	case "EventMessage":
+		var v EventMessage
+		if err := v.FromJSON(string(innerJSON)); err != nil {
+			return nil, err
+		}
+		return &v, nil
+	default:
+		return nil, fmt.Errorf("FromJSONGrpcMessage: unknown _type %q", typeName)
 	}
 }
 

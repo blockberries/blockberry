@@ -80,7 +80,30 @@ type SyncReactor struct {
 
 	// Sync completion callback
 	onSyncComplete func()
+
+	// paused gates the sync loop: when true, checkSync exits early
+	// without requesting any blocks. Used by clients running state-sync
+	// to stop the block-sync reactor from racing ahead and fetching
+	// blocks 1..N from genesis while the snapshot is being downloaded.
+	// Toggle via Pause / Resume; the change takes effect on the next
+	// ticker fire. Default false.
+	paused bool
+
+	// onBlockSaved fires after every successful SaveBlock invoked by the
+	// reactor (i.e. on each block fetched from a peer). The application
+	// layer uses this to feed fetched blocks into its consensus engine
+	// for catch-up — e.g. raspberry decodes the block, extracts the
+	// previous-block commit from this block's LastCommit field, and
+	// calls engine.IngestSyncedBlock to fast-forward a stuck validator.
+	// Must be cheap and non-blocking; the reactor calls it under no
+	// mutex, but a long callback delays the next block save.
+	onBlockSaved BlockSavedCallback
 }
+
+// BlockSavedCallback fires after a block is fetched and persisted by the
+// sync reactor. height/hash/data correspond exactly to the SaveBlock
+// arguments.
+type BlockSavedCallback func(height int64, hash []byte, data []byte)
 
 // Default parallel sync configuration.
 const (
@@ -148,6 +171,18 @@ func (r *SyncReactor) SetOnSyncComplete(fn func()) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.onSyncComplete = fn
+}
+
+// SetBlockSavedCallback installs a callback fired after each block the
+// reactor fetches and persists. The callback runs synchronously inside
+// the response-handling goroutine (NOT under r.mu); a slow callback
+// holds up the next block save in the same response batch.
+//
+// Pass nil to clear.
+func (r *SyncReactor) SetBlockSavedCallback(fn BlockSavedCallback) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.onBlockSaved = fn
 }
 
 // Start begins the sync loop.
@@ -230,6 +265,17 @@ func (r *SyncReactor) syncLoop() {
 // checkSync determines if we need to sync and initiates requests.
 func (r *SyncReactor) checkSync() {
 	if r.peerManager == nil || r.network == nil || r.blockStore == nil {
+		return
+	}
+
+	// Honor pause set by state-sync: while paused, we neither request
+	// blocks nor flip the synced state. The state-sync bootstrap will
+	// resume us once the snapshot has been imported and the blockstore's
+	// synced-through height has been bumped.
+	r.mu.RLock()
+	paused := r.paused
+	r.mu.RUnlock()
+	if paused {
 		return
 	}
 
@@ -415,11 +461,20 @@ func (r *SyncReactor) getPeersWithHeight(minHeight int64) []peer.ID {
 	return peers
 }
 
-// UpdatePeerHeight updates the known height for a peer.
+// UpdatePeerHeight updates the known height for a peer. If the new height is
+// strictly higher than what we previously knew, immediately trigger a sync
+// check: the syncLoop ticker would catch this on its next tick (up to
+// syncInterval later), but a height bump from a consensus-message
+// observation is a fresh signal that we are behind right now, and waiting
+// a full tick is the difference between catching up quickly and stalling.
 func (r *SyncReactor) UpdatePeerHeight(peerID peer.ID, height int64) {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	prev := r.peerHeights[peerID]
 	r.peerHeights[peerID] = height
+	r.mu.Unlock()
+	if height > prev {
+		r.checkSync()
+	}
 }
 
 // SendBlocksRequest sends a BlocksRequest to a peer.
@@ -589,17 +644,28 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 				}
 			}
 			if height > expectedHeight {
-				// Gap detected - peer skipped blocks
-				if r.network != nil {
-					_ = r.network.AddPenalty(peerID, p2p.PenaltyProtocolViolation, p2p.ReasonProtocolViolation,
-						fmt.Sprintf("non-contiguous blocks: expected height %d, got %d", expectedHeight, height))
-				}
-				return fmt.Errorf("%w: expected height %d, got %d", types.ErrNonContiguousBlock, expectedHeight, height)
+				// Gap from our blockstore — but the peer was likely
+				// responding to a request we sent for this height range
+				// (multiple peers get disjoint ranges; responses arrive
+				// out of order with respect to each other). Skip this
+				// batch silently — returning an error would trigger the
+				// blockberry node-level "invalid message" penalty (5
+				// points each) and ban a healthy peer after ~20 sync
+				// responses. The missing prefix will arrive from another
+				// peer or be re-requested.
+				return nil
 			}
 			expectedHeight = height + 1
 		} else {
-			// Subsequent blocks must be contiguous
+			// Subsequent blocks must be contiguous. Tolerate the case
+			// where we already have the block (it can happen when
+			// multiple peers respond to overlapping requests, or when
+			// the recovery path advances the blockstore concurrently);
+			// just skip and resync expectedHeight to the next gap.
 			if height != expectedHeight {
+				if height < expectedHeight && r.blockStore.HasBlock(height) {
+					continue
+				}
 				if r.network != nil {
 					_ = r.network.AddPenalty(peerID, p2p.PenaltyProtocolViolation, p2p.ReasonProtocolViolation,
 						fmt.Sprintf("non-contiguous blocks: expected height %d, got %d", expectedHeight, height))
@@ -655,6 +721,16 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 		if r.peerManager != nil {
 			_ = r.peerManager.MarkBlockReceived(peerID, height)
 		}
+
+		// Notify the application layer. Snapshot under lock; invoke
+		// outside so a callback that reaches back into the reactor
+		// can't deadlock.
+		r.mu.RLock()
+		cb := r.onBlockSaved
+		r.mu.RUnlock()
+		if cb != nil {
+			cb(height, block.Hash, block.Data)
+		}
 	}
 
 	// Check if we need more blocks
@@ -666,6 +742,32 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 // OnPeerConnected is called when a new peer connects.
 func (r *SyncReactor) OnPeerConnected(peerID peer.ID, height int64) {
 	r.UpdatePeerHeight(peerID, height)
+}
+
+// Pause halts further block-fetch attempts. The reactor stops issuing
+// requests on the next ticker fire and remains quiet until Resume is
+// called. Used by state-sync clients so the block-sync loop doesn't
+// race ahead and fetch blocks 1..N from genesis while the snapshot is
+// downloading. Pause is idempotent.
+func (r *SyncReactor) Pause() {
+	r.mu.Lock()
+	r.paused = true
+	r.mu.Unlock()
+}
+
+// Resume re-enables the block-fetch loop after a previous Pause.
+// Idempotent — calling on a non-paused reactor is a no-op.
+func (r *SyncReactor) Resume() {
+	r.mu.Lock()
+	r.paused = false
+	r.mu.Unlock()
+}
+
+// IsPaused reports whether the reactor is currently paused.
+func (r *SyncReactor) IsPaused() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.paused
 }
 
 // OnPeerDisconnected cleans up state for a disconnected peer.

@@ -735,3 +735,112 @@ func newTestStore(t *testing.T) *IAVLStore {
 	require.NoError(t, err)
 	return store
 }
+
+func TestIAVLStore_Iterate_FullKeyspace(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	pairs := map[string]string{
+		"alice":   "a-val",
+		"bob":     "b-val",
+		"charlie": "c-val",
+		"diana":   "d-val",
+	}
+	for k, v := range pairs {
+		require.NoError(t, store.Set([]byte(k), []byte(v)))
+	}
+
+	seen := map[string]string{}
+	require.NoError(t, store.Iterate(nil, func(k, v []byte) bool {
+		seen[string(k)] = string(v)
+		return false
+	}))
+	require.Equal(t, pairs, seen)
+}
+
+func TestIAVLStore_Iterate_PrefixOnly(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	for _, key := range []string{"acct/alice", "acct/bob", "bal/alice/coin", "bal/bob/coin", "meta/version"} {
+		require.NoError(t, store.Set([]byte(key), []byte("v")))
+	}
+
+	var acctKeys []string
+	require.NoError(t, store.Iterate([]byte("acct/"), func(k, v []byte) bool {
+		acctKeys = append(acctKeys, string(k))
+		return false
+	}))
+	require.ElementsMatch(t, []string{"acct/alice", "acct/bob"}, acctKeys)
+
+	var balKeys []string
+	require.NoError(t, store.Iterate([]byte("bal/"), func(k, v []byte) bool {
+		balKeys = append(balKeys, string(k))
+		return false
+	}))
+	require.ElementsMatch(t, []string{"bal/alice/coin", "bal/bob/coin"}, balKeys)
+}
+
+func TestIAVLStore_Iterate_EarlyStop(t *testing.T) {
+	store := newTestStore(t)
+	defer store.Close()
+
+	for _, key := range []string{"a", "b", "c", "d"} {
+		require.NoError(t, store.Set([]byte(key), []byte(key)))
+	}
+
+	var seen []string
+	require.NoError(t, store.Iterate(nil, func(k, v []byte) bool {
+		seen = append(seen, string(k))
+		return len(seen) >= 2 // stop after 2
+	}))
+	require.Len(t, seen, 2)
+}
+
+func TestIAVLStore_Iterate_AfterReload(t *testing.T) {
+	// Verifies the post-restart use case: write, commit, build a fresh
+	// IAVLStore from the same db (simulated by close+reopen), iterate
+	// — the key index must be discoverable without any prior writes.
+	dir := t.TempDir()
+	store, err := NewIAVLStore(dir, 100)
+	require.NoError(t, err)
+	for _, key := range []string{"acct/alice", "acct/bob"} {
+		require.NoError(t, store.Set([]byte(key), []byte(key)))
+	}
+	_, _, err = store.Commit()
+	require.NoError(t, err)
+	require.NoError(t, store.Close())
+
+	store2, err := NewIAVLStore(dir, 100)
+	require.NoError(t, err)
+	defer store2.Close()
+
+	var keys []string
+	require.NoError(t, store2.Iterate([]byte("acct/"), func(k, v []byte) bool {
+		keys = append(keys, string(k))
+		return false
+	}))
+	require.ElementsMatch(t, []string{"acct/alice", "acct/bob"}, keys)
+}
+
+func TestPrefixRange(t *testing.T) {
+	cases := []struct {
+		name           string
+		prefix         []byte
+		wantStart      []byte
+		wantEnd        []byte
+	}{
+		{"nil prefix iterates full keyspace", nil, nil, nil},
+		{"simple ascii prefix", []byte("acct/"), []byte("acct/"), []byte("acct0")},
+		{"last byte non-FF increments", []byte{0x01, 0x02}, []byte{0x01, 0x02}, []byte{0x01, 0x03}},
+		{"trailing FF rolls back", []byte{0x01, 0xFF}, []byte{0x01, 0xFF}, []byte{0x02}},
+		{"all FF iterates to end of keyspace", []byte{0xFF, 0xFF}, []byte{0xFF, 0xFF}, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end := prefixRange(tc.prefix)
+			require.Equal(t, tc.wantStart, start)
+			require.Equal(t, tc.wantEnd, end)
+		})
+	}
+}

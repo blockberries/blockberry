@@ -128,6 +128,18 @@ func (m *MemoryBlockStore) Base() int64 {
 	return m.base
 }
 
+// SetSyncedHeight bumps the height marker forward without storing blocks.
+// See BlockStore.SetSyncedHeight for semantics.
+func (m *MemoryBlockStore) SetSyncedHeight(height int64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if height <= m.height {
+		return fmt.Errorf("SetSyncedHeight: target %d is not greater than current height %d", height, m.height)
+	}
+	m.height = height
+	return nil
+}
+
 // Close closes the store.
 func (m *MemoryBlockStore) Close() error {
 	return nil

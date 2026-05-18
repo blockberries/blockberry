@@ -146,3 +146,7 @@ replace github.com/blockberries/avlberry => ../avlberry
 replace github.com/blockberries/bapi => ../bapi
 
 replace github.com/blockberries/looseberry => ../looseberry
+
+replace github.com/blockberries/cramberry => ../cramberry
+
+replace github.com/blockberries/glueberry => ../glueberry

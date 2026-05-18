@@ -23,6 +23,7 @@ import (
 	"github.com/blockberries/blockberry/pkg/mempool"
 	"github.com/blockberries/blockberry/internal/p2p"
 	"github.com/blockberries/blockberry/internal/pex"
+	"github.com/blockberries/blockberry/internal/security"
 	bsync "github.com/blockberries/blockberry/internal/sync"
 	"github.com/blockberries/blockberry/pkg/types"
 )
@@ -67,6 +68,11 @@ type Node struct {
 	housekeepingReactor *handlers.HousekeepingReactor
 	pexReactor          *pex.Reactor
 	syncReactor         *bsync.SyncReactor
+
+	// Eclipse-attack mitigation. Consulted in handleConnectionEvent's
+	// StateConnected branch before the per-direction peer-count check; nil
+	// when disabled. PLAN T2-8.
+	eclipseProtector *security.EclipseProtector
 
 	// Custom stream handlers for application-specific protocols
 	customStreamHandlers map[string]types.StreamHandler
@@ -438,6 +444,25 @@ func (n *Node) PeerCount() int {
 	return n.network.PeerCount()
 }
 
+// PauseSyncReactor halts the block-fetch loop. Used by state-sync
+// clients before running the snapshot bootstrap — without this pause,
+// the sync reactor would race ahead and try to download blocks 1..N
+// from genesis. After state-sync completes (or fails), call
+// ResumeSyncReactor to re-enable block sync.
+func (n *Node) PauseSyncReactor() {
+	if n.syncReactor != nil {
+		n.syncReactor.Pause()
+	}
+}
+
+// ResumeSyncReactor re-enables the block-fetch loop after a previous
+// PauseSyncReactor. Idempotent.
+func (n *Node) ResumeSyncReactor() {
+	if n.syncReactor != nil {
+		n.syncReactor.Resume()
+	}
+}
+
 // Callbacks returns the current node callbacks.
 // Returns nil if no callbacks are set.
 func (n *Node) Callbacks() *types.NodeCallbacks {
@@ -455,9 +480,43 @@ func (n *Node) SetCallbacks(cb *types.NodeCallbacks) {
 	n.callbacks = cb
 }
 
+// UpdatePeerHeight forwards a peer-height observation from the application
+// (e.g. a consensus message header) to the BlockSync reactor. Without this
+// hook, the reactor only learns peer heights once at handshake time and
+// never notices stuck-validator situations where the local engine has
+// fallen far behind. Callers that have a fresher height for a peer should
+// invoke this so BlockSync can request the missing blocks.
+func (n *Node) UpdatePeerHeight(peerID peer.ID, height int64) {
+	if n.syncReactor != nil {
+		n.syncReactor.UpdatePeerHeight(peerID, height)
+	}
+}
+
+// SetBlockSavedCallback installs a callback fired by the BlockSync reactor
+// after each block it fetches and persists. The application layer (e.g.
+// raspberry) uses this to feed fetched blocks into its consensus engine
+// for catch-up — typical pattern is: decode the just-saved block H, pull
+// block H-1 from the blockstore, and call engine.IngestSyncedBlock with
+// block H-1 and the commit embedded in block H's LastCommit field.
+//
+// Must be called before Start(); calling later is allowed but races
+// against in-flight fetches. Pass nil to clear.
+func (n *Node) SetBlockSavedCallback(fn bsync.BlockSavedCallback) {
+	if n.syncReactor != nil {
+		n.syncReactor.SetBlockSavedCallback(fn)
+	}
+}
+
 // RegisterStreamHandler registers a handler for a custom network stream.
 // Messages received on the named stream will be routed to the handler.
-// This must be called before Start(). Calling it after Start() has undefined behavior.
+// This must be called before Start(); calling it after Start() has undefined behavior.
+//
+// The stream is also added to the network's encrypted-stream allowlist so it
+// is included in the streamNames list passed to glueberry's PrepareStreams /
+// CompleteHandshake. Without this, a Send on the custom stream would fail with
+// "stream not allowed for peer (call EstablishStreams first)" even though the
+// handler is registered (this was the symptom that hid raspberry's
+// validator-attest + looseberry-* streams from peer connectivity).
 func (n *Node) RegisterStreamHandler(stream string, handler types.StreamHandler) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -465,6 +524,19 @@ func (n *Node) RegisterStreamHandler(stream string, handler types.StreamHandler)
 		n.customStreamHandlers = make(map[string]types.StreamHandler)
 	}
 	n.customStreamHandlers[stream] = handler
+
+	// Also register with the network's stream adapter so PrepareStreams
+	// includes this stream in the encrypted set. Errors here mean the
+	// stream is already known (e.g., a built-in one) and are safe to ignore.
+	if n.network != nil {
+		_ = n.network.RegisterStream(p2p.StreamConfig{
+			Name:           stream,
+			Encrypted:      true,
+			Owner:          "custom",
+			RateLimit:      100,
+			MaxMessageSize: 10 * 1024 * 1024,
+		}, nil)
+	}
 }
 
 // eventLoop handles incoming events and messages.
@@ -516,6 +588,22 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 			// If we can't determine direction, assume inbound for safety
 			// (inbound connections are more restricted)
 			isOutbound = false
+		}
+
+		// PLAN T2-8: consult the eclipse-mitigation policy before doing
+		// anything peer-specific. ShouldAcceptPeer enforces per-subnet
+		// caps and the outbound/inbound balance ratio. A reject here drops
+		// the connection cleanly before any reactor state is allocated.
+		if n.eclipseProtector != nil {
+			peerAddr := ""
+			if addrs := n.glueNode.PeerAddrs(peerID); len(addrs) > 0 {
+				peerAddr = addrs[0].String()
+			}
+			if !n.eclipseProtector.ShouldAcceptPeer([]byte(peerID), peerAddr, !isOutbound) {
+				_ = n.network.Disconnect(peerID)
+				return
+			}
+			n.eclipseProtector.OnPeerConnected([]byte(peerID), peerAddr, !isOutbound)
 		}
 
 		// Check peer limits before proceeding with handshake
@@ -575,6 +663,9 @@ func (n *Node) handleConnectionEvent(event glueberry.ConnectionEvent) {
 		n.blocksReactor.OnPeerDisconnected(peerID)
 		n.consensusReactor.OnPeerDisconnected(peerID)
 		n.housekeepingReactor.OnPeerDisconnected(peerID)
+		if n.eclipseProtector != nil {
+			n.eclipseProtector.OnPeerDisconnected([]byte(peerID))
+		}
 		n.pexReactor.OnPeerDisconnected(peerID)
 		n.syncReactor.OnPeerDisconnected(peerID)
 	}
@@ -633,15 +724,45 @@ func (n *Node) handleMessage(msg streams.IncomingMessage) {
 	}
 }
 
-// connectToSeeds connects to configured seed nodes.
+// connectToSeeds connects to configured seed nodes. Seed connection
+// failures are non-fatal — operators may have configured multiple seeds
+// expecting some to be reachable — but we write each failure to stderr
+// so silent total-failure is diagnosable. There is no structured logger
+// available at this layer; the consumer's logger is not threaded through.
+//
+// Each seed gets up to seedDialAttempts tries with seedDialRetry backoff
+// between attempts. This matters when a small cluster bootstraps and
+// some peers haven't finished listening when their neighbors do their
+// one-shot dial — without retries, the first-to-start node forms zero
+// connections and waitForValidatorMesh times out.
 func (n *Node) connectToSeeds() {
 	for _, addr := range n.cfg.Network.Seeds.Addrs {
-		if err := n.network.ConnectMultiaddr(addr); err != nil {
-			// Log and continue - seed connection failure is not fatal
-			continue
-		}
+		go n.dialSeedWithRetry(addr)
 	}
 }
+
+// dialSeedWithRetry retries a seed dial up to seedDialAttempts times.
+// Runs in its own goroutine — caller doesn't wait. Stops early on
+// success.
+func (n *Node) dialSeedWithRetry(addr string) {
+	for attempt := 1; attempt <= seedDialAttempts; attempt++ {
+		if err := n.network.ConnectMultiaddr(addr); err != nil {
+			if attempt == seedDialAttempts {
+				fmt.Fprintf(os.Stderr, "[blockberry] seed dial gave up after %d attempts: addr=%s err=%v\n",
+					seedDialAttempts, addr, err)
+				return
+			}
+			time.Sleep(seedDialRetry)
+			continue
+		}
+		return
+	}
+}
+
+const (
+	seedDialAttempts = 10
+	seedDialRetry    = 1 * time.Second
+)
 
 // loadOrGenerateKey loads a private key from file or generates a new one.
 func loadOrGenerateKey(path string) (ed25519.PrivateKey, error) {

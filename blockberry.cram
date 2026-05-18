@@ -136,11 +136,38 @@ message SnapshotChunkResponse {
   required bytes chunk_hash = 4;
 }
 
+// LightBlockRequest asks a peer for the (header, commit, validator-set)
+// triple at a specific height. Used by the state-sync reactor to fetch
+// the LightBlock corresponding to a snapshot it's considering, so the
+// light client can cryptographically verify the snapshot's claimed
+// AppHash against an operator-supplied trust anchor before downloading
+// gigabytes of chunks.
+message LightBlockRequest {
+  required int64 height = 1;
+}
+
+// LightBlockResponse carries the three cramberry-encoded leaderberry
+// objects that make up a LightBlock. Each field is opaque to blockberry
+// — only the consumer (raspberry's state-sync layer, via leaderberry's
+// light package) decodes them.
+//
+// header_bytes is a leaderberry gen.BlockHeader.
+// commit_bytes is the gen.Commit that finalised `height`.
+// validator_set_bytes is the gen.ValidatorSetData active at `height`.
+message LightBlockResponse {
+  required int64 height = 1;
+  required bytes header_bytes = 2;
+  required bytes commit_bytes = 3;
+  required bytes validator_set_bytes = 4;
+}
+
 interface StateSyncMessage {
   144 = SnapshotsRequest;
   145 = SnapshotsResponse;
   146 = SnapshotChunkRequest;
   147 = SnapshotChunkResponse;
+  148 = LightBlockRequest;
+  149 = LightBlockResponse;
 }
 
 // RPC Messages - used by gRPC transport with Cramberry encoding

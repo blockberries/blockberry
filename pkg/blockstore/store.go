@@ -35,6 +35,16 @@ type BlockStore interface {
 	// For pruned stores, this may be greater than 1.
 	Base() int64
 
+	// SetSyncedHeight records that the store is conceptually synced
+	// through `height` even though blocks 1..height may not be stored
+	// locally. Used by state-sync after a snapshot has been imported into
+	// the application — the consumer wants Height() to return `height`
+	// so the sync reactor resumes from `height+1`.
+	//
+	// Returns an error if `height` is not greater than the current
+	// Height(); the store never moves backwards on this call.
+	SetSyncedHeight(height int64) error
+
 	// Close closes the store and releases resources.
 	Close() error
 }

@@ -190,17 +190,32 @@ type EclipseMitigationConfig struct {
 	// This prevents attackers from filling all slots with inbound connections.
 	RequireOutboundPercent int
 
+	// OutboundCheckMinPeers is the minimum total peer count before
+	// RequireOutboundPercent is enforced. Set to 0 to enforce from the
+	// very first inbound (matches the original behavior — and breaks
+	// localhost bootstrap, see PLAN T2-8). A small positive value (e.g.
+	// 3) gives a freshly-started node time to complete its own outbound
+	// dials before being asked to maintain an outbound-to-inbound ratio.
+	OutboundCheckMinPeers int
+
 	// TrustDuration is how long a well-behaved peer is trusted.
 	TrustDuration time.Duration
 }
 
 // DefaultEclipseMitigationConfig returns sensible defaults for eclipse mitigation.
+//
+// MaxPeersPerSubnet is set generously (16) because a 4-validator localhost
+// testnet shares a single /24, and many production deployments share a
+// limited number of /24s for the validator set even at moderate scale.
+// Operators running on a larger network footprint can tighten this via
+// their config.
 func DefaultEclipseMitigationConfig() EclipseMitigationConfig {
 	return EclipseMitigationConfig{
 		MinPeerDiversity:       30,
-		MaxPeersPerSubnet:      3,
+		MaxPeersPerSubnet:      16,
 		MaxPeersFromSameSource: 5,
 		RequireOutboundPercent: 20,
+		OutboundCheckMinPeers:  3, // bootstrap-window exemption — see field doc
 		TrustDuration:          7 * 24 * time.Hour, // 1 week
 	}
 }

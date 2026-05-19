@@ -89,6 +89,14 @@ type SyncReactor struct {
 	// ticker fire. Default false.
 	paused bool
 
+	// tipProbeCounter counts checkSync ticks during which we believe
+	// we are caught up. Once it reaches tipProbeEveryTicks, the
+	// reactor sends a single BlocksRequest probe to discover whether
+	// any peer has advanced past our cached height. Without this,
+	// peerHeights only refreshes at handshake, and a long-running peer
+	// becomes invisible to us once we first catch up.
+	tipProbeCounter int
+
 	// onBlockSaved fires after every successful SaveBlock invoked by the
 	// reactor (i.e. on each block fetched from a peer). The application
 	// layer uses this to feed fetched blocks into its consensus engine
@@ -283,8 +291,15 @@ func (r *SyncReactor) checkSync() {
 	maxPeerHeight := r.getMaxPeerHeight()
 
 	if maxPeerHeight <= ourHeight {
-		// We're caught up
+		// We're caught up to every peer we know about — but peer
+		// heights only refresh on handshake. If a peer keeps producing
+		// blocks after we connect, our cached height never moves and
+		// we stop fetching. Send a periodic probe (BlocksRequest for
+		// ourHeight+1) so we keep discovering new tip heights. The
+		// peer responds with whatever it has at that range (or empty);
+		// handleBlocksResponse updates peer heights from the response.
 		r.transitionToSynced()
+		r.probeTipForUpdates(ourHeight)
 		return
 	}
 
@@ -294,6 +309,58 @@ func (r *SyncReactor) checkSync() {
 	// Request blocks from a peer who has them
 	r.requestBlocks(ourHeight)
 }
+
+// probeTipForUpdates sends a small BlocksRequest to one peer (chosen
+// round-robin via current map iteration) for `since+1` so we can
+// discover when peers advance past our cached height. Rate-limited to
+// once every probeTipInterval ticks to keep the network footprint
+// negligible (~1 small RPC every 30s per peer when caught up).
+func (r *SyncReactor) probeTipForUpdates(since int64) {
+	r.mu.Lock()
+	r.tipProbeCounter++
+	if r.tipProbeCounter < tipProbeEveryTicks {
+		r.mu.Unlock()
+		return
+	}
+	r.tipProbeCounter = 0
+
+	// Pick one peer that doesn't already have a pending request.
+	var target peer.ID
+	for peerID := range r.peerHeights {
+		if _, pending := r.pendingRequests[peerID]; !pending {
+			target = peerID
+			break
+		}
+	}
+	if target == "" {
+		r.mu.Unlock()
+		return
+	}
+	// Record the request as pending so the same peer isn't double-
+	// probed and so the response will land on it normally.
+	startHeight := since + 1
+	endHeight := startHeight + int64(r.batchSize) - 1
+	r.pendingRequests[target] = &PendingRequest{
+		PeerID:      target,
+		StartHeight: startHeight,
+		EndHeight:   endHeight,
+		RequestedAt: time.Now(),
+	}
+	r.mu.Unlock()
+
+	go func() {
+		if err := r.SendBlocksRequest(target, startHeight); err != nil {
+			r.mu.Lock()
+			delete(r.pendingRequests, target)
+			r.mu.Unlock()
+		}
+	}()
+}
+
+// tipProbeEveryTicks: send one tip-discovery probe every N syncInterval
+// ticks while caught up. With the default syncInterval of 5s this is a
+// probe every ~30s, balancing freshness against idle-network noise.
+const tipProbeEveryTicks = 6
 
 // getMaxPeerHeight returns the maximum height among all connected peers.
 func (r *SyncReactor) getMaxPeerHeight() int64 {
@@ -730,6 +797,25 @@ func (r *SyncReactor) handleBlocksResponse(peerID peer.ID, data []byte) error {
 		r.mu.RUnlock()
 		if cb != nil {
 			cb(height, block.Hash, block.Data)
+		}
+	}
+
+	// Update peer's known height from what they served us. If the
+	// response carried blocks up to height H, the peer must have had
+	// >= H at request time — bump our cached height so getMaxPeerHeight
+	// reflects reality and we keep fetching past handshake-time height.
+	// Without this, peerHeights stayed frozen at whatever the peer
+	// reported during its initial HelloRequest, so a long-running
+	// peer became invisible to us once we first caught up.
+	if len(resp.Blocks) > 0 {
+		highest := int64(0)
+		for _, block := range resp.Blocks {
+			if block.Height != nil && *block.Height > highest {
+				highest = *block.Height
+			}
+		}
+		if highest > 0 {
+			r.UpdatePeerHeight(peerID, highest)
 		}
 	}
 

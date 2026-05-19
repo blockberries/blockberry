@@ -182,6 +182,44 @@ func TestSyncReactor_HandleBlocksRequest(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestSyncReactor_UpdatesPeerHeightFromResponse verifies that a
+// successful BlocksResponse updates the peer's tracked height to the
+// highest block in the response. Without this, peerHeights stays
+// frozen at whatever was reported at handshake — a long-running peer
+// becomes invisible to us once we first catch up, and we stop fetching
+// new blocks even though the peer keeps producing them.
+func TestSyncReactor_UpdatesPeerHeightFromResponse(t *testing.T) {
+	store := blockstore.NewMemoryBlockStore()
+	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)
+	reactor.SetValidator(types.AcceptAllBlockValidator)
+
+	pid := peer.ID("peer1")
+	// Simulate handshake-time height = 1.
+	reactor.UpdatePeerHeight(pid, 1)
+
+	// Peer serves us a response that includes higher blocks. We should
+	// learn the peer is at least at height 3 from the response itself.
+	block1, block2, block3 := []byte("b1"), []byte("b2"), []byte("b3")
+	hash1, hash2, hash3 := types.HashBlock(block1), types.HashBlock(block2), types.HashBlock(block3)
+	h1, h2, h3 := int64(1), int64(2), int64(3)
+	resp := &schema.BlocksResponse{
+		Blocks: []schema.BlockData{
+			{Height: &h1, Hash: hash1, Data: block1},
+			{Height: &h2, Hash: hash2, Data: block2},
+			{Height: &h3, Hash: hash3, Data: block3},
+		},
+	}
+	data, err := reactor.encodeMessage(TypeIDBlocksResponse, resp)
+	require.NoError(t, err)
+	require.NoError(t, reactor.HandleMessage(pid, data))
+
+	// peerHeights should now reflect height 3, not the stale 1.
+	reactor.mu.RLock()
+	got := reactor.peerHeights[pid]
+	reactor.mu.RUnlock()
+	require.Equal(t, int64(3), got, "peerHeight should track highest block in response")
+}
+
 func TestSyncReactor_HandleBlocksResponse(t *testing.T) {
 	store := blockstore.NewMemoryBlockStore()
 	reactor := NewSyncReactor(store, nil, nil, time.Second, 50)

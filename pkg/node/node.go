@@ -518,6 +518,17 @@ func (n *Node) SetBlockSavedCallback(fn bsync.BlockSavedCallback) {
 // handler is registered (this was the symptom that hid raspberry's
 // validator-attest + looseberry-* streams from peer connectivity).
 func (n *Node) RegisterStreamHandler(stream string, handler types.StreamHandler) {
+	n.RegisterStreamHandlerWithLimits(stream, handler, 100, 10*1024*1024)
+}
+
+// RegisterStreamHandlerWithLimits registers a custom-stream handler with
+// caller-supplied per-stream limits, overriding the conservative defaults
+// (RateLimit=100/sec, MaxMessageSize=10 MB) applied by RegisterStreamHandler.
+// Use this for streams whose expected message rate exceeds the default
+// 100 msgs/sec/peer; the limiter silently throttles excess traffic.
+// Passing rateLimit=0 means unlimited. Must be called before Start();
+// calling it after Start() has undefined behavior.
+func (n *Node) RegisterStreamHandlerWithLimits(stream string, handler types.StreamHandler, rateLimit, maxMessageSize int) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	if n.customStreamHandlers == nil {
@@ -525,16 +536,13 @@ func (n *Node) RegisterStreamHandler(stream string, handler types.StreamHandler)
 	}
 	n.customStreamHandlers[stream] = handler
 
-	// Also register with the network's stream adapter so PrepareStreams
-	// includes this stream in the encrypted set. Errors here mean the
-	// stream is already known (e.g., a built-in one) and are safe to ignore.
 	if n.network != nil {
 		_ = n.network.RegisterStream(p2p.StreamConfig{
 			Name:           stream,
 			Encrypted:      true,
 			Owner:          "custom",
-			RateLimit:      100,
-			MaxMessageSize: 10 * 1024 * 1024,
+			RateLimit:      rateLimit,
+			MaxMessageSize: maxMessageSize,
 		}, nil)
 	}
 }
